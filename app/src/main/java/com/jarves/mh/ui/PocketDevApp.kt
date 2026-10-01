@@ -98,6 +98,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
@@ -229,6 +230,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 private enum class RootScreen(val label: String, val icon: ImageVector) {
     PROJECTS("Projects", Icons.Default.Folder),
     AGENT("Agent", Icons.Default.SmartToy),
+    SKILLS("Skills", Icons.Default.Extension),
     SETTINGS("Settings", Icons.Default.Settings),
 }
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
@@ -337,6 +339,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onKeepChanges = viewModel::keepLastChanges,
             onUndoFileChange = viewModel::undoFileChange,
             onKeepFileChange = viewModel::keepFileChange,
+            onResumeTask = viewModel::resumeInterruptedTask,
             onCreateChat = viewModel::createChat,
             onSwitchChat = viewModel::switchChat,
             onTerminalRun = viewModel::requestProjectTerminalCommand,
@@ -2113,6 +2116,16 @@ private fun RootScreenHost(
                     onSetAntigravityModel = viewModel::setAntigravityModel,
                     onSetAntigravityEffort = viewModel::setAntigravityEffort,
                 )
+                RootScreen.SKILLS -> SkillsScreen(
+                    installed = state.skills,
+                    results = state.skillSearchResults,
+                    busy = state.skillsBusy,
+                    message = state.skillsMessage,
+                    onSearch = viewModel::searchSkills,
+                    onImportGitHub = viewModel::importSkillFromGitHub,
+                    onImportZip = viewModel::importSkillFromUri,
+                    onRemove = viewModel::removeSkill,
+                )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
                     onSaveProvider = { profile, key ->
@@ -3820,6 +3833,7 @@ private fun WorkspaceScreen(
     onKeepChanges: () -> Unit,
     onUndoFileChange: (String) -> Unit,
     onKeepFileChange: (String) -> Unit,
+    onResumeTask: () -> Unit,
     onCreateChat: () -> Unit,
     onSwitchChat: (String) -> Unit,
     onTerminalRun: (String) -> Unit,
@@ -4104,6 +4118,7 @@ private fun WorkspaceScreen(
                     onKeepChanges,
                     onUndoFileChange,
                     onKeepFileChange,
+                    onOpenFile = onOpenFile,
                 )
                 WorkspaceTab.PREVIEW -> PreviewTab(state.previewReady, state.previewUrl)
             }
@@ -5173,6 +5188,7 @@ private fun ChangesTab(
     onKeep: () -> Unit,
     onUndoFile: (String) -> Unit,
     onKeepFile: (String) -> Unit,
+    onOpenFile: (WorkspaceEntry) -> Unit,
 ) {
     var expandedPath by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -5207,6 +5223,19 @@ private fun ChangesTab(
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                        IconButton(onClick = {
+                            val depth = change.path.count { it == '/' }
+                            onOpenFile(
+                                WorkspaceEntry(
+                                    path = change.path,
+                                    name = change.path.substringAfterLast('/'),
+                                    isDirectory = false,
+                                    depth = depth,
+                                )
+                            )
+                        }) {
+                            Icon(Icons.Default.OpenInNew, contentDescription = "Open file")
                         }
                         Text("+${change.additions}", color = PocketGreen)
                         Spacer(Modifier.width(7.dp))
