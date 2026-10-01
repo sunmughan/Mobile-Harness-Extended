@@ -20,8 +20,10 @@ import com.jarves.mh.R
 object NotificationCoordinator {
     const val RUNNING_CHANNEL_ID = "runtime"
     const val RESULT_CHANNEL_ID = "task-results"
+    const val REMOTE_CHANNEL_ID = "remote-events"
     const val RUNNING_NOTIFICATION_ID = 41
     const val RESULT_NOTIFICATION_ID = 42
+    private const val REMOTE_NOTIFICATION_BASE_ID = 10_000
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -41,6 +43,15 @@ object NotificationCoordinator {
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
                 description = "Notifies you when a coding task finishes or needs attention"
+            },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                REMOTE_CHANNEL_ID,
+                "Mobile Harness updates",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "Remote updates for Mobile Harness projects and agent sessions"
             },
         )
     }
@@ -90,6 +101,30 @@ object NotificationCoordinator {
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
         .build()
 
+    fun postRemote(
+        context: Context,
+        title: String,
+        detail: String,
+        messageId: String?,
+        route: String?,
+    ) {
+        ensureChannels(context)
+        val notificationId = REMOTE_NOTIFICATION_BASE_ID + stableNotificationOffset(messageId, title, detail)
+        context.getSystemService(NotificationManager::class.java).notify(
+            notificationId,
+            NotificationCompat.Builder(context, REMOTE_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(detail)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+                .setContentIntent(openAppIntent(context, route))
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build(),
+        )
+    }
+
     fun postResult(context: Context, title: String, detail: String, failed: Boolean) {
         ensureChannels(context)
         context.getSystemService(NotificationManager::class.java).notify(
@@ -98,12 +133,18 @@ object NotificationCoordinator {
         )
     }
 
-    private fun openAppIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+    private fun openAppIntent(context: Context, route: String? = null): PendingIntent = PendingIntent.getActivity(
         context,
-        1,
+        route?.hashCode() ?: 1,
         Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            route?.takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_ROUTE, it) }
         },
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
+
+    private fun stableNotificationOffset(messageId: String?, title: String, detail: String): Int =
+        (messageId ?: "$title\u0000$detail").hashCode().and(0x0FFF)
+
+    private const val EXTRA_ROUTE = "notification_route"
 }
