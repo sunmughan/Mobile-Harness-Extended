@@ -80,6 +80,14 @@ class RuntimeExecutionService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun finishTask(title: String, detail: String, failed: Boolean) {
+        taskRunning = false
+        releaseWakeLock()
+        NotificationCoordinator.postResult(this, title, detail, failed)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         wakeLock = getSystemService(PowerManager::class.java)

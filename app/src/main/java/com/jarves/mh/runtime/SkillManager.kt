@@ -166,7 +166,7 @@ class SkillManager(private val context: Context) {
                     val entry = input.nextEntry ?: break
                     entries++
                     require(entries <= 10_000) { "Skill archive contains too many files." }
-                    val name = entry.name.replace('\\\\', '/')
+                    val name = entry.name.replace('\\', '/')
                     require(!name.startsWith("/") && !name.split('/').any { it == ".." }) { "Skill archive contains an unsafe path." }
                     val target = File(extraction, name).canonicalFile
                     require(target.toPath().startsWith(extraction.canonicalFile.toPath())) { "Skill archive escapes its extraction directory." }

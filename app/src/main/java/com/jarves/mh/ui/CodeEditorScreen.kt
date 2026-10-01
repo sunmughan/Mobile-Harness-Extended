@@ -81,7 +81,7 @@ fun CodeEditorScreen(
     content: String?,
     loading: Boolean,
     onClose: () -> Unit,
-    onSave: (String) -> Unit,
+    onSave: suspend (String) -> Boolean,
 ) {
     val source = content.orEmpty()
     val readOnly = loading || source.contains("[File truncated — too large to display fully]")

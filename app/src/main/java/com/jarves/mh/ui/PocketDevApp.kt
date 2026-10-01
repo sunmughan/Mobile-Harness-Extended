@@ -16,6 +16,7 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import com.jarves.mh.BuildConfig
+import com.jarves.mh.R
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -202,6 +203,7 @@ import com.jarves.mh.model.ToolRequest
 import com.jarves.mh.model.WorkspaceEntry
 import com.jarves.mh.model.projectSlug
 import com.jarves.mh.runtime.RuntimeExecutionService
+import com.jarves.mh.runtime.NotificationCoordinator
 import com.jarves.mh.runtime.RuntimeSetupService
 import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.AntigravityAuthStatus
@@ -646,7 +648,7 @@ private fun BackgroundTaskSetupScreen(
                                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationDenied -> {
                                         // Targets below API 33 can have notification prompts tied to
                                         // channel creation. Create channels only after this explicit tap.
-                                        RuntimeExecutionService.ensureNotificationChannels(context)
+                                        NotificationCoordinator.ensureChannels(context)
                                         RuntimeSetupService.ensureNotificationChannel(context)
                                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                     }
