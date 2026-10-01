@@ -327,8 +327,8 @@ flowchart TB
 ### Clone & Build Debug APK
 ```bash
 # Clone the repository
-git clone https://github.com/techjarves/Mobile-Harness.git
-cd Mobile-Harness
+git clone https://github.com/sunmughan/Mobile-Harness-Extended.git
+cd Mobile-Harness-Extended
 
 # Build the standard ARM64 debug binary
 ./gradlew assembleDebug
