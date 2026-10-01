@@ -81,7 +81,7 @@ class ProjectIndex(private val filesDir: File) {
         val snapshot = ProjectIndexSnapshot(
             projectId = projectId,
             generatedAtMillis = System.currentTimeMillis(),
-            rootFingerprint = fingerprint(indexed),
+            rootFingerprint = quickFingerprint(root),
             files = indexed.sortedBy { it.path.lowercase() },
         )
         persist(snapshot)
