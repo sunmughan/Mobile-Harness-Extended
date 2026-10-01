@@ -4009,6 +4009,29 @@ private fun WorkspaceScreen(
             },
         )
     }
+    if (showCommandPalette) {
+        WorkspaceCommandPalette(
+            onDismiss = { showCommandPalette = false },
+            onSelect = { command ->
+                showCommandPalette = false
+                when (command) {
+                    WorkspaceCommand.CHAT -> selectedTab = WorkspaceTab.CHAT
+                    WorkspaceCommand.FILES -> {
+                        selectedTab = WorkspaceTab.FILES
+                        onRefreshFiles()
+                    }
+                    WorkspaceCommand.TERMINAL -> {
+                        selectedTab = WorkspaceTab.TERMINAL
+                        onTerminalOpened()
+                    }
+                    WorkspaceCommand.CHANGES -> selectedTab = WorkspaceTab.CHANGES
+                    WorkspaceCommand.PREVIEW -> selectedTab = WorkspaceTab.PREVIEW
+                    WorkspaceCommand.REFRESH_FILES -> onRefreshFiles()
+                }
+            },
+        )
+    }
+
     state.pendingTerminalCommand?.let { command ->
         AlertDialog(
             onDismissRequest = onTerminalCancel,
