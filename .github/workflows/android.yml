@@ -121,8 +121,39 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
+          ONLINE="mobile-harness-online-v1.0.5.apk"
+          OFFLINE="mobile-harness-offline-v1.0.5.apk"
+          cp app/build/outputs/apk/online/release/app-online-release.apk "$ONLINE"
+          cp app/build/outputs/apk/offline/release/app-offline-release.apk "$OFFLINE"
+
+          ONLINE_SHA=$(sha256sum "$ONLINE" | awk '{print $1}')
+          OFFLINE_SHA=$(sha256sum "$OFFLINE" | awk '{print $1}')
+          ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
+          OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
+
+          cat > mobile-harness-update.json <<EOF
+{
+  "versionCode": 6,
+  "versionName": "1.0.5",
+  "notes": "Production release with verified online/offline runtime packaging and startup resilience.",
+  "artifacts": {
+    "online": {
+      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.5/mobile-harness-online-v1.0.5.apk",
+      "sha256": "$ONLINE_SHA",
+      "sizeBytes": $ONLINE_SIZE
+    },
+    "offline": {
+      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.5/mobile-harness-offline-v1.0.5.apk",
+      "sha256": "$OFFLINE_SHA",
+      "sizeBytes": $OFFLINE_SIZE
+    }
+  }
+}
+EOF
+
           gh release create "v1.0.5" \
-            app/build/outputs/apk/online/release/app-online-release.apk \
-            app/build/outputs/apk/offline/release/app-offline-release.apk \
+            "$ONLINE" \
+            "$OFFLINE" \
+            mobile-harness-update.json \
             --title "Mobile Harness v1.0.5" \
             --generate-notes
