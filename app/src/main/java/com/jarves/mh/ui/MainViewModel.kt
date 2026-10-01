@@ -308,6 +308,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .takeIf(String::isNotBlank)
         ?.let(AgentKind::fromStored)
         ?: initialAgentKind
+
+    // Startup must never die before Compose can render. Android Keystore state can
+    // become temporarily unavailable/corrupt after OS upgrades, restore operations,
+    // or an interrupted app reinstall. Treat provider/secret hydration as recoverable
+    // state and let the UI continue into setup instead of crashing in MainViewModel's
+    // constructor during the system splash screen.
+    private val initialProvider: ProviderProfile = runCatching {
+        preferences.loadProvider(vault, initialAgentKind)
+    }.getOrElse {
+        ProviderProfile(
+            kind = if (initialAgentKind == AgentKind.DEEPSEEK_HARNESS) {
+                ProviderKind.DEEPSEEK
+            } else {
+                ProviderKind.ANTHROPIC
+            },
+            hasSecret = false,
+        )
+    }
+
+    private val initialActiveApiKeyName: String? = runCatching {
+        vault.list(initialProvider.kind.name).firstOrNull(ApiKeyInfo::isActive)?.name
+    }.getOrNull()
+
     private val antigravityAuthController = AntigravityAuthController(
         application,
         preferences.antigravitySignedIn,
@@ -323,9 +346,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             backgroundSetupComplete = preferences.backgroundSetupComplete,
             agentKind = initialAgentKind,
             primaryAgentKind = initialPrimaryAgentKind,
-            provider = preferences.loadProvider(vault, initialAgentKind),
-            activeApiKeyName = vault.list(preferences.loadProvider(vault, initialAgentKind).kind.name)
-                .firstOrNull(ApiKeyInfo::isActive)?.name,
+            provider = initialProvider,
+            activeApiKeyName = initialActiveApiKeyName,
             antigravityAuth = AntigravityAuthState(
                 status = if (preferences.antigravitySignedIn) AntigravityAuthStatus.SIGNED_IN else AntigravityAuthStatus.SIGNED_OUT,
                 message = preferences.antigravityAccountEmail.takeIf(String::isNotBlank)?.let { "Connected as $it" },
@@ -348,9 +370,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         // GitHub's official CLI owns its OAuth credential. Remove credentials from
         // the retired custom OAuth implementation and discover the real CLI status.
-        vault.remove(LEGACY_GITHUB_TOKEN_KEY)
+        runCatching { vault.remove(LEGACY_GITHUB_TOKEN_KEY) }
         viewModelScope.launch { refreshGitHubConnection() }
-        RuntimeSetupController.restore(application)
+        runCatching { RuntimeSetupController.restore(application) }
         viewModelScope.launch(Dispatchers.IO) {
             for (write in transcriptWrites) {
                 preferences.saveMessages(write.projectId, write.chatId, write.messages)
