@@ -3853,6 +3853,7 @@ private fun ReadOnlyProjectScreen(
                 taskFinishedAtMillis = null,
                 thinkingActive = false,
                 agentKind = state.agentKind,
+                workspaceFiles = emptyList(),
                 pendingAttachments = emptyList(),
                 onAttach = {},
                 onRemoveAttachment = {},
