@@ -55,4 +55,4 @@ jobs:
           name: mobile-harness-release-apks
           if-no-files-found: error
           path: |
-            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/**/*.apk
