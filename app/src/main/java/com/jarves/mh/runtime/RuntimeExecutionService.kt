@@ -113,13 +113,4 @@ class RuntimeExecutionService : Service() {
 
         private const val MAX_WAKE_LOCK_MS = 90 * 60 * 1_000L
     }
-
-            )
-            manager.createNotificationChannel(
-                NotificationChannel(RESULT_CHANNEL_ID, "Task results", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "Notifies you when a coding task finishes or needs attention"
-                },
-            )
-        }
-    }
 }
