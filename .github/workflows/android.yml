@@ -151,9 +151,17 @@ jobs:
 }
 EOF
 
-          gh release create "v1.0.5" \
-            "$ONLINE" \
-            "$OFFLINE" \
-            mobile-harness-update.json \
-            --title "Mobile Harness v1.0.5" \
-            --generate-notes
+          if gh release view "v1.0.5" >/dev/null 2>&1; then
+            gh release upload "v1.0.5" \
+              "$ONLINE" \
+              "$OFFLINE" \
+              mobile-harness-update.json \
+              --clobber
+          else
+            gh release create "v1.0.5" \
+              "$ONLINE" \
+              "$OFFLINE" \
+              mobile-harness-update.json \
+              --title "Mobile Harness v1.0.5" \
+              --generate-notes
+          fi
