@@ -3800,6 +3800,29 @@ private fun ReadOnlyProjectScreen(
         if (state.readOnlyMessages.isNotEmpty()) listState.scrollToItem(state.readOnlyMessages.lastIndex)
     }
 
+    if (showCommandPalette) {
+        WorkspaceCommandPalette(
+            onDismiss = { showCommandPalette = false },
+            onSelect = { command ->
+                showCommandPalette = false
+                when (command) {
+                    WorkspaceCommand.CHAT -> selectedTab = WorkspaceTab.CHAT
+                    WorkspaceCommand.FILES -> {
+                        selectedTab = WorkspaceTab.FILES
+                        onRefreshFiles()
+                    }
+                    WorkspaceCommand.TERMINAL -> {
+                        selectedTab = WorkspaceTab.TERMINAL
+                        onTerminalOpened()
+                    }
+                    WorkspaceCommand.CHANGES -> selectedTab = WorkspaceTab.CHANGES
+                    WorkspaceCommand.PREVIEW -> selectedTab = WorkspaceTab.PREVIEW
+                    WorkspaceCommand.REFRESH_FILES -> onRefreshFiles()
+                }
+            },
+        )
+    }
+
     if (showChats) {
         ChatSwitcherDialog(
             chats = state.readOnlyProjectChats,
@@ -3967,6 +3990,7 @@ private fun WorkspaceScreen(
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
     var showChats by rememberSaveable { mutableStateOf(false) }
+    var showCommandPalette by rememberSaveable { mutableStateOf(false) }
     val activeChat = state.projectChats.firstOrNull { it.id == state.activeChatId }
 
     // If a file is open, switch to the production code editor surface
@@ -4079,6 +4103,7 @@ private fun WorkspaceScreen(
                         }
                     }
                     IconButton(onClick = { showChats = true }) { Icon(Icons.Default.History, "Project chats") }
+                    IconButton(onClick = { showCommandPalette = true }) { Icon(Icons.Default.MoreVert, "Command palette") }
                     if (state.isRunning) CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -4229,6 +4254,91 @@ private fun WorkspaceScreen(
                     onOpenFile = onOpenFile,
                 )
                 WorkspaceTab.PREVIEW -> PreviewTab(state.previewReady, state.previewUrl)
+            }
+        }
+    }
+}
+
+private enum class WorkspaceCommand(val title: String, val keywords: String) {
+    CHAT("Go to Chat", "chat conversation agent"),
+    FILES("Go to Files", "files explorer project"),
+    TERMINAL("Open Terminal", "terminal shell command"),
+    CHANGES("Review Changes", "changes diff undo keep"),
+    PREVIEW("Open Preview", "preview browser localhost"),
+    REFRESH_FILES("Refresh Project Files", "refresh files reload"),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkspaceCommandPalette(
+    onDismiss: () -> Unit,
+    onSelect: (WorkspaceCommand) -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val normalized = query.trim().lowercase()
+    val commands = WorkspaceCommand.entries.filter { command ->
+        normalized.isBlank() ||
+            command.title.lowercase().contains(normalized) ||
+            command.keywords.contains(normalized)
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 260.dp, max = 520.dp)
+                .padding(horizontal = 18.dp),
+        ) {
+            Text("Command palette", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Jump between engineering tools without leaving the workspace.",
+                Modifier.padding(top = 3.dp, bottom = 12.dp),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Search commands") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            )
+            Spacer(Modifier.height(10.dp))
+            if (commands.isEmpty()) {
+                Text(
+                    "No commands match your search.",
+                    Modifier.padding(vertical = 18.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(commands, key = { it.name }) { command ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(command) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(command.title, Modifier.weight(1f))
+                                Text(
+                                    command.name.replace('_', ' ').lowercase(),
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
