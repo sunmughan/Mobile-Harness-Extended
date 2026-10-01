@@ -338,6 +338,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onRefreshFiles = viewModel::refreshProjectFiles,
             onOpenFile = viewModel::openFile,
             onCloseFile = viewModel::closeFile,
+            onSaveFile = viewModel::saveFile,
             onUndoChanges = viewModel::undoLastChanges,
             onKeepChanges = viewModel::keepLastChanges,
             onUndoFileChange = viewModel::undoFileChange,
@@ -3876,6 +3877,7 @@ private fun WorkspaceScreen(
     onRefreshFiles: () -> Unit,
     onOpenFile: (WorkspaceEntry) -> Unit,
     onCloseFile: () -> Unit,
+    onSaveFile: suspend (String, String) -> Boolean,
     onUndoChanges: () -> Unit,
     onKeepChanges: () -> Unit,
     onUndoFileChange: (String) -> Unit,
@@ -3972,13 +3974,16 @@ private fun WorkspaceScreen(
             onCloseFile()
             selectedTab = WorkspaceTab.FILES
         })
-        FileViewerScreen(
+        CodeEditorScreen(
             filePath = state.openedFilePath,
             content = state.openedFileContent,
             loading = state.fileContentLoading,
             onClose = {
                 onCloseFile()
                 selectedTab = WorkspaceTab.FILES
+            },
+            onSave = { updatedContent ->
+                onSaveFile(state.openedFilePath, updatedContent)
             },
         )
         return
@@ -4279,116 +4284,6 @@ private fun ChatSwitcherDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FileViewerScreen(
-    filePath: String,
-    content: String?,
-    loading: Boolean,
-    onClose: () -> Unit,
-) {
-    val fileName = filePath.substringAfterLast('/')
-    val ext = fileName.substringAfterLast('.', "")
-    val isMarkdown = ext == "md"
-    val clipboard = LocalClipboardManager.current
-    val scope = rememberCoroutineScope()
-    var copied by remember { mutableStateOf(false) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(fileName, fontWeight = FontWeight.SemiBold)
-                        Text(filePath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close file") }
-                },
-                actions = {
-                    if (!content.isNullOrEmpty()) {
-                        IconButton(onClick = {
-                            clipboard.setText(AnnotatedString(content))
-                            copied = true
-                            scope.launch { delay(2000); copied = false }
-                        }) {
-                            Icon(
-                                if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                                "Copy file contents",
-                                tint = if (copied) PocketOrange else MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                loading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PocketOrange)
-                    }
-                }
-                content == null -> {
-                    EmptyState(Icons.Default.Description, "No content", "The file could not be read.")
-                }
-                isMarkdown -> {
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        item { MarkdownText(markdown = content, color = MaterialTheme.colorScheme.onSurface) }
-                    }
-                }
-                else -> {
-                    // Code / plain-text viewer
-                    LazyColumn(
-                        contentPadding = PaddingValues(0.dp),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF0D1117)),
-                    ) {
-                        val lines = content.lines()
-                        items(lines.size) { idx ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 1.dp),
-                                verticalAlignment = Alignment.Top,
-                            ) {
-                                Text(
-                                    text = "${idx + 1}",
-                                    modifier = Modifier
-                                        .width(42.dp)
-                                        .padding(start = 8.dp, end = 6.dp),
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF4A5568),
-                                    textAlign = TextAlign.End,
-                                )
-                                Text(
-                                    text = lines[idx],
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(end = 12.dp),
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    lineHeight = 19.sp,
-                                    color = Color(0xFFE2E8F0),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
