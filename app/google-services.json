@@ -1,0 +1,23 @@
+{
+  "project_info": {
+    "project_number": "1002286704211",
+    "project_id": "codeair-tech",
+    "storage_bucket": "codeair-tech.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1002286704211:android:e69225f21ff969bd2d48a6",
+        "android_client_info": {
+          "package_name": "com.jarves.mh"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "AIzaSyBTO8BE8joPhZxpvMgTnTbWRUTaxcZtzpI"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}
