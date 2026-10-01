@@ -70,9 +70,23 @@ jobs:
         run: |
           set -euxo pipefail
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          for apk in app/build/outputs/apk/release/*.apk; do
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/*/release/*.apk)
+          if [ "${#apks[@]}" -eq 0 ]; then
+            echo "No release APKs found"
+            find app/build/outputs/apk -type f -name '*.apk' -print
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            echo "Verifying $apk"
             "$APKSIGNER" verify --verbose "$apk"
           done
+
+      - name: Inspect release APKs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find app/build/outputs/apk -type f -name '*.apk' -printf '%p %s bytes\\n' | sort
 
       - name: Upload release APKs
         uses: actions/upload-artifact@v4
