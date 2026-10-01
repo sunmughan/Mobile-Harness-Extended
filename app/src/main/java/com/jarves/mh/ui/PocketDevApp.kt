@@ -3968,7 +3968,7 @@ private fun WorkspaceScreen(
     var showChats by rememberSaveable { mutableStateOf(false) }
     val activeChat = state.projectChats.firstOrNull { it.id == state.activeChatId }
 
-    // If a file is open, show the FileViewerScreen on top
+    // If a file is open, switch to the production code editor surface
     if (state.openedFilePath != null) {
         BackHandler(onBack = {
             onCloseFile()
@@ -4174,6 +4174,7 @@ private fun WorkspaceScreen(
                     taskFinishedAtMillis = state.taskFinishedAtMillis,
                     thinkingActive = state.liveThinking,
                     agentKind = state.agentKind,
+                    workspaceFiles = state.workspaceFiles,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
                         attachmentLauncher.launch(arrayOf("image/*", "text/*", "application/json", "application/xml"))
@@ -4297,15 +4298,23 @@ private fun FilesTab(
     onExport: () -> Unit,
 ) {
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var fileQuery by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(files.map { it.path }) {
         val directories = files.asSequence().filter { it.isDirectory }.map { it.path }.toSet()
         expandedDirectories = expandedDirectories.filter { it in directories }
     }
     val expandedSet = expandedDirectories.toSet()
-    val visibleFiles = files.filter { entry ->
-        val segments = entry.path.split('/')
-        segments.size == 1 || (1 until segments.size).all { depth ->
-            segments.take(depth).joinToString("/") in expandedSet
+    val normalizedQuery = fileQuery.trim().lowercase()
+    val visibleFiles = if (normalizedQuery.isBlank()) {
+        files.filter { entry ->
+            val segments = entry.path.split('/')
+            segments.size == 1 || (1 until segments.size).all { depth ->
+                segments.take(depth).joinToString("/") in expandedSet
+            }
+        }
+    } else {
+        files.filter { entry ->
+            !entry.isDirectory && entry.path.lowercase().contains(normalizedQuery)
         }
     }
     val directChildCounts = files.filter { candidate ->
@@ -4350,7 +4359,21 @@ private fun FilesTab(
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = fileQuery,
+                onValueChange = { fileQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Search project files") },
+                placeholder = { Text("Search by path or filename") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (fileQuery.isNotEmpty()) {
+                        TextButton(onClick = { fileQuery = "" }) { Text("Clear") }
+                    }
+                },
+            )
         }
         if (suggestedProjectRoot != null) {
             item(key = "suggested-project-root") {
@@ -4370,6 +4393,19 @@ private fun FilesTab(
         }
         if (!loading && files.isEmpty()) {
             item { EmptyState(Icons.Default.Folder, "No files yet", "Ask your coding agent to create something in this project.") }
+        } else if (!loading && normalizedQuery.isNotBlank() && visibleFiles.isEmpty()) {
+            item { EmptyState(Icons.Default.Search, "No matching files", "Try a different filename or path.") }
+        }
+        if (!loading && normalizedQuery.isNotBlank() && visibleFiles.isNotEmpty()) {
+            item(key = "file-search-count") {
+                val label = visibleFiles.size.toString() + " matching file" + if (visibleFiles.size == 1) "" else "s"
+                Text(
+                    label,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         items(visibleFiles, key = { it.path }) { entry ->
             Row(
@@ -4443,6 +4479,7 @@ private fun ChatTab(
     taskFinishedAtMillis: Long?,
     thinkingActive: Boolean,
     agentKind: AgentKind,
+    workspaceFiles: List<WorkspaceEntry>,
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
