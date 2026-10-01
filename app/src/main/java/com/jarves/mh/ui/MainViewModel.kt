@@ -3108,6 +3108,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopTask() {
         if (!_state.value.isRunning) return
+        runtimeRecoveryJob?.cancel()
+        runtimeRecoveryJob = null
+        activeRuntimeRequest = null
+        _state.update { it.copy(runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
         viewModelScope.launch { activeRuntime().stopActiveSession() }
     }
 
@@ -3426,6 +3430,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
                         taskFinishedAtMillis = finishedAt,
                         currentTaskRequest = null,
+                        runtimeRecoveryStatus = null,
+                        runtimeRecoveryAttempt = 0,
+                        runtimeRecoveryCanResume = false,
                     )
                 }
                 is RuntimeEvent.SessionFailed -> {
@@ -3448,6 +3455,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         activity = listOf(ActivityItem("Task stopped", event.reason)) + current.activity,
                         taskFinishedAtMillis = finishedAt,
                         currentTaskRequest = null,
+                        runtimeRecoveryStatus = null,
+                        runtimeRecoveryAttempt = 0,
+                        runtimeRecoveryCanResume = false,
                     )
                 }
             }
@@ -3544,6 +3554,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 activeSessionId = null,
+                runtimeRecoveryStatus = null,
+                runtimeRecoveryAttempt = 0,
+                runtimeRecoveryCanResume = false,
                 activeApiKeyName = next.name,
                 toastMessage = "${active.name} failed. Switched to ${next.name}.",
                 liveProcess = it.liveProcess + ActivityItem("API key switched", "Using ${next.name}", true),
