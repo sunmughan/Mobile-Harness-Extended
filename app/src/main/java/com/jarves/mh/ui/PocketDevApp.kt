@@ -99,6 +99,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
@@ -4053,8 +4054,62 @@ private fun WorkspaceScreen(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (selectedTab) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (state.runtimeRecoveryStatus != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(state.runtimeRecoveryStatus, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (state.runtimeRecoveryCanResume) "Your task state is preserved." else "Mobile Harness is reconnecting without discarding the task.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                        if (state.runtimeRecoveryCanResume) {
+                            Button(onClick = onResumeTask) { Text("Resume") }
+                        } else {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                }
+            }
+            if (selectedTab == WorkspaceTab.CHAT && state.changes.isNotEmpty()) {
+                val added = state.changes.sumOf { it.additions }
+                val deleted = state.changes.sumOf { it.deletions }
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable { selectedTab = WorkspaceTab.CHANGES },
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Code, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Files changed", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text("+$added", color = PocketGreen, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.width(8.dp))
+                            Text("-$deleted", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Review changes", Modifier.size(18.dp))
+                        }
+                        Text(
+                            state.changes.take(4).joinToString(" · ") { it.path } +
+                                if (state.changes.size > 4) " +${state.changes.size - 4} more" else "",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (selectedTab) {
                 WorkspaceTab.CHAT -> ChatTab(
                     state.messages,
                     state.pendingApproval,
