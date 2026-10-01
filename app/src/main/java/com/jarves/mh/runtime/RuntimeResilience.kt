@@ -13,7 +13,7 @@ object RuntimeFailureClassifier {
         return listOf(
             "network error", "network unavailable", "offline", "connection reset",
             "connection refused", "connection closed", "connection aborted",
-            "connection timed out", "connect timed out", "socket timeout",
+            "connection timed out", "connect timed out", "socket timeout", "sockettimeoutexception",
             "socketexception", "unknownhostexception", "connectexception", "dns",
             "temporary failure", "temporarily unavailable", "service unavailable",
             "bad gateway", "gateway timeout", "http 408", "http 425", "http 502",
