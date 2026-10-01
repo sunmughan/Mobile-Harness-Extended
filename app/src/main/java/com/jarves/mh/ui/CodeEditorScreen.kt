@@ -94,6 +94,7 @@ fun CodeEditorScreen(
     var lineInput by rememberSaveable(filePath) { mutableStateOf("") }
     var bracketPair by remember(filePath) { mutableStateOf<BracketPair?>(null) }
     var saving by rememberSaveable(filePath) { mutableStateOf(false) }
+    var showDiscardDialog by rememberSaveable(filePath) { mutableStateOf(false) }
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -127,6 +128,40 @@ fun CodeEditorScreen(
             value = TextFieldValue(replaced, TextRange(cursor))
             bracketPair = findBracketPair(replaced, cursor)
         }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Unsaved changes") },
+            text = { Text("Save your changes to " + filePath.substringAfterLast('/') + " before closing?") },
+            confirmButton = {
+                TextButton(
+                    enabled = !saving,
+                    onClick = {
+                        scope.launch {
+                            saving = true
+                            val saved = onSave(value.text)
+                            saving = false
+                            if (saved) {
+                                savedText = value.text
+                                showDiscardDialog = false
+                                onClose()
+                            }
+                        }
+                    },
+                ) { Text("Save & close") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = !saving,
+                    onClick = {
+                        showDiscardDialog = false
+                        onClose()
+                    },
+                ) { Text("Discard") }
+            },
+        )
     }
 
     if (outlineOpen) {
@@ -205,6 +240,7 @@ fun CodeEditorScreen(
         )
     }
 
+    // The parent owns navigation; the editor owns dirty-state confirmation.
     Scaffold(
         topBar = {
             TopAppBar(
@@ -215,7 +251,10 @@ fun CodeEditorScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close editor") }
+                    IconButton(
+                        onClick = { if (dirty && !readOnly) showDiscardDialog = true else onClose() },
+                        enabled = !saving,
+                    ) { Icon(Icons.Default.Close, "Close editor") }
                 },
                 actions = {
                     if (dirty && !readOnly) {
