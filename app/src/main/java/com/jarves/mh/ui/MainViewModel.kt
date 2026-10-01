@@ -55,6 +55,8 @@ import com.jarves.mh.runtime.readTailText
 import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.RuntimeFailureClassifier
 import com.jarves.mh.runtime.WorkspaceCheckpoints
+import com.jarves.mh.runtime.ProjectIndex
+import com.jarves.mh.runtime.ContextEngine
 import com.jarves.mh.runtime.RuntimeRetryPolicy
 import com.jarves.mh.runtime.SkillInfo
 import com.jarves.mh.runtime.SkillManager
@@ -281,6 +283,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
     private val editorCheckpoints = WorkspaceCheckpoints(application.filesDir)
+    private val projectIndex = ProjectIndex(application.filesDir)
+    private val contextEngine = ContextEngine(projectIndex)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
     private var runtimeRecoveryJob: Job? = null
     private var runtimeRecoveryAttempt = 0
@@ -3189,16 +3193,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         viewModelScope.launch {
             val request = activeRuntimeRequest ?: return@launch
-            withContext(Dispatchers.IO) {
-                skillManager.syncToWorkspace(projectWorkspaceRoot(request.project))
+            val workspace = withContext(Dispatchers.IO) {
+                val root = projectWorkspaceRoot(request.project)
+                skillManager.syncToWorkspace(root)
+                root
             }
-            request.runtime.startSession(
-                request.project.id,
-                request.project.slug,
-                request.project.kind,
-                request.prompt,
-                request.history,
-                request.provider,
+            val enrichedPrompt = withContext(Dispatchers.IO) {
+                val context = contextEngine.buildPromptContext(
+                    projectId = request.project.id,
+                    workspace = workspace,
+                    request = requestText,
+                    mentionedPaths = mentionedPaths,
+                    maxReferences = 12,
+                )
+                if (context.isBlank()) request.prompt else request.prompt + "\n\n" + context
+            }
+            val enriched = request.copy(prompt = enrichedPrompt)
+            activeRuntimeRequest = enriched
+            enriched.runtime.startSession(
+                enriched.project.id,
+                enriched.project.slug,
+                enriched.project.kind,
+                enriched.prompt,
+                enriched.history,
+                enriched.provider,
             )
         }
     }
