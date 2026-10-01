@@ -2021,6 +2021,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         openProject(project)
     }
 
+    /** Routes a notification tap into the existing project workspace instead of creating a second navigation stack. */
+    fun handleNotificationRoute(route: String?) {
+        val normalized = route?.trim().orEmpty()
+        if (normalized.isBlank()) return
+        val segments = normalized.trim('/').split('/').filter(String::isNotBlank)
+        val slug = segments.getOrNull(1).takeIf { segments.firstOrNull() == "project" }
+        if (slug == null) return
+        val project = _state.value.projects.firstOrNull { it.slug == slug }
+        if (project == null) {
+            _state.update { it.copy(toastMessage = "The project from this notification is no longer available") }
+            return
+        }
+        openProject(project)
+    }
     fun consumeToast() = _state.update { it.copy(toastMessage = null) }
 
     fun createProject(name: String) {
