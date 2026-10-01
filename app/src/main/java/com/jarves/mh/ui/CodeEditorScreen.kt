@@ -93,6 +93,7 @@ fun CodeEditorScreen(
     var replace by rememberSaveable(filePath) { mutableStateOf("") }
     var lineInput by rememberSaveable(filePath) { mutableStateOf("") }
     var bracketPair by remember(filePath) { mutableStateOf<BracketPair?>(null) }
+    var saving by rememberSaveable(filePath) { mutableStateOf(false) }
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -219,12 +220,21 @@ fun CodeEditorScreen(
                 actions = {
                     if (dirty && !readOnly) {
                         IconButton(
+                            enabled = !saving,
                             onClick = {
-                                onSave(value.text)
-                                savedText = value.text
+                                val textToSave = value.text
+                                scope.launch {
+                                    saving = true
+                                    if (onSave(textToSave)) savedText = textToSave
+                                    saving = false
+                                }
                             },
                         ) {
-                            Icon(Icons.Default.Save, "Save file", tint = MaterialTheme.colorScheme.primary)
+                            if (saving) {
+                                CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Save, "Save file", tint = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     }
                     IconButton(onClick = { searchOpen = !searchOpen }) {
