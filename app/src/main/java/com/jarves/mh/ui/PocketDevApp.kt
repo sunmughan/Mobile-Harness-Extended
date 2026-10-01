@@ -162,6 +162,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -3114,11 +3115,55 @@ private fun ProjectsScreen(
     }
     Scaffold(
         topBar = {
-            TopAppBar(
-                modifier = Modifier.padding(top = 8.dp),
-                title = { Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(compact = true); Spacer(Modifier.width(9.dp)); Text("Mobile Harness", fontWeight = FontWeight.Bold) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, start = 18.dp, end = 18.dp, bottom = 4.dp),
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                    shape = RoundedCornerShape(7.dp),
+                ) {
+                    Text(
+                        text = "FIELD BUILD  •  v${BuildConfig.VERSION_NAME}",
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.45.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.height(7.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BrandMark(compact = false)
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Mobile ",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                            Text(
+                                text = "Harness",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                        }
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            text = "> mobile-harness",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         },
     ) { padding ->
         LazyColumn(
@@ -5535,30 +5580,20 @@ private fun EmptyState(icon: ImageVector, title: String, body: String) {
 
 @Composable
 private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
-    val size = if (compact) 32.dp else 50.dp
-    val iconSize = if (compact) 17.dp else 24.dp
-    val cornerRadius = if (compact) 9.dp else 14.dp
-    val primary = MaterialTheme.colorScheme.primary
+    val size = if (compact) 32.dp else 42.dp
+    val cornerRadius = if (compact) 9.dp else 12.dp
 
     Box(
         modifier = modifier
             .size(size)
-            .background(
-                color = primary.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(cornerRadius),
-            )
-            .border(
-                width = 1.dp,
-                color = primary.copy(alpha = 0.32f),
-                shape = RoundedCornerShape(cornerRadius),
-            ),
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Default.Terminal,
+        androidx.compose.foundation.Image(
+            painter = painterResource(id = R.mipmap.ic_launcher),
             contentDescription = "Mobile Harness",
-            modifier = Modifier.size(iconSize),
-            tint = primary,
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }
