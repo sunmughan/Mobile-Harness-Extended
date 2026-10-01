@@ -151,3 +151,15 @@ No feature is complete if it only works as a demo or mock.
 ## Completion criteria
 
 A phase is complete only when production implementation exists, no placeholder/stub/demo implementation remains, persistence/recovery behavior is defined, Android/Linux boundaries are respected, UI is integrated into existing navigation/theme, tests cover core behavior, build/lint/test are executed where the environment permits, and changed files/known limitations are reported.
+
+## Firebase / FCM remote notification boundary
+
+The notification system is local-first. Android/Linux runtime work continues to publish local foreground-service and task-result notifications through `NotificationCoordinator`; Firebase is not placed on that execution-critical path.
+
+For the `online` flavor, Firebase Cloud Messaging is an additional remote-event transport. The online-only `MobileHarnessFirebaseMessagingService` accepts data-oriented messages, normalizes their title/body, and delegates presentation to the same `NotificationCoordinator`. The service also persists the current FCM registration token in app-private storage for a future authenticated backend registration flow.
+
+The `offline` flavor does not include the Firebase Messaging runtime or messaging service. This preserves the offline runtime's dependency boundary while allowing the shared Android notification policy to remain unchanged.
+
+Background FCM notification payloads may be displayed directly by the FCM SDK rather than invoking `onMessageReceived`. Remote backends that need Mobile Harness to control notification presentation should therefore use data messages and the documented route/title/body contract.
+
+The supplied Firebase configuration contains a matching `com.jarves.mh` Android client; the project configuration is scoped to that client rather than carrying unrelated sibling-app clients.
