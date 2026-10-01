@@ -3274,10 +3274,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else if (current.activeSessionId != null && current.activeSessionId != event.sessionId) {
                 current
             } else when (event) {
-                is RuntimeEvent.SessionStarted -> current.copy(
-                    activeSessionId = event.sessionId,
-                    activity = current.activity.mapIndexed { index, item -> if (index == 0) item.copy(isComplete = true) else item },
-                )
+                is RuntimeEvent.SessionStarted -> {
+                    runtimeRecoveryJob?.cancel()
+                    runtimeRecoveryJob = null
+                    runtimeRecoveryAttempt = 0
+                    current.copy(
+                        activeSessionId = event.sessionId,
+                        runtimeRecoveryStatus = null,
+                        runtimeRecoveryCanResume = false,
+                        activity = current.activity.mapIndexed { index, item -> if (index == 0) item.copy(isComplete = true) else item },
+                    )
+                }
                 is RuntimeEvent.AssistantDelta -> {
                     val timeline = if (current.liveThinking || current.liveProcess.any { !isNoisyRuntimeItem(it) }) {
                         finishWorkSegment(current)
