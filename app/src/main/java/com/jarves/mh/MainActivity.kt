@@ -16,7 +16,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val notificationRoute = savedInstanceState?.getStringExtra(EXTRA_NOTIFICATION_ROUTE)
+        val notificationRoute = savedInstanceState?.getString(EXTRA_NOTIFICATION_ROUTE)
             ?: intent.getStringExtra(EXTRA_NOTIFICATION_ROUTE)
         setContent {
             val vm: MainViewModel = viewModel()
@@ -28,10 +28,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent?.getStringExtra(EXTRA_NOTIFICATION_ROUTE)?.let { route ->
+        intent.getStringExtra(EXTRA_NOTIFICATION_ROUTE)?.let { route ->
             val vm: MainViewModel = viewModel()
             vm.handleNotificationRoute(route)
         }
