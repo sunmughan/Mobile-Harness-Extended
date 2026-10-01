@@ -53,6 +53,11 @@ import com.jarves.mh.runtime.RuntimeSetupSnapshot
 import com.jarves.mh.runtime.RuntimeSetupStatus
 import com.jarves.mh.runtime.readTailText
 import com.jarves.mh.runtime.supportsArm64Runtime
+import com.jarves.mh.runtime.RuntimeFailureClassifier
+import com.jarves.mh.runtime.RuntimeRetryPolicy
+import com.jarves.mh.runtime.SkillInfo
+import com.jarves.mh.runtime.SkillManager
+import com.jarves.mh.runtime.SkillSearchResult
 import com.jarves.mh.runtime.AndroidAppInstaller
 import com.jarves.mh.update.AppUpdateInfo
 import com.jarves.mh.update.AppUpdater
@@ -73,6 +78,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -197,6 +203,13 @@ data class AppUiState(
     val previewUrl: String? = null,
     val isRunning: Boolean = false,
     val activeSessionId: String? = null,
+    val runtimeRecoveryStatus: String? = null,
+    val runtimeRecoveryAttempt: Int = 0,
+    val runtimeRecoveryCanResume: Boolean = false,
+    val skills: List<SkillInfo> = emptyList(),
+    val skillSearchResults: List<SkillSearchResult> = emptyList(),
+    val skillsBusy: Boolean = false,
+    val skillsMessage: String? = null,
     val toastMessage: String? = null,
     val projectTerminalLines: List<TerminalOutputLine> = emptyList(),
     val projectTerminalLiveOutput: String = "",
@@ -265,6 +278,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
+    private val skillManager = SkillManager(application)
+    private val runtimeRetryPolicy = RuntimeRetryPolicy()
+    private var runtimeRecoveryJob: Job? = null
+    private var runtimeRecoveryAttempt = 0
     private fun appUpdater(): AppUpdater = AppUpdater(
         getApplication(),
         if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else "",
@@ -315,6 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             projects = preferences.loadProjects(),
             githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
             githubLogin = preferences.githubLogin.takeIf(String::isNotBlank),
+            skills = skillManager.installed(),
             selectedDevStacks = preferences.selectedDevStacks.mapNotNull { name ->
                 runCatching { DevStack.valueOf(name) }.getOrNull()
             }.toSet() + DevStack.WEB,
@@ -3042,15 +3060,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         touchProject(project.id)
         persistMessages()
         val history = state.value.messages // includes all messages up to now
-        val runtimePrompt = if (attachments.isEmpty()) requestText else buildString {
+        val runtimePrompt = buildString {
             appendLine(requestText)
-            appendLine()
-            appendLine("<attached_files>")
-            attachments.forEach { attachment ->
-                appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+            if (attachments.isNotEmpty()) {
+                appendLine()
+                appendLine("<attached_files>")
+                attachments.forEach { attachment ->
+                    appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+                }
+                appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
+                appendLine("</attached_files>")
             }
-            appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
-            appendLine("</attached_files>")
+            val skillContext = skillManager.buildPromptContext(state.value.agentKind)
+            if (skillContext.isNotBlank()) {
+                appendLine()
+                appendLine(skillContext)
+            }
         }
         failedApiKeyIds.clear()
         activeRuntimeRequest = RuntimeRetryRequest(
@@ -3061,16 +3086,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             provider = state.value.provider,
         )
         viewModelScope.launch {
-            activeRuntimeRequest?.let { request ->
-                request.runtime.startSession(
-                    request.project.id,
-                    request.project.slug,
-                    request.project.kind,
-                    request.prompt,
-                    request.history,
-                    request.provider,
-                )
+            val request = activeRuntimeRequest ?: return@launch
+            withContext(Dispatchers.IO) {
+                skillManager.syncToWorkspace(projectWorkspaceRoot(request.project))
             }
+            request.runtime.startSession(
+                request.project.id,
+                request.project.slug,
+                request.project.kind,
+                request.prompt,
+                request.history,
+                request.provider,
+            )
         }
     }
 
@@ -3081,6 +3108,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopTask() {
         if (!_state.value.isRunning) return
+        runtimeRecoveryJob?.cancel()
+        runtimeRecoveryJob = null
+        activeRuntimeRequest = null
+        _state.update { it.copy(runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
         viewModelScope.launch { activeRuntime().stopActiveSession() }
     }
 
@@ -3236,16 +3267,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             antigravityAuthController.invalidateSession(event.reason)
         }
         if (event is RuntimeEvent.SessionFailed && retryWithNextApiKey(event)) return
+        if (event is RuntimeEvent.SessionFailed && recoverTransientRuntimeFailure(event)) return
         _state.update { current ->
             if (!current.isRunning) {
                 current
             } else if (current.activeSessionId != null && current.activeSessionId != event.sessionId) {
                 current
             } else when (event) {
-                is RuntimeEvent.SessionStarted -> current.copy(
-                    activeSessionId = event.sessionId,
-                    activity = current.activity.mapIndexed { index, item -> if (index == 0) item.copy(isComplete = true) else item },
-                )
+                is RuntimeEvent.SessionStarted -> {
+                    runtimeRecoveryJob?.cancel()
+                    runtimeRecoveryJob = null
+                    runtimeRecoveryAttempt = 0
+                    current.copy(
+                        activeSessionId = event.sessionId,
+                        runtimeRecoveryStatus = null,
+                        runtimeRecoveryCanResume = false,
+                        activity = current.activity.mapIndexed { index, item -> if (index == 0) item.copy(isComplete = true) else item },
+                    )
+                }
                 is RuntimeEvent.AssistantDelta -> {
                     val timeline = if (current.liveThinking || current.liveProcess.any { !isNoisyRuntimeItem(it) }) {
                         finishWorkSegment(current)
@@ -3398,6 +3437,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
                         taskFinishedAtMillis = finishedAt,
                         currentTaskRequest = null,
+                        runtimeRecoveryStatus = null,
+                        runtimeRecoveryAttempt = 0,
+                        runtimeRecoveryCanResume = false,
                     )
                 }
                 is RuntimeEvent.SessionFailed -> {
@@ -3420,6 +3462,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         activity = listOf(ActivityItem("Task stopped", event.reason)) + current.activity,
                         taskFinishedAtMillis = finishedAt,
                         currentTaskRequest = null,
+                        runtimeRecoveryStatus = null,
+                        runtimeRecoveryAttempt = 0,
+                        runtimeRecoveryCanResume = false,
                     )
                 }
             }
@@ -3438,6 +3483,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         persistMessages(includeLiveProcess = true)
     }
 
+    private fun recoverTransientRuntimeFailure(event: RuntimeEvent.SessionFailed): Boolean {
+        val current = _state.value
+        val request = activeRuntimeRequest ?: return false
+        if (!current.isRunning || current.activeSessionId != event.sessionId) return false
+        if (!request.runtime.supportsSessionRecovery) return false
+        if (!RuntimeFailureClassifier.isTransientNetworkFailure(event.reason)) return false
+
+        if (runtimeRecoveryAttempt >= runtimeRetryPolicy.maxAutomaticRetries) {
+            _state.update { it.copy(
+                activeSessionId = null,
+                runtimeRecoveryStatus = "Waiting for network",
+                runtimeRecoveryCanResume = true,
+                liveProcess = it.liveProcess + ActivityItem("Connection interrupted", "Automatic retries are exhausted. The task is preserved and can be resumed."),
+                activity = listOf(ActivityItem("Waiting for network", "The task is preserved. Resume when connectivity is available.")) + it.activity,
+            ) }
+            persistMessages(includeLiveProcess = true)
+            return true
+        }
+
+        runtimeRecoveryJob?.cancel()
+        runtimeRecoveryAttempt += 1
+        val attempt = runtimeRecoveryAttempt
+        val retryDelay = runtimeRetryPolicy.delayMillis(attempt, kotlin.random.Random.nextDouble())
+        _state.update { it.copy(
+            activeSessionId = null,
+            runtimeRecoveryStatus = "Retrying connection…",
+            runtimeRecoveryAttempt = attempt,
+            runtimeRecoveryCanResume = false,
+            liveProcess = it.liveProcess + ActivityItem(
+                "Connection interrupted",
+                "Retrying connection (attempt " + attempt + "/" + runtimeRetryPolicy.maxAutomaticRetries + ")…",
+            ),
+        ) }
+        persistMessages(includeLiveProcess = true)
+        runtimeRecoveryJob = viewModelScope.launch {
+            delay(retryDelay)
+            if (!_state.value.isRunning || activeRuntimeRequest !== request) return@launch
+            _state.update { it.copy(
+                runtimeRecoveryStatus = "Reconnecting…",
+                liveProcess = it.liveProcess + ActivityItem("Reconnecting", "Resuming the provider session after a transient network failure."),
+            ) }
+            runCatching {
+                request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider)
+            }.onFailure { error ->
+                onRuntimeEvent(RuntimeEvent.SessionFailed(event.sessionId, RuntimeFailureClassifier.normalizeThrowable(error)))
+            }
+        }
+        return true
+    }
+
+    fun resumeInterruptedTask() {
+        val request = activeRuntimeRequest ?: return
+        if (!_state.value.isRunning || !_state.value.runtimeRecoveryCanResume) return
+        runtimeRecoveryJob?.cancel()
+        runtimeRecoveryAttempt = 0
+        _state.update { it.copy(runtimeRecoveryStatus = "Reconnecting…", runtimeRecoveryCanResume = false, liveProcess = it.liveProcess + ActivityItem("Resuming task", "Reconnecting to the preserved provider session.")) }
+        runtimeRecoveryJob = viewModelScope.launch {
+            runCatching {
+                request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider)
+            }.onFailure { error ->
+                _state.update { state -> state.copy(runtimeRecoveryStatus = "Waiting for network", runtimeRecoveryCanResume = true, liveProcess = state.liveProcess + ActivityItem("Resume failed", RuntimeFailureClassifier.normalizeThrowable(error))) }
+            }
+        }
+    }
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
         if (current.agentKind == AgentKind.ANTIGRAVITY) return false
@@ -3452,6 +3561,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 activeSessionId = null,
+                runtimeRecoveryStatus = null,
+                runtimeRecoveryAttempt = 0,
+                runtimeRecoveryCanResume = false,
                 activeApiKeyName = next.name,
                 toastMessage = "${active.name} failed. Switched to ${next.name}.",
                 liveProcess = it.liveProcess + ActivityItem("API key switched", "Using ${next.name}", true),
@@ -3478,6 +3590,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "expired" in value || "quota" in value || "rate limit" in value
     }
 
+    fun refreshSkills() {
+        _state.update { it.copy(skills = skillManager.installed()) }
+    }
+
+    fun searchSkills(query: String) {
+        if (_state.value.skillsBusy) return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Searching GitHub…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.searchGitHub(query) } }
+            result.onSuccess { matches -> _state.update { it.copy(skillsBusy = false, skillSearchResults = matches, skillsMessage = "Found " + matches.size + " repositories.") } }
+                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "GitHub skill search failed.") } }
+        }
+    }
+
+    fun importSkillFromGitHub(url: String) {
+        if (_state.value.skillsBusy) return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing skill bundle…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromGitHub(url) } }
+            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
+                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
+        }
+    }
+
+    fun importSkillFromUri(uri: Uri) {
+        if (_state.value.skillsBusy) return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing local skill bundle…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromUri(uri) } }
+            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
+                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
+        }
+    }
+
+    fun removeSkill(name: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val removed = skillManager.remove(name)
+            _state.update { it.copy(skills = skillManager.installed(), skillsMessage = if (removed) "Removed " + name else "Skill was not installed.") }
+        }
+    }
     private fun touchProject(projectId: String) {
         val now = System.currentTimeMillis()
         _state.update { current ->
