@@ -143,7 +143,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions.jvmTarget = "17"
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -203,8 +205,8 @@ dependencies {
 
     // FCM is available to the online build only. The offline build remains
     // free of the messaging runtime while sharing the same notification policy.
-    onlineImplementation(platform("com.google.firebase:firebase-bom:34.19.0"))
-    onlineImplementation("com.google.firebase:firebase-messaging")
+    add("onlineImplementation", platform("com.google.firebase:firebase-bom:34.19.0"))
+    add("onlineImplementation", "com.google.firebase:firebase-messaging")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250107")
