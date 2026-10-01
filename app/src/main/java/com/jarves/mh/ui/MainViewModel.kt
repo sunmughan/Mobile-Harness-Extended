@@ -54,6 +54,7 @@ import com.jarves.mh.runtime.RuntimeSetupStatus
 import com.jarves.mh.runtime.readTailText
 import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.RuntimeFailureClassifier
+import com.jarves.mh.runtime.WorkspaceCheckpoints
 import com.jarves.mh.runtime.RuntimeRetryPolicy
 import com.jarves.mh.runtime.SkillInfo
 import com.jarves.mh.runtime.SkillManager
@@ -279,6 +280,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
+    private val editorCheckpoints = WorkspaceCheckpoints(application.filesDir)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
     private var runtimeRecoveryJob: Job? = null
     private var runtimeRecoveryAttempt = 0
@@ -2851,6 +2853,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(openedFilePath = null, openedFileContent = null, fileContentLoading = false) }
     }
 
+    /**
+     * Persists an edited workspace file as an explicit, reviewable change.
+     * A checkpoint is created before the first manual edit so the existing
+     * Changes tab can Undo/Keep the edit using the same durable mechanism as
+     * agent-generated changes.
+     */
+    suspend fun saveFile(path: String, content: String): Boolean {
+        val current = _state.value
+        val project = current.activeProject ?: return false
+        if (current.isRunning || current.projectTerminalRunning) {
+            _state.update { it.copy(toastMessage = "Stop the running task before editing files") }
+            return false
+        }
+        if (path.isBlank() || path.startsWith('/') || editorCheckpoints.isInternalRuntimePath(path)) {
+            _state.update { it.copy(toastMessage = "This workspace path cannot be edited") }
+            return false
+        }
+        if (path.split('/').any { it == ".." || it.isBlank() }) {
+            _state.update { it.copy(toastMessage = "Unsafe workspace path") }
+            return false
+        }
+        if (content.length > MAX_EDITABLE_FILE_CHARS) {
+            _state.update { it.copy(toastMessage = "This file is too large to edit safely in the mobile editor") }
+            return false
+        }
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val workspace = projectWorkspaceRoot(project).canonicalFile
+                val rootPath = workspace.toPath()
+                val target = File(workspace, path).canonicalFile
+                require(target.parentFile?.canonicalFile?.toPath()?.startsWith(rootPath) == true) { "Workspace path escapes project" }
+                val existing = target.takeIf(File::isFile)
+                if (existing != null && existing.length() > MAX_EDITABLE_FILE_CHARS) {
+                    error("This file is too large to edit safely in the mobile editor")
+                }
+                if (existing != null && existing.readText() == content) return@runCatching Unit
+
+                editorCheckpoints.createCheckpoint(project.id, workspace)
+                target.parentFile?.mkdirs()
+                val temporary = File(
+                    target.parentFile,
+                    ".${target.name}.mh-edit-${UUID.randomUUID()}.tmp",
+                )
+                try {
+                    temporary.writeText(content)
+                    runCatching {
+                        Files.move(
+                            temporary.toPath(),
+                            target.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        )
+                    }.getOrElse {
+                        Files.move(
+                            temporary.toPath(),
+                            target.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        )
+                    }
+                } finally {
+                    temporary.delete()
+                }
+                editorCheckpoints.saveChangedPaths(project.id, listOf(path))
+            }
+        }
+        return result.fold(
+            onSuccess = {
+                val workspace = projectWorkspaceRoot(project)
+                val pendingPaths = editorCheckpoints.readChangedPaths(project.id)
+                val changes = editorCheckpoints.buildChangeDetails(project.id, workspace, pendingPaths)
+                _state.update { state ->
+                    state.copy(
+                        openedFileContent = content,
+                        changes = changes,
+                        toastMessage = "Saved " + path,
+                        workspaceFiles = state.workspaceFiles.map { entry ->
+                            if (entry.path == path) entry.copy(
+                                sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
+                            ) else entry
+                        },
+                    )
+                }
+                true
+            },
+            onFailure = { error ->
+                _state.update { it.copy(toastMessage = error.message ?: "Could not save " + path) }
+                false
+            },
+        )
+    }
 
     private fun readWorkspace(project: Project): List<WorkspaceEntry> {
         val root = projectWorkspaceRoot(project)
@@ -3694,6 +3786,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val MAX_ATTACHMENTS_PER_MESSAGE = 5
         private const val MAX_PROCESS_OUTPUT_BYTES = 512 * 1024
         private const val MAX_ATTACHMENT_BYTES = 25L * 1024L * 1024L
+        private const val MAX_EDITABLE_FILE_CHARS = 512_000
         private const val MAX_IMPORTED_PROJECT_BYTES = 8L * 1024L * 1024L * 1024L
         private const val MAX_IMPORTED_ZIP_ENTRIES = 100_000
         private const val LEGACY_GITHUB_TOKEN_KEY = "GITHUB_APP"
