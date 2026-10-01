@@ -141,6 +141,7 @@ class AntigravityRuntimeBridge(
     private val conversationId: (String) -> String?,
     private val saveConversationId: (String, String) -> Unit,
 ) : RuntimeBridge {
+    override val supportsSessionRecovery: Boolean = true
     private val installer = RuntimeInstaller(context)
     private val checkpoints = WorkspaceCheckpoints(context.filesDir)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
