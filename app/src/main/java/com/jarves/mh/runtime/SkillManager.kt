@@ -111,6 +111,8 @@ class SkillManager(private val context: Context) {
         val destination = File(workspace, ".agents/skills")
         destination.mkdirs()
         val skills = installed()
+        val activeNames = skills.mapTo(mutableSetOf()) { it.name }
+        destination.listFiles()?.filter { it.isDirectory && it.name !in activeNames }?.forEach(File::deleteRecursively)
         skills.forEach { skill ->
             val target = File(destination, skill.name)
             target.deleteRecursively()
