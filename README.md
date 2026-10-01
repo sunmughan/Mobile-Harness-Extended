@@ -28,7 +28,7 @@
 </div>
 
 > [!NOTE]
-> **Current development status (October 2026):** Mobile Harness v1.0.5 is the current release candidate; the app is being expanded into a mobile-first agentic IDE. The current main branch includes the production code-editor foundation (line numbers, syntax highlighting, bracket matching, find/replace, symbol outline, go-to-line, atomic saves), workspace file search, @file mentions, command palette, project indexing/context ranking, durable workspace checkpoints, local Android task notifications, optional online FCM notifications, runtime resilience/retry handling, and the existing Linux/PRoot agent runtime.
+> **Current development status (October 2026):** Mobile Harness v1.0.5 is the current release candidate; the verified release build includes startup resilience and is being expanded into a mobile-first agentic IDE. The current main branch includes the production code-editor foundation (line numbers, syntax highlighting, bracket matching, find/replace, symbol outline, go-to-line, atomic saves), workspace file search, @file mentions, command palette, project indexing/context ranking, durable workspace checkpoints, local Android task notifications, optional online FCM notifications, runtime resilience/retry handling, and the existing Linux/PRoot agent runtime.
 >
 > The repository's Android CI validates unit tests plus online/offline debug and release compilation, and the release pipeline signs CI APKs and verifies their APK signatures before publishing them as workflow artifacts. A CI-signed APK is a test/release candidate build; Play Store production signing remains separate.
 
