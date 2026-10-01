@@ -5,6 +5,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 val testSecrets = Properties().apply {
@@ -199,6 +200,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("com.github.luben:zstd-jni:1.5.6-9@aar")
+
+    // FCM is available to the online build only. The offline build remains
+    // free of the messaging runtime while sharing the same notification policy.
+    onlineImplementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    onlineImplementation("com.google.firebase:firebase-messaging")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250107")
