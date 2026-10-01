@@ -10,7 +10,7 @@
 
   <br />
 
-  [![Release v1.0.4](https://img.shields.io/badge/Release-v1.0.4-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/techjarves/Mobile-Harness/releases/tag/v1.0.4)
+  [![Release v1.0.4](https://img.shields.io/badge/Release-v1.0.4-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.4)
   [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#system-requirements)
   [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#system-requirements)
   [![MIT License](https://img.shields.io/badge/License-MIT-8B7CF6?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
@@ -18,14 +18,19 @@
 
   <br />
 
-  [**Download Online APK**](https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.4/mobile-harness-online-v1.0.4.apk) &nbsp;•&nbsp;
-  [**Download Offline APK**](https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.4/mobile-harness-offline-v1.0.4.apk) &nbsp;•&nbsp;
+  [**Download Online APK**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.4/mobile-harness-online-v1.0.4.apk) &nbsp;•&nbsp;
+  [**Download Offline APK**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.4/mobile-harness-offline-v1.0.4.apk) &nbsp;•&nbsp;
   [**Watch Walkthrough (3 min)**](https://youtu.be/QzAau52Z7yQ) &nbsp;•&nbsp;
   [**Quickstart Guide**](#quickstart) &nbsp;•&nbsp;
   [**Architecture**](#architecture) &nbsp;•&nbsp;
   [**Build from Source**](#developer-guides)
 
 </div>
+
+> [!NOTE]
+> **Current development status (October 2026):** Mobile Harness is being expanded into a mobile-first agentic IDE. The current main branch includes the production code-editor foundation (line numbers, syntax highlighting, bracket matching, find/replace, symbol outline, go-to-line, atomic saves), workspace file search, @file mentions, command palette, project indexing/context ranking, durable workspace checkpoints, local Android task notifications, optional online FCM notifications, runtime resilience/retry handling, and the existing Linux/PRoot agent runtime.
+>
+> The repository's Android CI validates unit tests plus online/offline debug and release compilation, and the release pipeline signs CI APKs and verifies their APK signatures before publishing them as workflow artifacts. A CI-signed APK is a test/release candidate build; Play Store production signing remains separate.
 
 <br />
 
@@ -62,7 +67,7 @@
       <h3>Online Edition</h3>
       <p><strong>87.4 MB · Recommended</strong></p>
       <p>Start with the smaller APK. Core, Python, and Android runtime bundles are downloaded only when needed.</p>
-      <a href="https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.4/mobile-harness-online-v1.0.4.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.4/mobile-harness-online-v1.0.4.apk">
         <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
       </a>
     </td>
@@ -70,7 +75,7 @@
       <h3>Offline Edition</h3>
       <p><strong>887.7 MB · Everything included</strong></p>
       <p>Includes the Core, Python, and Android runtime bundles for setup with limited or unavailable internet.</p>
-      <a href="https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.4/mobile-harness-offline-v1.0.4.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.4/mobile-harness-offline-v1.0.4.apk">
         <img src="https://img.shields.io/badge/Download-Offline_APK-5B8DEF?style=for-the-badge&logo=android&logoColor=white" alt="Download Offline APK" />
       </a>
     </td>
@@ -166,7 +171,7 @@ Mobile Harness unites modern **Jetpack Compose UI** with a self-contained **Ubun
 Get up and running in 3 guided steps:
 
 ### 1. Download & Install
-Download the latest signed release APK from [GitHub Releases](https://github.com/techjarves/Mobile-Harness/releases/latest).
+Download the latest signed release APK from [GitHub Releases](https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest).
 
 ```text
 Target Architecture : ARM64 (arm64-v8a)
