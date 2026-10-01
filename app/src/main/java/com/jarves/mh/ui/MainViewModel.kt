@@ -53,6 +53,11 @@ import com.jarves.mh.runtime.RuntimeSetupSnapshot
 import com.jarves.mh.runtime.RuntimeSetupStatus
 import com.jarves.mh.runtime.readTailText
 import com.jarves.mh.runtime.supportsArm64Runtime
+import com.jarves.mh.runtime.RuntimeFailureClassifier
+import com.jarves.mh.runtime.RuntimeRetryPolicy
+import com.jarves.mh.runtime.SkillInfo
+import com.jarves.mh.runtime.SkillManager
+import com.jarves.mh.runtime.SkillSearchResult
 import com.jarves.mh.runtime.AndroidAppInstaller
 import com.jarves.mh.update.AppUpdateInfo
 import com.jarves.mh.update.AppUpdater
@@ -73,6 +78,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -197,6 +203,13 @@ data class AppUiState(
     val previewUrl: String? = null,
     val isRunning: Boolean = false,
     val activeSessionId: String? = null,
+    val runtimeRecoveryStatus: String? = null,
+    val runtimeRecoveryAttempt: Int = 0,
+    val runtimeRecoveryCanResume: Boolean = false,
+    val skills: List<SkillInfo> = emptyList(),
+    val skillSearchResults: List<SkillSearchResult> = emptyList(),
+    val skillsBusy: Boolean = false,
+    val skillsMessage: String? = null,
     val toastMessage: String? = null,
     val projectTerminalLines: List<TerminalOutputLine> = emptyList(),
     val projectTerminalLiveOutput: String = "",
@@ -265,6 +278,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
+    private val skillManager = SkillManager(application)
+    private val runtimeRetryPolicy = RuntimeRetryPolicy()
+    private var runtimeRecoveryJob: Job? = null
+    private var runtimeRecoveryAttempt = 0
     private fun appUpdater(): AppUpdater = AppUpdater(
         getApplication(),
         if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else "",
@@ -315,6 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             projects = preferences.loadProjects(),
             githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
             githubLogin = preferences.githubLogin.takeIf(String::isNotBlank),
+            skills = skillManager.installed(),
             selectedDevStacks = preferences.selectedDevStacks.mapNotNull { name ->
                 runCatching { DevStack.valueOf(name) }.getOrNull()
             }.toSet() + DevStack.WEB,
@@ -3042,15 +3060,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         touchProject(project.id)
         persistMessages()
         val history = state.value.messages // includes all messages up to now
-        val runtimePrompt = if (attachments.isEmpty()) requestText else buildString {
+        val runtimePrompt = buildString {
             appendLine(requestText)
-            appendLine()
-            appendLine("<attached_files>")
-            attachments.forEach { attachment ->
-                appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+            if (attachments.isNotEmpty()) {
+                appendLine()
+                appendLine("<attached_files>")
+                attachments.forEach { attachment ->
+                    appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+                }
+                appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
+                appendLine("</attached_files>")
             }
-            appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
-            appendLine("</attached_files>")
+            val skillContext = skillManager.buildPromptContext(state.value.agentKind)
+            if (skillContext.isNotBlank()) {
+                appendLine()
+                appendLine(skillContext)
+            }
         }
         failedApiKeyIds.clear()
         activeRuntimeRequest = RuntimeRetryRequest(
@@ -3061,16 +3086,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             provider = state.value.provider,
         )
         viewModelScope.launch {
-            activeRuntimeRequest?.let { request ->
-                request.runtime.startSession(
-                    request.project.id,
-                    request.project.slug,
-                    request.project.kind,
-                    request.prompt,
-                    request.history,
-                    request.provider,
-                )
+            val request = activeRuntimeRequest ?: return@launch
+            withContext(Dispatchers.IO) {
+                skillManager.syncToWorkspace(projectWorkspaceRoot(request.project))
             }
+            request.runtime.startSession(
+                request.project.id,
+                request.project.slug,
+                request.project.kind,
+                request.prompt,
+                request.history,
+                request.provider,
+            )
         }
     }
 
