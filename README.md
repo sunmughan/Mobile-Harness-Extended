@@ -65,7 +65,7 @@
   <tr>
     <td width="50%" valign="top" align="center">
       <h3>Online Edition</h3>
-      <p><strong>87.4 MB · Recommended</strong></p>
+      <p><strong>121,238,356 bytes (~115.6 MiB) · Core bundled</strong></p>
       <p>Start with the smaller APK. Core, Python, and Android runtime bundles are downloaded only when needed.</p>
       <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.4/mobile-harness-online-v1.0.4.apk">
         <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
@@ -73,7 +73,7 @@
     </td>
     <td width="50%" valign="top" align="center">
       <h3>Offline Edition</h3>
-      <p><strong>887.7 MB · Everything included</strong></p>
+      <p><strong>846,153,766 bytes (~806.6 MiB) · Everything included</strong></p>
       <p>Includes the Core, Python, and Android runtime bundles for setup with limited or unavailable internet.</p>
       <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.4/mobile-harness-offline-v1.0.4.apk">
         <img src="https://img.shields.io/badge/Download-Offline_APK-5B8DEF?style=for-the-badge&logo=android&logoColor=white" alt="Download Offline APK" />

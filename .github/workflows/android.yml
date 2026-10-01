@@ -53,6 +53,25 @@ jobs:
           echo "MH_UPLOAD_KEY_ALIAS=mobile-harness" >> "$GITHUB_ENV"
           echo "MH_UPLOAD_KEY_PASSWORD=android-ci-release" >> "$GITHUB_ENV"
 
+      - name: Fetch pinned runtime bundles
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BASE="https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
+          mkdir -p dist/runtime-bundles
+          declare -A SHA256=(
+            [pocketdev-core-arm64-2026.09.5.tar.zst]=df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012
+            [pocketdev-claude-arm64-2026.09.1.tar.zst]=0f68e15630e8c0fc941afe3f61ab5a3eb4407b334018de6dbdabfa5eca627724
+            [pocketdev-python-arm64-2026.09.2.tar.zst]=6b3f56f7743fec142bc045db3ea561ee83fe89af87c2799165ef60351164ef85
+            [pocketdev-android-arm64-2026.09.1.tar.zst]=01bea058ebcb17416d1eb08c0211b3782da3228eb3c8348eb3719f2d61dd3ec6
+            [pocketdev-dsh-arm64-2026.09.1.tar.zst]=88e6a23ba74e1cd74a2c923b7e0d6bd78ba4b7e5f8a9b649f12bf4ffe158cce5
+            [pocketdev-agy-arm64-2026.09.1.tar.zst]=a659ab9188956fc4721ca86fb21b5118e0e489f47a5e02ae6b4f2fb423659d78
+          )
+          for file in "${!SHA256[@]}"; do
+            curl -fL --retry 5 --retry-delay 2 --retry-all-errors -o "dist/runtime-bundles/$file" "$BASE/$file"
+            printf '%s  %s\n' "${SHA256[$file]}" "dist/runtime-bundles/$file" | sha256sum -c -
+          done
+          du -h dist/runtime-bundles/*.tar.zst | sort -h
       - name: Verify online build and unit tests
         run: ./gradlew --no-daemon --stacktrace testOnlineDebugUnitTest assembleOnlineDebug
 
