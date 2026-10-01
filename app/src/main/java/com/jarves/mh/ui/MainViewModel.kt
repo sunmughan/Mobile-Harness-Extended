@@ -3583,6 +3583,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "expired" in value || "quota" in value || "rate limit" in value
     }
 
+    fun refreshSkills() {
+        _state.update { it.copy(skills = skillManager.installed()) }
+    }
+
+    fun searchSkills(query: String) {
+        if (_state.value.skillsBusy) return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Searching GitHub…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.searchGitHub(query) } }
+            result.onSuccess { matches -> _state.update { it.copy(skillsBusy = false, skillSearchResults = matches, skillsMessage = "Found " + matches.size + " repositories.") } }
+                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "GitHub skill search failed.") } }
+        }
+    }
+
+    fun importSkillFromGitHub(url: String) {
+        if (_state.value.skillsBusy) return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing skill bundle…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromGitHub(url) } }
+            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
+                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
+        }
+    }
+
+    fun importSkillFromUri(uri: Uri) {
+        if (_state.value.skillsBusy) return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing local skill bundle…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromUri(uri) } }
+            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
+                .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
+        }
+    }
+
+    fun removeSkill(name: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val removed = skillManager.remove(name)
+            _state.update { it.copy(skills = skillManager.installed(), skillsMessage = if (removed) "Removed " + name else "Skill was not installed.") }
+        }
+    }
     private fun touchProject(projectId: String) {
         val now = System.currentTimeMillis()
         _state.update { current ->
