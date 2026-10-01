@@ -3800,29 +3800,6 @@ private fun ReadOnlyProjectScreen(
         if (state.readOnlyMessages.isNotEmpty()) listState.scrollToItem(state.readOnlyMessages.lastIndex)
     }
 
-    if (showCommandPalette) {
-        WorkspaceCommandPalette(
-            onDismiss = { showCommandPalette = false },
-            onSelect = { command ->
-                showCommandPalette = false
-                when (command) {
-                    WorkspaceCommand.CHAT -> selectedTab = WorkspaceTab.CHAT
-                    WorkspaceCommand.FILES -> {
-                        selectedTab = WorkspaceTab.FILES
-                        onRefreshFiles()
-                    }
-                    WorkspaceCommand.TERMINAL -> {
-                        selectedTab = WorkspaceTab.TERMINAL
-                        onTerminalOpened()
-                    }
-                    WorkspaceCommand.CHANGES -> selectedTab = WorkspaceTab.CHANGES
-                    WorkspaceCommand.PREVIEW -> selectedTab = WorkspaceTab.PREVIEW
-                    WorkspaceCommand.REFRESH_FILES -> onRefreshFiles()
-                }
-            },
-        )
-    }
-
     if (showChats) {
         ChatSwitcherDialog(
             chats = state.readOnlyProjectChats,
@@ -4254,6 +4231,7 @@ private fun WorkspaceScreen(
                     onOpenFile = onOpenFile,
                 )
                 WorkspaceTab.PREVIEW -> PreviewTab(state.previewReady, state.previewUrl)
+                }
             }
         }
     }
