@@ -3132,6 +3132,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val attachments = state.value.pendingAttachments
         if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
+        val mentionedPaths = resolveMentionedWorkspacePaths(prompt, project)
         updateActiveChatTitle(requestText)
         _state.update {
             val startedAt = System.currentTimeMillis()
@@ -3154,6 +3155,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val history = state.value.messages // includes all messages up to now
         val runtimePrompt = buildString {
             appendLine(requestText)
+            if (mentionedPaths.isNotEmpty()) {
+                appendLine()
+                appendLine("<mentioned_files>")
+                appendLine("The user explicitly referenced these workspace files with @mentions. Inspect the referenced files before deciding what to change; they are context pointers, not permission to modify other files.")
+                mentionedPaths.forEach { relativePath ->
+                    appendLine("- " + projectGuestRoot(project) + "/" + relativePath)
+                }
+                appendLine("</mentioned_files>")
+            }
             if (attachments.isNotEmpty()) {
                 appendLine()
                 appendLine("<attached_files>")
@@ -3193,6 +3203,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun resolveMentionedWorkspacePaths(prompt: String, project: Project): List<String> {
+        val workspace = runCatching { projectWorkspaceRoot(project).canonicalFile }.getOrNull() ?: return emptyList()
+        val workspacePath = workspace.toPath()
+        val candidates = Regex("@([A-Za-z0-9._/-]+)")
+            .findAll(prompt)
+            .map { it.groupValues[1].trimEnd('.', ',', ';', ':', ')', ']', '}') }
+            .filter { it.isNotBlank() && !it.startsWith("/") && ".." !in it.split('/') }
+            .distinct()
+            .toList()
+        return candidates.filter { relativePath ->
+            runCatching {
+                val target = File(workspace, relativePath).canonicalFile
+                target.isFile && target.toPath().startsWith(workspacePath)
+            }.getOrDefault(false)
+        }.take(16)
+    }
     fun answerApproval(approved: Boolean) {
         val request = state.value.pendingApproval ?: return
         viewModelScope.launch { activeRuntime().respondToApproval(request, approved) }
