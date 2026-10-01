@@ -37,6 +37,22 @@ jobs:
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
           "${SDKMANAGER}" "platform-tools" "platforms;android-36" "ndk;26.1.10909125" "cmake;3.22.1"
 
+      - name: Create CI release signing key
+        shell: bash
+        run: |
+          set -euxo pipefail
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/mobile-harness-release.jks" \
+            -storepass "android-ci-release" \
+            -keypass "android-ci-release" \
+            -alias "mobile-harness" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Mobile Harness CI, OU=Build, O=Mobile Harness, L=CI, ST=CI, C=US"
+          echo "MH_UPLOAD_STORE_FILE=$RUNNER_TEMP/mobile-harness-release.jks" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_STORE_PASSWORD=android-ci-release" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_KEY_ALIAS=mobile-harness" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_KEY_PASSWORD=android-ci-release" >> "$GITHUB_ENV"
+
       - name: Verify online build and unit tests
         run: ./gradlew --no-daemon --stacktrace testOnlineDebugUnitTest assembleOnlineDebug
 
@@ -48,6 +64,15 @@ jobs:
 
       - name: Compile offline release APK
         run: ./gradlew --no-daemon --stacktrace assembleOfflineRelease
+
+      - name: Verify release APK signatures and alignment
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            "$APKSIGNER" verify --verbose "$apk"
+          done
 
       - name: Upload release APKs
         uses: actions/upload-artifact@v4
