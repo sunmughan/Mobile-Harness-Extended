@@ -4625,7 +4625,7 @@ private fun ChatTab(
     }
 
     fun updateMentionQuery(nextPrompt: String) {
-        val token = nextPrompt.substringAfterLast(' ').substringAfterLast('\\n')
+        val token = nextPrompt.substringAfterLast(' ').substringAfterLast('\n')
         mentionQuery = if (token.startsWith("@") && token.length <= 160) token.drop(1) else null
     }
     // True while the newest item (message, live panel, or approval card) is on screen.
@@ -4775,7 +4775,7 @@ private fun ChatTab(
                             mentionCandidates.forEach { candidate ->
                                 TextButton(
                                     onClick = {
-                                        val currentToken = prompt.substringAfterLast(' ').substringAfterLast('\\n')
+                                        val currentToken = prompt.substringAfterLast(' ').substringAfterLast('\n')
                                         val prefix = prompt.dropLast(currentToken.length)
                                         prompt = prefix + "@" + candidate.path + " "
                                         mentionQuery = null
