@@ -4497,7 +4497,23 @@ private fun ChatTab(
         onDispose { view.keepScreenOn = false }
     }
     var prompt by rememberSaveable { mutableStateOf("") }
+    var mentionQuery by remember { mutableStateOf<String?>(null) }
     val chatScope = rememberCoroutineScope()
+
+    val mentionCandidates = remember(workspaceFiles, mentionQuery) {
+        val query = mentionQuery?.trim()?.lowercase() ?: return@remember emptyList<WorkspaceEntry>()
+        workspaceFiles
+            .asSequence()
+            .filter { !it.isDirectory }
+            .filter { query.isBlank() || it.path.lowercase().contains(query) }
+            .take(8)
+            .toList()
+    }
+
+    fun updateMentionQuery(nextPrompt: String) {
+        val token = nextPrompt.substringAfterLast(' ').substringAfterLast('\\n')
+        mentionQuery = if (token.startsWith("@") && token.length <= 160) token.drop(1) else null
+    }
     // True while the newest item (message, live panel, or approval card) is on screen.
     val readerAtBottom by remember {
         derivedStateOf {
@@ -4626,6 +4642,48 @@ private fun ChatTab(
 
                 val canSend = prompt.isNotBlank() || pendingAttachments.isNotEmpty()
 
+                if (mentionCandidates.isNotEmpty()) {
+                    Surface(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(
+                                "Mention a file",
+                                Modifier.padding(start = 14.dp, top = 10.dp, bottom = 5.dp),
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            mentionCandidates.forEach { candidate ->
+                                TextButton(
+                                    onClick = {
+                                        val currentToken = prompt.substringAfterLast(' ').substringAfterLast('\\n')
+                                        val prefix = prompt.dropLast(currentToken.length)
+                                        prompt = prefix + "@" + candidate.path + " "
+                                        mentionQuery = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(Modifier.fillMaxWidth()) {
+                                        Text(candidate.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(
+                                            candidate.path,
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Surface(
                     shape = RoundedCornerShape(26.dp),
                     color = MaterialTheme.colorScheme.surface,
@@ -4656,7 +4714,10 @@ private fun ChatTab(
 
                         BasicTextField(
                             value = prompt,
-                            onValueChange = { prompt = it },
+                            onValueChange = {
+                                prompt = it
+                                updateMentionQuery(it)
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(horizontal = 4.dp, vertical = 10.dp)
@@ -4716,6 +4777,7 @@ private fun ChatTab(
                                             if (canSend) {
                                                 onSend(prompt)
                                                 prompt = ""
+                                                mentionQuery = null
                                             }
                                         },
                                     ),
