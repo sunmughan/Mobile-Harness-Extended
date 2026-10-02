@@ -71,7 +71,7 @@ jobs:
             [pocketdev-agy-arm64-2026.09.1.tar.zst]=549967980
           )
           declare -A SHA256=(
-            [pocketdev-core-arm64-2026.09.5.tar.zst]=df0cf7251c74f82d424231e3804114a4ca66b16130ee9a9abab11e220dc7ac012
+            [pocketdev-core-arm64-2026.09.5.tar.zst]=df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012
             [pocketdev-claude-arm64-2026.09.1.tar.zst]=0f68e15630e8c0fc941afe3f61ab5a3eb4407b334018de6dbdabfa5eca627724
             [pocketdev-python-arm64-2026.09.2.tar.zst]=6b3f56f7743fec142bc045db3ea561ee83fe89af87c2799165ef60351164ef85
             [pocketdev-android-arm64-2026.09.1.tar.zst]=01bea058ebcb17416d1eb08c0211b3782da3228eb3c8348eb3719f2d61dd3ec6
