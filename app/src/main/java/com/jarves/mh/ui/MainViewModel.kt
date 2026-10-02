@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.jarves.mh.BuildConfig
+import com.jarves.mh.AppCrashLogger
 import com.jarves.mh.data.ApiKeyVault
 import com.jarves.mh.data.ApiKeyInfo
 import com.jarves.mh.data.AppPreferences
@@ -368,6 +369,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
+        AppCrashLogger.log("MainViewModel.init entered")
         // GitHub's official CLI owns its OAuth credential. Remove credentials from
         // the retired custom OAuth implementation and discover the real CLI status.
         runCatching { vault.remove(LEGACY_GITHUB_TOKEN_KEY) }
