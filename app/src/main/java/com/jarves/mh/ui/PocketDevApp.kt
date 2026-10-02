@@ -5700,7 +5700,7 @@ private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
         contentAlignment = Alignment.Center,
     ) {
         androidx.compose.foundation.Image(
-            painter = painterResource(id = R.mipmap.ic_launcher),
+            painter = painterResource(id = R.drawable.ic_launcher),
             contentDescription = "Mobile Harness",
             modifier = Modifier.fillMaxSize(),
         )
