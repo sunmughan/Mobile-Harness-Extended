@@ -152,24 +152,24 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Mobile Harness $TAG" --generate-notes
           cat > mobile-harness-update.json <<EOF
-{
-  "versionCode": $VERSION_CODE,
-  "versionName": "$VERSION_NAME",
-  "notes": "Production release with startup crash logging and verified runtime packaging.",
-  "artifacts": {
-    "online": {
-      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
-      "sha256": "$ONLINE_SHA",
-      "sizeBytes": $ONLINE_SIZE
-    },
-    "offline": {
-      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-offline-release.apk",
-      "sha256": "$OFFLINE_SHA",
-      "sizeBytes": $OFFLINE_SIZE
-    }
-  }
-}
-EOF
+          {
+            "versionCode": $VERSION_CODE,
+            "versionName": "$VERSION_NAME",
+            "notes": "Production release with startup crash logging and verified runtime packaging.",
+            "artifacts": {
+              "online": {
+                "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
+                "sha256": "$ONLINE_SHA",
+                "sizeBytes": $ONLINE_SIZE
+              },
+              "offline": {
+                "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-offline-release.apk",
+                "sha256": "$OFFLINE_SHA",
+                "sizeBytes": $OFFLINE_SIZE
+              }
+            }
+          }
+          EOF
           gh release upload "$TAG" "$ONLINE" "$OFFLINE" mobile-harness-update.json --clobber
           gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
