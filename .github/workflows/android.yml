@@ -126,15 +126,15 @@ jobs:
       - name: Emulator smoke test online and offline release APKs
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
           emulator-boot-timeout: 1200
-          cores: 2
-          ram-size: 4096M
+          cores: 4
+          ram-size: 6144M
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
-          disable-animations: true
+          disable-animations: false
           script: bash ci/emulator-smoke.sh
 
       - name: Upload emulator launch logs
