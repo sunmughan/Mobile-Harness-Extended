@@ -12,9 +12,11 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   verify:
+    if: ${{ !contains(github.event.head_commit.message, '[publish-existing]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -146,5 +148,46 @@ jobs:
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
           printf '%s\n' '{' '  "versionCode": 6,' '  "versionName": "1.0.5",' '  "notes": "Production release with verified runtime packaging and startup resilience.",' '  "artifacts": {' '    "online": {' '      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.5/app-online-release.apk",' '      "sha256": "'"$ONLINE_SHA"'",' '      "sizeBytes": '"$ONLINE_SIZE" '    },' '    "offline": {' '      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.5/app-offline-release.apk",' '      "sha256": "'"$OFFLINE_SHA"'",' '      "sizeBytes": '"$OFFLINE_SIZE" '    }' '  }' '}' > mobile-harness-update.json
           gh release upload v1.0.5 "$ONLINE" "$OFFLINE" mobile-harness-update.json --clobber
+          gh release delete-asset v1.0.5 mobile-harness-online-v1.0.5.apk --yes || true
+          gh release delete-asset v1.0.5 mobile-harness-offline-v1.0.5.apk --yes || true
+
+  publish_existing_v1_0_5:
+    if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-existing]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified release artifact from Run #64
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-harness-release-apks
+          repository: ${{ github.repository }}
+          run-id: 36943324602
+          github-token: ${{ github.token }}
+          path: release-artifact
+          merge-multiple: true
+
+      - name: Verify and prepare canonical release APKs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find release-artifact -type f -name '*.apk' -print
+          ONLINE_SRC=$(find release-artifact -type f -name 'app-online-release.apk' | head -n 1)
+          OFFLINE_SRC=$(find release-artifact -type f -name 'app-offline-release.apk' | head -n 1)
+          test -n "$ONLINE_SRC"
+          test -n "$OFFLINE_SRC"
+          cp "$ONLINE_SRC" app-online-release.apk
+          cp "$OFFLINE_SRC" app-offline-release.apk
+          ONLINE_SHA=$(sha256sum app-online-release.apk | awk '{print $1}')
+          OFFLINE_SHA=$(sha256sum app-offline-release.apk | awk '{print $1}')
+          ONLINE_SIZE=$(stat -c '%s' app-online-release.apk)
+          OFFLINE_SIZE=$(stat -c '%s' app-offline-release.apk)
+          printf '%s\n' '{' '  "versionCode": 6,' '  "versionName": "1.0.5",' '  "notes": "Verified release APKs published from Android QA Run #64.",' '  "artifacts": {' '    "online": {' '      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.5/app-online-release.apk",' '      "sha256": "'"$ONLINE_SHA"'",' '      "sizeBytes": '"$ONLINE_SIZE" '    },' '    "offline": {' '      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.5/app-offline-release.apk",' '      "sha256": "'"$OFFLINE_SHA"'",' '      "sizeBytes": '"$OFFLINE_SIZE" '    }' '  }' '}' > mobile-harness-update.json
+
+      - name: Publish canonical v1.0.5 assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gh release upload v1.0.5 app-online-release.apk app-offline-release.apk mobile-harness-update.json --clobber
           gh release delete-asset v1.0.5 mobile-harness-online-v1.0.5.apk --yes || true
           gh release delete-asset v1.0.5 mobile-harness-offline-v1.0.5.apk --yes || true
