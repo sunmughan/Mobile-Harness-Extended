@@ -452,3 +452,14 @@ This project is licensed under the [MIT License](LICENSE). Third-party runtime b
   <br />
   <sub>Copyright © 2026 Tech Jarves. All rights reserved.</sub>
 </div>
+
+## Crash diagnostics
+
+Every app process initializes a dependency-light crash/startup logger before the launcher activity. It writes synchronous diagnostics to `crash.log` in the app's private internal files directory and mirrors the same file to the app-specific external files directory when available.
+
+- Internal: `<app internal files>/crash.log`
+- Retrieval mirror: `Android/data/com.jarves.mh/files/crash.log`
+- Captures startup checkpoints, uncaught Java/Kotlin exceptions, stack traces, app/build/device metadata, and logger file paths.
+- The log is capped at 8 MiB and retains the newest 4 MiB when rotation is required.
+
+For a startup crash, launch the app once with the diagnostic build, reproduce the crash, then upload `crash.log` here for root-cause analysis.
