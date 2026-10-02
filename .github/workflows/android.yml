@@ -133,7 +133,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           disable-animations: true
           script: |
-            set -euxo pipefail
+            set -eu
             mkdir -p emulator-logs
 
             for variant in online offline; do
