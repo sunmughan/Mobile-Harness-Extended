@@ -67,7 +67,7 @@ jobs:
           MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
         run: |
           set -euo pipefail
-          EXPECTED_SHA256="09:BB:34:61:5A:65:96:E3:80:A3:F2:A7:A8:22:C6:ED:DD:C9:3E:11:55:D9:2A:DD:07:E3:20:16:AA:9A:F0:CE"
+          EXPECTED_SHA256="95:E5:C7:55:FD:D5:D1:98:E9:31:A2:E6:CF:8C:02:A7:AF:F7:70:37:47:E6:7C:86:A2:28:60:ED:14:80:15:ED"
           ACTUAL_SHA256="$(keytool -list -v -keystore "$RUNNER_TEMP/mobile-harness-release.jks" -storepass "$MH_RELEASE_STORE_PASSWORD" -alias "$MH_RELEASE_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')"
           echo "Release signing SHA-256: $ACTUAL_SHA256"
           if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
