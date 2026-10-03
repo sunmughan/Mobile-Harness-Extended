@@ -396,34 +396,10 @@ fun SettingsScreen(
                         Icon(Icons.Default.Settings, null, Modifier.size(20.dp), tint = PocketOrange)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Box {
-                                Text(
-                                    "Mobile Harness",
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Surface(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .offset(x = 0.dp, y = (-10).dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shape = RoundedCornerShape(4.dp),
-                                ) {
-                                    Text(
-                                        "Extended",
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 0.5.dp),
-                                        fontSize = 7.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.2.sp,
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                    )
-                                }
-                            }
-                            Text(
-                                "v${BuildConfig.VERSION_NAME}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Text("Mobile Harness", fontWeight = FontWeight.SemiBold)
+                            Text("Local AI coding workspace", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        Text("v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Row(
