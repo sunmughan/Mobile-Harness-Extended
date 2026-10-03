@@ -1102,7 +1102,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resumeRuntimeSetupService() {
-        val stacks = _state.value.selectedDevStacks.joinToString(",") { it.name }
+        val stacks = if (com.jarves.mh.BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            DevStack.entries.joinToString(",") { it.name }
+        } else {
+            _state.value.selectedDevStacks.joinToString(",") { it.name }
+        }
         ContextCompat.startForegroundService(
             getApplication(),
             Intent(getApplication(), RuntimeSetupService::class.java)
