@@ -1256,6 +1256,7 @@ private fun setupTimeEstimate(selected: Set<DevStack>): String {
 
 private fun stackDownloadLabel(stack: DevStack): String = when {
     stack == DevStack.WEB -> " · included"
+    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.PYTHON, DevStack.ANDROID) -> " · included"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.PYTHON -> " · 55 MB"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.ANDROID -> " · 570 MB"
     else -> ""
