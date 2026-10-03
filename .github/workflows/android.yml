@@ -274,3 +274,5 @@ jobs:
         run: |
           set -euxo pipefail
           gh release upload v1.0.6 app-online-release.apk app-offline-release.apk mobile-harness-update.json --clobber
+
+# publish the verified 1.0.9 offline bundle to the GitHub release [publish-release]
