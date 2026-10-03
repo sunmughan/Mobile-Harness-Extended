@@ -31,11 +31,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up ARM64 container emulation
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Prepare Android SDK
         shell: bash
         run: |
@@ -105,21 +100,7 @@ jobs:
               "https://api.github.com/repos/techjarves/Mobile-Harness/releases/assets/${ASSET_ID[$file]}"
             printf '%s  %s\n' "${SHA256[$file]}" "dist/runtime-bundles/$file" | sha256sum -c -
           done
-          GH_CLI_FILE="gh_2.100.0_linux_arm64.tar.gz"
-          curl -fL --retry 5 --retry-delay 2 --retry-all-errors \
-            -H "Accept: application/octet-stream" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -o "dist/runtime-bundles/$GH_CLI_FILE" \
-            "https://api.github.com/repos/cli/cli/releases/assets/542974279"
-          printf '%s  %s\n' "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961" "dist/runtime-bundles/$GH_CLI_FILE" | sha256sum -c -
           du -h dist/runtime-bundles/*.tar.zst | sort -h
-
-      - name: Prepare complete offline language packages
-        shell: bash
-        run: |
-          set -euxo pipefail
-          bash scripts/runtime-bundles/prepare-offline-packages.sh dist/runtime-bundles
-          du -h dist/runtime-bundles/pocketdev-offline-packages-arm64-ubuntu20.04.tar.zst dist/runtime-bundles/offline-toolchains-manifest.json
 
       - name: Verify online build and unit tests
         run: ./gradlew --no-daemon --stacktrace testOnlineDebugUnitTest assembleOnlineDebug
@@ -172,7 +153,6 @@ jobs:
             app/build/outputs/apk/**/*.apk
 
       # Publishes the freshly verified online/offline APKs to the current release.
-      # Battery optimization fix republish: keep the release assets aligned with main.
       - name: Publish release assets
         if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-release]')
         env:
@@ -197,7 +177,7 @@ jobs:
           {
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
-            "notes": "Mobile Harness 1.0.9: full offline runtime packaging with Core, all coding agents, Python, Android, C/C++, PHP, Composer and GitHub CLI bundled into the offline APK; offline setup installs toolchains and package dependencies without runtime downloads; plus the recent branding, settings, privacy and battery-optimization fixes.",
+            "notes": "Mobile Harness 1.0.8: refined Mobile Harness Extended branding and header alignment; tightened the Extended pill styling; added matching Extended branding to Settings; moved the app version below the Settings branding; pointed the privacy policy to this Extended repository; and updated the privacy policy for the current AI, Git/GitHub, terminal, editor, build, runtime, update, storage, and permission features.",
             "artifacts": {
               "online": {
                 "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
@@ -274,5 +254,3 @@ jobs:
         run: |
           set -euxo pipefail
           gh release upload v1.0.6 app-online-release.apk app-offline-release.apk mobile-harness-update.json --clobber
-
-# publish the verified 1.0.9 offline bundle to the GitHub release [publish-release]
