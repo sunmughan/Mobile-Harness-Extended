@@ -39,22 +39,35 @@ jobs:
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
           "${SDKMANAGER}" "platform-tools" "platforms;android-36" "ndk;26.1.10909125" "cmake;3.22.1"
 
-      - name: Create CI release signing key
+      - name: Configure persistent release signing key
         shell: bash
+        env:
+          MH_RELEASE_KEYSTORE_BASE64: ${{ secrets.MH_RELEASE_KEYSTORE_BASE64 }}
+          MH_RELEASE_STORE_PASSWORD: ${{ secrets.MH_RELEASE_STORE_PASSWORD }}
+          MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+          MH_RELEASE_KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
         run: |
           set -euxo pipefail
-          keytool -genkeypair -v \
-            -keystore "$RUNNER_TEMP/mobile-harness-release.jks" \
-            -storepass "android-ci-release" \
-            -keypass "android-ci-release" \
-            -alias "mobile-harness" \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Mobile Harness CI, OU=Build, O=Mobile Harness, L=CI, ST=CI, C=US"
+          if [[ -n "${MH_RELEASE_KEYSTORE_BASE64}" && -n "${MH_RELEASE_STORE_PASSWORD}" && -n "${MH_RELEASE_KEY_ALIAS}" && -n "${MH_RELEASE_KEY_PASSWORD}" ]]; then
+            echo "${MH_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/mobile-harness-release.jks"
+            echo "Using the persistent release signing key."
+          else
+            echo "Persistent release signing secrets are not configured; generating a temporary key for verification only."
+            keytool -genkeypair -v \
+              -keystore "$RUNNER_TEMP/mobile-harness-release.jks" \
+              -storepass "android-ci-release" \
+              -keypass "android-ci-release" \
+              -alias "mobile-harness" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Mobile Harness CI, OU=Build, O=Mobile Harness, L=CI, ST=CI, C=US"
+            echo "MH_RELEASE_STORE_PASSWORD=android-ci-release" >> "$GITHUB_ENV"
+            echo "MH_RELEASE_KEY_ALIAS=mobile-harness" >> "$GITHUB_ENV"
+            echo "MH_RELEASE_KEY_PASSWORD=android-ci-release" >> "$GITHUB_ENV"
+          fi
           echo "MH_UPLOAD_STORE_FILE=$RUNNER_TEMP/mobile-harness-release.jks" >> "$GITHUB_ENV"
-          echo "MH_UPLOAD_STORE_PASSWORD=android-ci-release" >> "$GITHUB_ENV"
-          echo "MH_UPLOAD_KEY_ALIAS=mobile-harness" >> "$GITHUB_ENV"
-          echo "MH_UPLOAD_KEY_PASSWORD=android-ci-release" >> "$GITHUB_ENV"
-
+          if [[ -n "${MH_RELEASE_STORE_PASSWORD}" ]]; then echo "MH_UPLOAD_STORE_PASSWORD=${MH_RELEASE_STORE_PASSWORD}" >> "$GITHUB_ENV"; fi
+          if [[ -n "${MH_RELEASE_KEY_ALIAS}" ]]; then echo "MH_UPLOAD_KEY_ALIAS=${MH_RELEASE_KEY_ALIAS}" >> "$GITHUB_ENV"; fi
+          if [[ -n "${MH_RELEASE_KEY_PASSWORD}" ]]; then echo "MH_UPLOAD_KEY_PASSWORD=${MH_RELEASE_KEY_PASSWORD}" >> "$GITHUB_ENV"; fi
       - name: Fetch pinned runtime bundles
         env:
           GITHUB_TOKEN: ${{ github.token }}
