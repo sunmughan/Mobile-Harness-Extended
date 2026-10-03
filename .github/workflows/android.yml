@@ -166,6 +166,7 @@ jobs:
           path: |
             app/build/outputs/apk/**/*.apk
 
+      # Publishes the freshly verified online/offline APKs to the current release.
       - name: Publish release assets
         if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-release]')
         env:
