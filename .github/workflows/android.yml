@@ -186,7 +186,7 @@ jobs:
           {
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
-            "notes": "Mobile Harness 1.0.8: refined Mobile Harness Extended branding and header alignment; tightened the Extended pill styling; added matching Extended branding to Settings; moved the app version below the Settings branding; pointed the privacy policy to this Extended repository; and updated the privacy policy for the current AI, Git/GitHub, terminal, editor, build, runtime, update, storage, and permission features.",
+            "notes": "Mobile Harness 1.0.9: full offline runtime packaging with Core, all coding agents, Python, Android, C/C++, PHP, Composer and GitHub CLI bundled into the offline APK; offline setup installs toolchains and package dependencies without runtime downloads; plus the recent branding, settings, privacy and battery-optimization fixes.",
             "artifacts": {
               "online": {
                 "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
