@@ -65,13 +65,7 @@ class AntigravityAuthController(
             // SSH selects agy's official manual browser URL + one-time code flow.
             // NativeSpawn supplies a real PTY; PocketDev remains only the terminal.
             mapOf(
-                // Mirror the three environment markers that a real SSH session
-                // provides. Recent agy builds use SSH_TTY/SSH_CLIENT as well as
-                // SSH_CONNECTION when deciding whether to use the manual
-                // browser URL + one-time-code flow instead of local browser auth.
-                "SSH_CONNECTION" to "127.0.0.1 1 127.0.0.1 22",
-                "SSH_CLIENT" to "127.0.0.1 1 22",
-                "SSH_TTY" to "/dev/pts/0",
+                "SSH_CONNECTION" to "127.0.0.1 1 127.0.0.1 1",
                 "TERM" to "xterm-256color",
                 "NO_COLOR" to "1",
             ),
@@ -226,14 +220,7 @@ class AntigravityAuthController(
             }
             if (!codeSubmitted && mutableState.value.status == AntigravityAuthStatus.STARTING) {
                 val exit = running.waitFor()
-                val diagnostic = sanitizeTerminalOutput(output.toString())
-                    .trim()
-                    .takeLast(700)
-                    .replace(Regex("\\s+"), " ")
-                error(
-                    "Antigravity login closed before producing an authorization URL (exit $exit)." +
-                        diagnostic.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty(),
-                )
+                error("Antigravity login closed before producing an authorization URL (exit $exit).")
             }
         } catch (error: Throwable) {
             if (mutableState.value.status != AntigravityAuthStatus.SIGNED_IN) {
