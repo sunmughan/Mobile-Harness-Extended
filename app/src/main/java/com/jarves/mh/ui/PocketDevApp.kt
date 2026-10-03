@@ -3139,17 +3139,24 @@ private fun ProjectsScreen(
                     )
                 }
                 Spacer(Modifier.height(7.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     BrandMark(compact = false)
                     Spacer(Modifier.width(10.dp))
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Mobile ",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onBackground,
-                            )
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = "Mobile ",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Box {
                             Text(
                                 text = "Harness",
                                 fontSize = 20.sp,
@@ -3157,14 +3164,23 @@ private fun ProjectsScreen(
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onBackground,
                             )
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 8.dp, y = (-8).dp),
+                                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.92f),
+                                shape = RoundedCornerShape(4.dp),
+                            ) {
+                                Text(
+                                    text = "Extended",
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    fontSize = 7.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.2.sp,
+                                    color = MaterialTheme.colorScheme.onTertiary,
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(1.dp))
-                        Text(
-                            text = "> mobile-harness",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 9.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }
