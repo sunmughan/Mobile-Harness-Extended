@@ -560,7 +560,29 @@ private fun BackgroundTaskSetupScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Mobile Harness", fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Mobile", fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(4.dp))
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(1.dp),
+                            ) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Text(
+                                        "EXTENDED",
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 6.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.45.sp,
+                                        lineHeight = 8.sp,
+                                    )
+                                }
+                                Text("Harness", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 },
                 actions = {
@@ -833,7 +855,29 @@ private fun RuntimeSetupPromptScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Mobile Harness", fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Mobile", fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(4.dp))
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(1.dp),
+                            ) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Text(
+                                        "EXTENDED",
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 6.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.45.sp,
+                                        lineHeight = 8.sp,
+                                    )
+                                }
+                                Text("Harness", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 },
                 navigationIcon = {
@@ -1955,7 +1999,29 @@ private fun StartupErrorScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Mobile Harness", fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Mobile", fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(4.dp))
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(1.dp),
+                            ) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                    shape = RoundedCornerShape(50),
+                                ) {
+                                    Text(
+                                        "EXTENDED",
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 6.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.45.sp,
+                                        lineHeight = 8.sp,
+                                    )
+                                }
+                                Text("Harness", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 },
                 actions = {
