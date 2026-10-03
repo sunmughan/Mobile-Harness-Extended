@@ -561,13 +561,17 @@ private fun BackgroundTaskSetupScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text("Mobile", fontWeight = FontWeight.Bold)
                             Spacer(Modifier.width(4.dp))
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(1.dp),
-                            ) {
+                            Box {
+                                Text("Harness", fontWeight = FontWeight.Bold)
                                 Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(y = (-9).dp),
                                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
                                     shape = RoundedCornerShape(50),
                                 ) {
@@ -581,7 +585,6 @@ private fun BackgroundTaskSetupScreen(
                                         lineHeight = 8.sp,
                                     )
                                 }
-                                Text("Harness", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -858,13 +861,17 @@ private fun RuntimeSetupPromptScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text("Mobile", fontWeight = FontWeight.Bold)
                             Spacer(Modifier.width(4.dp))
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(1.dp),
-                            ) {
+                            Box {
+                                Text("Harness", fontWeight = FontWeight.Bold)
                                 Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(y = (-9).dp),
                                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
                                     shape = RoundedCornerShape(50),
                                 ) {
@@ -878,7 +885,6 @@ private fun RuntimeSetupPromptScreen(
                                         lineHeight = 8.sp,
                                     )
                                 }
-                                Text("Harness", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -2002,13 +2008,17 @@ private fun StartupErrorScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text("Mobile", fontWeight = FontWeight.Bold)
                             Spacer(Modifier.width(4.dp))
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(1.dp),
-                            ) {
+                            Box {
+                                Text("Harness", fontWeight = FontWeight.Bold)
                                 Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(y = (-9).dp),
                                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
                                     shape = RoundedCornerShape(50),
                                 ) {
@@ -2022,7 +2032,6 @@ private fun StartupErrorScreen(
                                         lineHeight = 8.sp,
                                     )
                                 }
-                                Text("Harness", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
