@@ -3201,7 +3201,7 @@ private fun ProjectsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp, start = 18.dp, end = 18.dp, bottom = 4.dp),
+                    .padding(top = 48.dp, start = 18.dp, end = 18.dp, bottom = 4.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -3211,39 +3211,36 @@ private fun ProjectsScreen(
                     BrandMark(compact = false)
                     Spacer(Modifier.width(10.dp))
                     Row(
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start,
                     ) {
                         Text(
-                            text = "Mobile ",
+                            text = "Mobile",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onBackground,
                         )
-                        Box {
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Harness",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(4.dp),
+                        ) {
                             Text(
-                                text = "Harness",
-                                fontSize = 20.sp,
+                                text = "Extended",
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 0.5.dp),
+                                fontSize = 7.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onBackground,
+                                letterSpacing = 0.2.sp,
+                                color = MaterialTheme.colorScheme.onPrimary,
                             )
-                            Surface(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = 8.dp, y = (-8).dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = RoundedCornerShape(4.dp),
-                            ) {
-                                Text(
-                                    text = "Extended",
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 0.5.dp),
-                                    fontSize = 7.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.2.sp,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
-                            }
                         }
                     }
                 }
