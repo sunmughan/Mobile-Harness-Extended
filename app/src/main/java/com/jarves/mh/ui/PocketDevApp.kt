@@ -3221,16 +3221,16 @@ private fun ProjectsScreen(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .offset(x = 8.dp, y = (-8).dp),
-                                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.92f),
+                                color = MaterialTheme.colorScheme.primary,
                                 shape = RoundedCornerShape(4.dp),
                             ) {
                                 Text(
                                     text = "Extended",
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 0.5.dp),
                                     fontSize = 7.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.2.sp,
-                                    color = MaterialTheme.colorScheme.onTertiary,
+                                    color = MaterialTheme.colorScheme.onPrimary,
                                 )
                             }
                         }
