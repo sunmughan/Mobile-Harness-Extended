@@ -196,9 +196,21 @@ fun SettingsScreen(
                             )
                         }
                         Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("Settings", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                            Text("Preferences & Configuration", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy((-1).dp),
+                        ) {
+                            Text(
+                                "Settings",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleLarge,
+                                lineHeight = 23.sp,
+                            )
+                            Text(
+                                "Preferences & Configuration",
+                                fontSize = 11.sp,
+                                lineHeight = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 },
