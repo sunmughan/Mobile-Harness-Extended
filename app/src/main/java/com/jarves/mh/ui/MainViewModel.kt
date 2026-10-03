@@ -2633,7 +2633,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "--paginate",
                 endpoint,
                 "--jq",
-                ".[] | [.full_name, .clone_url, (.private | tostring), .default_branch, (.description // \"\\"), .updated_at] | @tsv",
+                ".[] | [.full_name, .clone_url, (.private | tostring), .default_branch, .description, .updated_at] | @tsv",
             ),
         )
         check(exit == 0) {
