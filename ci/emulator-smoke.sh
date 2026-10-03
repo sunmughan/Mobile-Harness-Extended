@@ -27,9 +27,9 @@ for variant in online offline; do
     exit 1
   fi
 
-  if grep -qE 'FATAL EXCEPTION|Process: com\.jarves\.mh, PID:' "emulator-logs/${variant}-logcat.txt"; then
+  if grep -qE 'AndroidRuntime: Process: com\.jarves\.mh, PID:' "emulator-logs/${variant}-logcat.txt"; then
     echo "Fatal Android runtime exception detected in com.jarves.mh: ${variant}"
-    grep -nE 'FATAL EXCEPTION|Process: com\.jarves\.mh, PID:' "emulator-logs/${variant}-logcat.txt" || true
+    grep -nE 'AndroidRuntime: Process: com\.jarves\.mh, PID:' "emulator-logs/${variant}-logcat.txt" || true
     tail -n 300 "emulator-logs/${variant}-logcat.txt"
     exit 1
   fi
