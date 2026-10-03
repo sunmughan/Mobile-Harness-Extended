@@ -418,12 +418,11 @@ fun SettingsScreen(
                                 }
                             }
                             Text(
-                                "Local AI coding workspace",
+                                "v${BuildConfig.VERSION_NAME}",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text("v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Row(
