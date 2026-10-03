@@ -177,7 +177,7 @@ jobs:
           {
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
-            "notes": "Production release with startup crash logging and verified runtime packaging.",
+            "notes": "Mobile Harness 1.0.7: fixed agent clarification/ambiguity waiting loops; improved phone-friendly code editor with word wrap, find/previous/next, replace and replace-all; simplified Symbol outline to text; fixed GitHub repository pagination parsing; retained startup crash protection and verified online/offline release packaging.",
             "artifacts": {
               "online": {
                 "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
