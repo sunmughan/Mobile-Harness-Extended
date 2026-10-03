@@ -3222,7 +3222,7 @@ private fun ProjectsScreen(
                             Surface(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .offset(x = 0.dp, y = (-11).dp),
+                                    .offset(x = 8.dp, y = (-8).dp),
                                 color = MaterialTheme.colorScheme.primary,
                                 shape = RoundedCornerShape(4.dp),
                             ) {
