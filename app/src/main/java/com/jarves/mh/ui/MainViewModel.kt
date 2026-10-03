@@ -2645,7 +2645,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         output.lineSequence()
             .filter { it.isNotBlank() }
             .forEach { line ->
-                val fields = line.split("\\t", limit = 6)
+                val fields = line.split("\t", limit = 6)
                 if (fields.size < 6) return@forEach
                 val fullName = fields[0].trim().takeIf(String::isNotBlank) ?: return@forEach
                 repositories[fullName] = GitHubRepository(
