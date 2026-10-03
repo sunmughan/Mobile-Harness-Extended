@@ -233,6 +233,7 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExtendedFloatingActionButton
 
+// Mobile Harness Extended branding is rendered in the shared setup headers.
 private enum class RootScreen(val label: String, val icon: ImageVector) {
     PROJECTS("Projects", Icons.Default.Folder),
     AGENT("Agent", Icons.Default.SmartToy),
