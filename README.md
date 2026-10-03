@@ -463,3 +463,5 @@ Every app process initializes a dependency-light crash/startup logger before the
 - The log is capped at 8 MiB and retains the newest 4 MiB when rotation is required.
 
 For a startup crash, launch the app once with the diagnostic build, reproduce the crash, then upload `crash.log` here for root-cause analysis.
+
+<!-- Release pipeline: permanent Codeair signing configured for v1.0.13. -->
