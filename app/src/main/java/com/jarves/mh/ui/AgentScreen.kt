@@ -754,8 +754,15 @@ fun AgentScreen(
                             }
                         }
                         Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("AI Agent", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy((-1).dp),
+                        ) {
+                            Text(
+                                "AI Agent",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                lineHeight = 21.sp,
+                            )
                             Text(
                                 if (isAntigravity) {
                                     "Antigravity · ${formatAntigravityModelName(state.antigravityModel)}"
@@ -763,6 +770,7 @@ fun AgentScreen(
                                     "${state.agentKind.title} · ${model.ifBlank { selectedKind.title }}"
                                 },
                                 fontSize = 11.sp,
+                                lineHeight = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
