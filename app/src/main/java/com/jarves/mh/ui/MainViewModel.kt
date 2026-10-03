@@ -2622,26 +2622,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun githubRepositoriesFromCli(): List<GitHubRepository> {
+        // Keep the GitHub CLI response line-oriented instead of parsing the
+        // entire paginated response as one JSONArray. This is more resilient
+        // to GitHub API/CLI response-shape changes and avoids nested JSON
+        // conversion failures while loading the repository picker.
         val endpoint = "user/repos?visibility=all&affiliation=owner,collaborator,organization_member&sort=updated&per_page=100"
-        val (exit, output) = runGitHubCli(listOf("api", "--paginate", "--slurp", endpoint))
-        check(exit == 0) { output.lineSequence().lastOrNull { it.isNotBlank() } ?: "Could not load GitHub repositories" }
-        val pages = JSONArray(output)
+        val (exit, output) = runGitHubCli(
+            listOf(
+                "api",
+                "--paginate",
+                endpoint,
+                "--jq",
+                ".[] | [.full_name, .clone_url, (.private | tostring), .default_branch, (.description // \"\\"), .updated_at] | @tsv",
+            ),
+        )
+        check(exit == 0) {
+            output.lineSequence().lastOrNull { it.isNotBlank() }
+                ?: "Could not load GitHub repositories"
+        }
+
         val repositories = LinkedHashMap<String, GitHubRepository>()
-        for (pageIndex in 0 until pages.length()) {
-            val page = pages.optJSONArray(pageIndex) ?: continue
-            for (index in 0 until page.length()) {
-                val item = page.optJSONObject(index) ?: continue
-                val fullName = item.optString("full_name").takeIf(String::isNotBlank) ?: continue
+        output.lineSequence()
+            .filter { it.isNotBlank() }
+            .forEach { line ->
+                val fields = line.split("\\t", limit = 6)
+                if (fields.size < 6) return@forEach
+                val fullName = fields[0].trim().takeIf(String::isNotBlank) ?: return@forEach
                 repositories[fullName] = GitHubRepository(
                     fullName = fullName,
-                    cloneUrl = item.optString("clone_url", "https://github.com/$fullName.git"),
-                    private = item.optBoolean("private"),
-                    defaultBranch = item.optString("default_branch", "main"),
-                    description = item.optString("description"),
-                    updatedAt = item.optString("updated_at"),
+                    cloneUrl = fields[1].trim().ifBlank { "https://github.com/$fullName.git" },
+                    private = fields[2].trim().equals("true", ignoreCase = true),
+                    defaultBranch = fields[3].trim().ifBlank { "main" },
+                    description = fields[4],
+                    updatedAt = fields[5].trim(),
                 )
             }
-        }
         return repositories.values.toList()
     }
 
