@@ -201,24 +201,17 @@ class RuntimeInstaller(private val context: Context) {
             coreToolsMarker.writeText(CORE_TOOLS_VERSION)
         }
 
-        val stacksToInstall = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) DevStack.entries.toSet() else selectedStacks
-        val missingStacks = stacksToInstall.filterNot(::isStackInstalled)
+        val missingStacks = selectedStacks.filterNot(::isStackInstalled)
         missingStacks.forEachIndexed { index, stack ->
             val slice = 0.26f / maxOf(1, missingStacks.size)
             val from = 0.72f + index * slice
             applyStack(proot, stack, from, from + slice, onProgress)
         }
 
-        if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            ensureClaudeInstalled(proot, 0.985f, onProgress)
-            ensureDshInstalled(proot, 0.99f, onProgress)
-            ensureAgyInstalled(proot, 0.995f, onProgress)
-        } else {
-            when (agent) {
-                com.jarves.mh.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(proot, 0.985f, onProgress)
-                com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(proot, 0.985f, onProgress)
-                com.jarves.mh.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(proot, 0.985f, onProgress)
-            }
+        when (agent) {
+            com.jarves.mh.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(proot, 0.985f, onProgress)
+            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(proot, 0.985f, onProgress)
+            com.jarves.mh.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(proot, 0.985f, onProgress)
         }
         onProgress(RuntimeInstallProgress("Setup complete", 1f))
         return InstalledRuntime(proot, rootfs)
@@ -275,29 +268,27 @@ class RuntimeInstaller(private val context: Context) {
         File(rootfs, GITHUB_CLI_GUEST_PATH.removePrefix("/")).canExecute() &&
         githubCliMarker.readTextOrNull() == GITHUB_CLI_VERSION
 
-    /** Installs GitHub CLI from the APK in offline mode, or downloads it in the online flavor. */
+    /** Installs GitHub's official ARM64 CLI on demand; it is not bundled in the APK. */
     suspend fun ensureGitHubCliInstalled(onProgress: suspend (RuntimeInstallProgress) -> Unit) {
         if (isGitHubCliInstalled()) return
-        val proot = installedRuntime().proot
-        val downloaded = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            onProgress(RuntimeInstallProgress("Loading bundled GitHub CLI", 0.05f, indeterminate = true))
-            materializeEmbeddedAsset(GITHUB_CLI_BUNDLE.fileName, GITHUB_CLI_BUNDLE.sha256)
-        } else {
-            writeResolver()
-            downloads.mkdirs()
-            File(downloads, GITHUB_CLI_BUNDLE.fileName).also { destination ->
-                onProgress(RuntimeInstallProgress("Downloading official GitHub CLI", 0.05f))
-                downloadVerified(GITHUB_CLI_RELEASE_URL, destination, GITHUB_CLI_RELEASE_SHA256) { bytes, total ->
-                    val ratio = if (total > 0L) bytes.toFloat() / total else 0f
-                    onProgress(RuntimeInstallProgress(
-                        message = "Downloading GitHub CLI $GITHUB_CLI_VERSION",
-                        fraction = 0.05f + ratio * 0.75f,
-                        downloadedBytes = bytes,
-                        totalBytes = total.takeIf { it > 0L },
-                        event = RuntimeInstallEvent.DOWNLOAD,
-                    ))
-                }
-            }
+        check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            "GitHub sign-in needs the PocketDev online APK."
+        }
+        writeResolver()
+        downloads.mkdirs()
+        val downloaded = File(downloads, "gh-$GITHUB_CLI_VERSION-linux-arm64.tar.gz")
+        onProgress(RuntimeInstallProgress("Downloading official GitHub CLI", 0.05f))
+        downloadVerified(GITHUB_CLI_RELEASE_URL, downloaded, GITHUB_CLI_RELEASE_SHA256) { bytes, total ->
+            val ratio = if (total > 0L) bytes.toFloat() / total else 0f
+            onProgress(
+                RuntimeInstallProgress(
+                    message = "Downloading GitHub CLI $GITHUB_CLI_VERSION",
+                    fraction = 0.05f + ratio * 0.75f,
+                    downloadedBytes = bytes,
+                    totalBytes = total.takeIf { it > 0L },
+                    event = RuntimeInstallEvent.DOWNLOAD,
+                ),
+            )
         }
         onProgress(RuntimeInstallProgress("Installing GitHub CLI $GITHUB_CLI_VERSION", 0.85f, indeterminate = true))
         val destination = File(rootfs, GITHUB_CLI_GUEST_PATH.removePrefix("/"))
@@ -318,23 +309,11 @@ class RuntimeInstaller(private val context: Context) {
             }
         }
         check(found) { "Official GitHub CLI archive did not contain the expected binary" }
-        if (downloaded.parentFile == downloads) downloaded.delete()
-        verifyGuest(proot = proot, command = "$GITHUB_CLI_GUEST_PATH --version", failureMessage = "GitHub CLI verification failed")
+        downloaded.delete()
+        verifyGuest(proot = installedRuntime().proot, command = "$GITHUB_CLI_GUEST_PATH --version", failureMessage = "GitHub CLI verification failed")
         githubCliMarker.writeText(GITHUB_CLI_VERSION)
         check(isGitHubCliInstalled()) { "GitHub CLI installation is incomplete" }
         onProgress(RuntimeInstallProgress("GitHub CLI is ready", 1f))
-    }
-
-    private fun materializeEmbeddedAsset(fileName: String, expectedSha256: String): File {
-        val destination = File(downloads, fileName)
-        downloads.mkdirs()
-        context.assets.open("runtime/$fileName").use { input ->
-            FileOutputStream(destination).use { output -> input.copyTo(output) }
-        }
-        check(digest(destination, "SHA-256").equals(expectedSha256, ignoreCase = true)) {
-            "Bundled asset checksum mismatch: $fileName"
-        }
-        return destination
     }
 
     /**
@@ -760,44 +739,6 @@ class RuntimeInstaller(private val context: Context) {
         }
     }
 
-    private suspend fun installOfflinePackageBundle(
-        stack: DevStack,
-        fraction: Float,
-        onProgress: suspend (RuntimeInstallProgress) -> Unit,
-    ) {
-        val key = when (stack) {
-            DevStack.CPP -> "cpp"
-            DevStack.PHP -> "php"
-            else -> return
-        }
-        val manifest = context.assets.open("runtime/offline-toolchains-manifest.json").bufferedReader().use { JSONObject(it.readText()) }
-        val entry = manifest.getJSONObject(key)
-        val fileName = entry.getString("file")
-        val expectedSha = entry.getString("sha256")
-        val archive = materializeEmbeddedAsset(fileName, expectedSha)
-        onProgress(RuntimeInstallProgress("Loading bundled $key packages", fraction, indeterminate = true))
-        // The package overlay is a complete ARM64 Ubuntu 20.04 userspace built
-        // in CI. Extracting it over the already verified Core rootfs installs
-        // the exact package database and files without invoking apt.
-        extractZstdTar(archive, rootfs)
-        archive.delete()
-        val proot = installedRuntime().proot
-        verifyGuest(
-            proot,
-            when (key) {
-                "cpp" -> "gcc --version && g++ --version && cmake --version && gdb --version"
-                else -> "php --version && composer --version"
-            },
-            "Bundled $key packages could not be verified offline",
-        )
-        writeDevStackState(
-            readDevStackState().apply {
-                put(DevStack.CPP.name, true)
-                put(DevStack.PHP.name, true)
-            },
-        )
-    }
-
     private suspend fun applyStack(
         proot: File,
         stack: DevStack,
@@ -829,10 +770,6 @@ class RuntimeInstaller(private val context: Context) {
                 installAndroidToolchain(proot, from, to, onProgress)
             }
             DevStack.CPP -> {
-                if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    installOfflinePackageBundle(stack, from, onProgress)
-                    return
-                }
                 aptInstall(
                     proot,
                     listOf("build-essential", "cmake", "gdb"),
@@ -847,10 +784,6 @@ class RuntimeInstaller(private val context: Context) {
                 )
             }
             DevStack.PHP -> {
-                if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    installOfflinePackageBundle(stack, from, onProgress)
-                    return
-                }
                 aptInstall(
                     proot,
                     listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
@@ -1952,12 +1885,6 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             fileName = "pocketdev-agy-arm64-2026.09.1.tar.zst",
             sha256 = "a659ab9188956fc4721ca86fb21b5118e0e489f47a5e02ae6b4f2fb423659d78",
             compressedBytes = 41_870_025L,
-        )
-        private val GITHUB_CLI_BUNDLE = RuntimeBundle(
-            label = "GitHub CLI",
-            fileName = "gh_2.100.0_linux_arm64.tar.gz",
-            sha256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961",
-            compressedBytes = 13_783_869L,
         )
         private const val MAX_TERMINAL_LINE = 500
         private const val MAX_COLLECTED_OUTPUT = 24_000
