@@ -177,7 +177,7 @@ jobs:
           {
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
-            "notes": "Mobile Harness 1.0.7: fixed agent clarification/ambiguity waiting loops; improved phone-friendly code editor with word wrap, find/previous/next, replace and replace-all; simplified Symbol outline to text; fixed GitHub repository pagination parsing; retained startup crash protection and verified online/offline release packaging.",
+            "notes": "Mobile Harness 1.0.8: refined Mobile Harness Extended branding and header alignment; tightened the Extended pill styling; added matching Extended branding to Settings; moved the app version below the Settings branding; pointed the privacy policy to this Extended repository; and updated the privacy policy for the current AI, Git/GitHub, terminal, editor, build, runtime, update, storage, and permission features.",
             "artifacts": {
               "online": {
                 "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
