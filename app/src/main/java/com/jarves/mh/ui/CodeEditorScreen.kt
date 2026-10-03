@@ -472,7 +472,6 @@ fun CodeEditorScreen(
                                     .then(if (wordWrap) Modifier else Modifier.widthIn(min = 720.dp))
                                     .padding(start = 12.dp, top = 8.dp, end = 24.dp, bottom = 24.dp),
                                 enabled = !readOnly,
-                                softWrap = wordWrap,
                                 textStyle = TextStyle(
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontFamily = FontFamily.Monospace,
