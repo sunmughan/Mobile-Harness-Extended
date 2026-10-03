@@ -542,6 +542,8 @@ private fun MutableList<String>.addAntigravitySelection(model: String, effort: S
 internal fun antigravityWorkspacePrompt(projectSlug: String, prompt: String): String = """
     <pocketdev_workspace>
     The active project workspace is /workspace/$projectSlug. Create, edit, read, run, and build project files only inside this directory. Do not create project output under ~/.gemini/antigravity-cli/scratch or any other scratch directory.
+    Do not enter a clarification or ambiguity waiting loop. For normal ambiguity, inspect the repository and make the safest reasonable assumption, then implement and verify the requested change. Ask the user only when a missing choice is truly blocking or an irreversible/destructive action requires explicit confirmation.
+    If the request is concrete, execute it end-to-end rather than replying with a plan and waiting for another message.
     </pocketdev_workspace>
 
     $prompt
