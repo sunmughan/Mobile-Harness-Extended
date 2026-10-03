@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -89,6 +91,7 @@ fun CodeEditorScreen(
     var savedText by remember(filePath) { mutableStateOf(source) }
     var searchOpen by rememberSaveable(filePath) { mutableStateOf(false) }
     var menuOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var wordWrap by rememberSaveable(filePath) { mutableStateOf(true) }
     var outlineOpen by rememberSaveable(filePath) { mutableStateOf(false) }
     var goToLineOpen by rememberSaveable(filePath) { mutableStateOf(false) }
     var find by rememberSaveable(filePath) { mutableStateOf("") }
@@ -122,6 +125,48 @@ fun CodeEditorScreen(
         scope.launch { vertical.animateScrollTo(((target - 1) * 20 * 3).coerceAtLeast(0)) }
     }
 
+    fun findMatch(from: Int, forward: Boolean): Int {
+        if (find.isBlank()) return -1
+        val text = value.text
+        if (text.isEmpty()) return -1
+        return if (forward) {
+            val start = from.coerceIn(0, text.length)
+            text.indexOf(find, startIndex = start, ignoreCase = true)
+                .takeIf { it >= 0 }
+                ?: text.indexOf(find, startIndex = 0, ignoreCase = true)
+        } else {
+            val start = (from - 1).coerceIn(0, text.length)
+            text.lastIndexOf(find, startIndex = start, ignoreCase = true)
+                .takeIf { it >= 0 }
+                ?: text.lastIndexOf(find, startIndex = text.length, ignoreCase = true)
+        }
+    }
+
+    fun selectMatch(index: Int) {
+        if (index < 0 || find.isBlank()) return
+        value = value.copy(selection = TextRange(index, (index + find.length).coerceAtMost(value.text.length)))
+    }
+
+    fun findNext() = selectMatch(findMatch(value.selection.end, forward = true))
+    fun findPrevious() = selectMatch(findMatch(value.selection.start, forward = false))
+
+    fun replaceCurrent() {
+        if (find.isBlank() || readOnly) return
+        val start = value.selection.start
+        val end = value.selection.end
+        val selected = value.text.substring(start, end)
+        if (!selected.equals(find, ignoreCase = true)) {
+            findNext()
+            return
+        }
+        val replaced = value.text.removeRange(start, end).let { before ->
+            before.substring(0, start) + replace + before.substring(start)
+        }
+        val cursor = (start + replace.length).coerceAtMost(replaced.length)
+        value = TextFieldValue(replaced, TextRange(cursor))
+        bracketPair = findBracketPair(replaced, cursor)
+    }
+
     fun replaceAll() {
         if (find.isBlank() || readOnly) return
         val replaced = value.text.replace(find, replace, ignoreCase = true)
@@ -131,6 +176,7 @@ fun CodeEditorScreen(
             bracketPair = findBracketPair(replaced, cursor)
         }
     }
+
 
     if (showDiscardDialog) {
         AlertDialog(
@@ -289,12 +335,15 @@ fun CodeEditorScreen(
                         onDismissRequest = { menuOpen = false },
                     ) {
                         DropdownMenuItem(
+                            text = { Text(if (wordWrap) "Word wrap: On" else "Word wrap: Off") },
+                            onClick = { wordWrap = !wordWrap; menuOpen = false },
+                        )
+                        DropdownMenuItem(
                             text = { Text("Symbol outline") },
                             onClick = {
                                 menuOpen = false
                                 outlineOpen = true
                             },
-                            leadingIcon = { Icon(Icons.Default.FormatListBulleted, null) },
                         )
                         DropdownMenuItem(
                             text = { Text("Go to line") },
@@ -324,29 +373,42 @@ fun CodeEditorScreen(
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 ) {
-                    Row(
+                    Column(
                         Modifier.padding(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        OutlinedTextField(
-                            value = find,
-                            onValueChange = { find = it },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            label = { Text("Find") },
-                        )
-                        OutlinedTextField(
-                            value = replace,
-                            onValueChange = { replace = it },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            label = { Text("Replace") },
-                        )
-                        TextButton(
-                            onClick = ::replaceAll,
-                            enabled = find.isNotBlank() && !readOnly,
-                        ) { Text("All") }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = find,
+                                onValueChange = { find = it },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                label = { Text("Find") },
+                            )
+                            IconButton(onClick = ::findPrevious, enabled = find.isNotBlank()) {
+                                Icon(Icons.Default.KeyboardArrowUp, "Previous match")
+                            }
+                            IconButton(onClick = ::findNext, enabled = find.isNotBlank()) {
+                                Icon(Icons.Default.KeyboardArrowDown, "Next match")
+                            }
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = replace,
+                                onValueChange = { replace = it },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                label = { Text("Replace with") },
+                            )
+                            TextButton(onClick = ::replaceCurrent, enabled = find.isNotBlank() && !readOnly) { Text("Replace") }
+                            TextButton(onClick = ::replaceAll, enabled = find.isNotBlank() && !readOnly) { Text("All") }
+                        }
                     }
                 }
             }
@@ -393,8 +455,10 @@ fun CodeEditorScreen(
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .horizontalScroll(horizontal)
-                                .verticalScroll(vertical),
+                                .then(
+                                    if (wordWrap) Modifier.verticalScroll(vertical)
+                                    else Modifier.horizontalScroll(horizontal).verticalScroll(vertical),
+                                ),
                         ) {
                             BasicTextField(
                                 value = value,
@@ -405,9 +469,11 @@ fun CodeEditorScreen(
                                     }
                                 },
                                 modifier = Modifier
-                                    .widthIn(min = 720.dp)
+                                    .fillMaxWidth()
+                                    .then(if (wordWrap) Modifier else Modifier.widthIn(min = 720.dp))
                                     .padding(start = 12.dp, top = 8.dp, end = 24.dp, bottom = 24.dp),
                                 enabled = !readOnly,
+                                softWrap = wordWrap,
                                 textStyle = TextStyle(
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontFamily = FontFamily.Monospace,
