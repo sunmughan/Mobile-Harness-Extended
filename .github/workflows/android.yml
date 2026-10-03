@@ -105,10 +105,9 @@ jobs:
             -H "Accept: application/octet-stream" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -o "dist/runtime-bundles/$GH_CLI_FILE" \
-            "https://api.github.com/repos/cli/cli/releases/assets/143927000"
+            "https://api.github.com/repos/cli/cli/releases/assets/542974279"
           printf '%s  %s\\n' "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961" "dist/runtime-bundles/$GH_CLI_FILE" | sha256sum -c -
           bash scripts/runtime-bundles/prepare-offline-packages.sh dist/runtime-bundles
-          cp dist/runtime-bundles/offline-toolchains-manifest.json dist/runtime-bundles/offline-toolchains-manifest.json
           du -h dist/runtime-bundles/* | sort -h
 
       - name: Verify online build and unit tests
