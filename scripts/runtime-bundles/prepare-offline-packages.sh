@@ -12,7 +12,7 @@ mkdir -p "$OUT_DIR"
 rm -rf "$WORK"
 mkdir -p "$WORK"
 
-CID="$(docker create --platform linux/arm64 "$IMAGE" /bin/bash)"
+CID="$(docker create --platform linux/arm64 "$IMAGE" sleep infinity)"
 cleanup() {
   docker rm -f "$CID" >/dev/null 2>&1 || true
 }
