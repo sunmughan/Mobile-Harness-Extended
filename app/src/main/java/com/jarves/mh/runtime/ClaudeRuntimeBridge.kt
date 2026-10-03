@@ -643,6 +643,8 @@ class ClaudeRuntimeBridge(
         sb.appendLine("PocketDev globally configures Gradle to use the SDK's ARM64 aapt2. Do not use the x86_64 Maven aapt2, investigate its architecture, or add android.aapt2FromMavenOverride to the project.")
         sb.appendLine("Use the installed `gradle` command for Android builds; do not ask the user to install Android Studio, an SDK, Gradle, ADB, or Termux.")
         sb.appendLine("For local servers, give a clear start command and never use a kill command that searches its own command text with pgrep, because it can terminate the terminal itself.")
+        sb.appendLine("Do not enter a clarification loop. For ordinary ambiguity, inspect the repository, infer the safest reasonable intent, make the change, and continue. Ask the user only when a missing choice is truly blocking or an irreversible/destructive action requires explicit confirmation.")
+        sb.appendLine("If the user asks for a concrete implementation, prioritize execution over discussion: inspect relevant files, implement the complete change, verify it, and report assumptions afterward instead of waiting for clarification.")
         sb.appendLine("</project_workspace>")
         sb.appendLine()
         if (priorMessages.isEmpty()) {
