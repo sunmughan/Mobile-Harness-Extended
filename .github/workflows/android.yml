@@ -100,7 +100,16 @@ jobs:
               "https://api.github.com/repos/techjarves/Mobile-Harness/releases/assets/${ASSET_ID[$file]}"
             printf '%s  %s\n' "${SHA256[$file]}" "dist/runtime-bundles/$file" | sha256sum -c -
           done
-          du -h dist/runtime-bundles/*.tar.zst | sort -h
+          GH_CLI_FILE="gh_2.100.0_linux_arm64.tar.gz"
+          curl -fL --retry 5 --retry-delay 2 --retry-all-errors \
+            -H "Accept: application/octet-stream" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -o "dist/runtime-bundles/$GH_CLI_FILE" \
+            "https://api.github.com/repos/cli/cli/releases/assets/143927000"
+          printf '%s  %s\\n' "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961" "dist/runtime-bundles/$GH_CLI_FILE" | sha256sum -c -
+          bash scripts/runtime-bundles/prepare-offline-packages.sh dist/runtime-bundles
+          cp dist/runtime-bundles/offline-toolchains-manifest.json dist/runtime-bundles/offline-toolchains-manifest.json
+          du -h dist/runtime-bundles/* | sort -h
 
       - name: Verify online build and unit tests
         run: ./gradlew --no-daemon --stacktrace testOnlineDebugUnitTest assembleOnlineDebug
