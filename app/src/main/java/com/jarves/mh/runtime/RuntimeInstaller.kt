@@ -775,31 +775,27 @@ class RuntimeInstaller(private val context: Context) {
         val fileName = entry.getString("file")
         val expectedSha = entry.getString("sha256")
         val archive = materializeEmbeddedAsset(fileName, expectedSha)
-        val staging = File(runtimeDir, "offline-package-$key.installing")
-        staging.deleteRecursively()
-        staging.mkdirs()
         onProgress(RuntimeInstallProgress("Loading bundled $key packages", fraction, indeterminate = true))
-        extractZstdTar(archive, staging)
+        // The package overlay is a complete ARM64 Ubuntu 20.04 userspace built
+        // in CI. Extracting it over the already verified Core rootfs installs
+        // the exact package database and files without invoking apt.
+        extractZstdTar(archive, rootfs)
         archive.delete()
         val proot = installedRuntime().proot
-        val command = "set -e; " +
-            "mkdir -p /var/cache/apt/archives; " +
-            "find /var/cache/apt/archives -type f -name '*.deb' -delete; " +
-            "find / -path '/var/cache/pocketdev-offline/$key/*.deb' -exec cp -f {} /var/cache/apt/archives/ \\; ; " +
-            "set +e; for i in 1 2 3 4 5; do dpkg -i /var/cache/apt/archives/*.deb >/dev/null 2>&1; dpkg --configure -a >/dev/null 2>&1; done; " +
-            "dpkg --audit; test -z \"$(dpkg --audit)\"; " +
-            "rm -rf /var/cache/pocketdev-offline/$key /var/cache/apt/archives/*.deb"
-        runGuestCommand(
-            proot = proot,
-            command = command,
-            displayCommand = "install bundled $key packages (offline)",
-            fraction = fraction,
-            timeoutMs = 35 * 60 * 1_000L,
-            onProgress = onProgress,
-            failureMessage = "Bundled $key packages could not be installed offline",
+        verifyGuest(
+            proot,
+            when (key) {
+                "cpp" -> "gcc --version && g++ --version && cmake --version && gdb --version"
+                else -> "php --version && composer --version"
+            },
+            "Bundled $key packages could not be verified offline",
         )
-        staging.deleteRecursively()
-        writeDevStackState(readDevStackState().apply { put(stack.name, true) })
+        writeDevStackState(
+            readDevStackState().apply {
+                put(DevStack.CPP.name, true)
+                put(DevStack.PHP.name, true)
+            },
+        )
     }
 
     private suspend fun applyStack(
