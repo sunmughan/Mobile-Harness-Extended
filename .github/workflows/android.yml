@@ -153,6 +153,7 @@ jobs:
             app/build/outputs/apk/**/*.apk
 
       # Publishes the freshly verified online/offline APKs to the current release.
+      # Battery optimization fix republish: keep the release assets aligned with main.
       - name: Publish release assets
         if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-release]')
         env:
