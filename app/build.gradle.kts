@@ -50,8 +50,7 @@ val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAss
         runtimeBundleDir.file("pocketdev-dsh-arm64-2026.09.1.tar.zst"),
         runtimeBundleDir.file("pocketdev-agy-arm64-2026.09.1.tar.zst"),
         runtimeBundleDir.file("gh_2.100.0_linux_arm64.tar.gz"),
-        runtimeBundleDir.file("pocketdev-cpp-packages-arm64-ubuntu20.04.tar.zst"),
-        runtimeBundleDir.file("pocketdev-php-packages-arm64-ubuntu20.04.tar.zst"),
+        runtimeBundleDir.file("pocketdev-offline-packages-arm64-ubuntu20.04.tar.zst"),
         runtimeBundleDir.file("offline-toolchains-manifest.json"),
     )
     into(generatedRuntimeAssets.map { it.dir("offline/runtime") })
