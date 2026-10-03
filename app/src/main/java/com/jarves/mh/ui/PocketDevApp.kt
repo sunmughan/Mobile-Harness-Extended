@@ -3192,24 +3192,9 @@ private fun ProjectsScreen(
                     .fillMaxWidth()
                     .padding(top = 10.dp, start = 18.dp, end = 18.dp, bottom = 4.dp),
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                    shape = RoundedCornerShape(7.dp),
-                ) {
-                    Text(
-                        text = "FIELD BUILD  •  v${BuildConfig.VERSION_NAME}",
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.45.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                Spacer(Modifier.height(7.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     BrandMark(compact = false)
