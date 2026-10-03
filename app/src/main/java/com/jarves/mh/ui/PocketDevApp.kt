@@ -1140,11 +1140,7 @@ private fun RuntimeSetupPromptScreen(
                     }
                 }
                 Text(
-                    if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                        "All coding agents are bundled in this offline app. Choose your primary agent; no agent download is required."
-                    } else {
-                        "Only the selected optional agent is downloaded. You can install or switch agents later from Settings."
-                    },
+                    "Only the selected optional agent is downloaded. You can install or switch agents later from Settings.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp),
@@ -1164,8 +1160,8 @@ private fun RuntimeSetupPromptScreen(
                         DevStack.entries.forEachIndexed { index, stack ->
                             DevStackChoiceRow(
                                 stack = stack,
-                                selected = BuildConfig.OFFLINE_RUNTIME_BUNDLES || stack == DevStack.WEB || stack in selectedStacks,
-                                locked = BuildConfig.OFFLINE_RUNTIME_BUNDLES || stack == DevStack.WEB,
+                                selected = stack == DevStack.WEB || stack in selectedStacks,
+                                locked = stack == DevStack.WEB,
                                 onClick = { onToggleStack(stack) },
                             )
                             if (index != DevStack.entries.lastIndex) {
@@ -1259,7 +1255,6 @@ private fun setupTimeEstimate(selected: Set<DevStack>): String {
 }
 
 private fun stackDownloadLabel(stack: DevStack): String = when {
-    BuildConfig.OFFLINE_RUNTIME_BUNDLES -> " · included"
     stack == DevStack.WEB -> " · included"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.PYTHON -> " · 55 MB"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.ANDROID -> " · 570 MB"
@@ -1267,7 +1262,7 @@ private fun stackDownloadLabel(stack: DevStack): String = when {
 }
 
 private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind): String {
-    if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) return "All agents, toolchains, packages and GitHub CLI are bundled in this offline app"
+    if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) return "All selected bundles are included in this offline app"
     val total = CORE_RUNTIME_DOWNLOAD_MB +
         when (agent) {
             AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB
