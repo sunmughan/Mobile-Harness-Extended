@@ -39,7 +39,7 @@ jobs:
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
           "${SDKMANAGER}" "platform-tools" "platforms;android-36" "ndk;26.1.10909125" "cmake;3.22.1"
 
-      - name: Configure persistent release signing key
+      - name: Configure permanent Codeair release signing key
         shell: bash
         env:
           MH_RELEASE_KEYSTORE_BASE64: ${{ secrets.MH_RELEASE_KEYSTORE_BASE64 }}
@@ -47,28 +47,33 @@ jobs:
           MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
           MH_RELEASE_KEY_PASSWORD: ${{ secrets.MH_RELEASE_KEY_PASSWORD }}
         run: |
-          set -euxo pipefail
-          if [[ -n "${MH_RELEASE_KEYSTORE_BASE64}" && -n "${MH_RELEASE_STORE_PASSWORD}" && -n "${MH_RELEASE_KEY_ALIAS}" && -n "${MH_RELEASE_KEY_PASSWORD}" ]]; then
-            echo "${MH_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/mobile-harness-release.jks"
-            echo "Using the persistent release signing key."
-          else
-            echo "Persistent release signing secrets are not configured; generating a temporary key for verification only."
-            keytool -genkeypair -v \
-              -keystore "$RUNNER_TEMP/mobile-harness-release.jks" \
-              -storepass "android-ci-release" \
-              -keypass "android-ci-release" \
-              -alias "mobile-harness" \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Mobile Harness CI, OU=Build, O=Mobile Harness, L=CI, ST=CI, C=US"
-            MH_RELEASE_STORE_PASSWORD="android-ci-release"
-            MH_RELEASE_KEY_ALIAS="mobile-harness"
-            MH_RELEASE_KEY_PASSWORD="android-ci-release"
-            export MH_RELEASE_STORE_PASSWORD MH_RELEASE_KEY_ALIAS MH_RELEASE_KEY_PASSWORD
+          set -euo pipefail
+          if [[ -z "${MH_RELEASE_KEYSTORE_BASE64}" || -z "${MH_RELEASE_STORE_PASSWORD}" || -z "${MH_RELEASE_KEY_ALIAS}" || -z "${MH_RELEASE_KEY_PASSWORD}" ]]; then
+            echo "::error::Permanent release signing secrets are required. No temporary signing key will be generated."
+            exit 1
           fi
+          printf '%s' "${MH_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/mobile-harness-release.jks"
+          chmod 600 "$RUNNER_TEMP/mobile-harness-release.jks"
+          echo "Using the permanent Codeair Software Solutions release signing key."
           echo "MH_UPLOAD_STORE_FILE=$RUNNER_TEMP/mobile-harness-release.jks" >> "$GITHUB_ENV"
-          if [[ -n "${MH_RELEASE_STORE_PASSWORD}" ]]; then echo "MH_UPLOAD_STORE_PASSWORD=${MH_RELEASE_STORE_PASSWORD}" >> "$GITHUB_ENV"; fi
-          if [[ -n "${MH_RELEASE_KEY_ALIAS}" ]]; then echo "MH_UPLOAD_KEY_ALIAS=${MH_RELEASE_KEY_ALIAS}" >> "$GITHUB_ENV"; fi
-          if [[ -n "${MH_RELEASE_KEY_PASSWORD}" ]]; then echo "MH_UPLOAD_KEY_PASSWORD=${MH_RELEASE_KEY_PASSWORD}" >> "$GITHUB_ENV"; fi
+          echo "MH_UPLOAD_STORE_PASSWORD=${MH_RELEASE_STORE_PASSWORD}" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_KEY_ALIAS=${MH_RELEASE_KEY_ALIAS}" >> "$GITHUB_ENV"
+          echo "MH_UPLOAD_KEY_PASSWORD=${MH_RELEASE_KEY_PASSWORD}" >> "$GITHUB_ENV"
+
+      - name: Verify permanent release signing certificate
+        shell: bash
+        env:
+          MH_RELEASE_STORE_PASSWORD: ${{ secrets.MH_RELEASE_STORE_PASSWORD }}
+          MH_RELEASE_KEY_ALIAS: ${{ secrets.MH_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          EXPECTED_SHA256="09:BB:34:61:5A:65:96:E3:80:A3:F2:A7:A8:22:C6:ED:DD:C9:3E:11:55:D9:2A:DD:07:E3:20:16:AA:9A:F0:CE"
+          ACTUAL_SHA256="$(keytool -list -v -keystore "$RUNNER_TEMP/mobile-harness-release.jks" -storepass "$MH_RELEASE_STORE_PASSWORD" -alias "$MH_RELEASE_KEY_ALIAS" | awk -F': ' '/SHA256:/{print $2; exit}')"
+          echo "Release signing SHA-256: $ACTUAL_SHA256"
+          if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
+            echo "::error::The configured release keystore is not the permanent Codeair signing key."
+            exit 1
+          fi
       - name: Fetch pinned runtime bundles
         env:
           GITHUB_TOKEN: ${{ github.token }}
