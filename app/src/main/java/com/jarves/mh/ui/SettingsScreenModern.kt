@@ -512,18 +512,29 @@ private fun EnvironmentUpdateCenter() {
         loading = true
         scope.launch {
             try {
-                val connection = (java.net.URL("https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/mobile-harness-update.json").openConnection() as java.net.HttpURLConnection)
-                connection.connectTimeout = 10_000
-                connection.readTimeout = 15_000
-                connection.instanceFollowRedirects = true
-                check(connection.responseCode in 200..299) { "Update catalog is not published yet." }
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                connection.disconnect()
-                components = updateManager.parseManifest(body)
-                componentStates = updateManager.inspect(components)
+                val body = withContext(Dispatchers.IO) {
+                    val connection = (java.net.URL("https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/mobile-harness-update.json").openConnection() as java.net.HttpURLConnection)
+                    try {
+                        connection.connectTimeout = 10_000
+                        connection.readTimeout = 15_000
+                        connection.instanceFollowRedirects = true
+                        connection.setRequestProperty("Accept", "application/json")
+                        connection.setRequestProperty("User-Agent", "Mobile-Harness/" + BuildConfig.VERSION_NAME)
+                        val code = connection.responseCode
+                        check(code in 200..299) { "Update catalog request failed (HTTP " + code + ")." }
+                        connection.inputStream.bufferedReader().use { it.readText() }
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+                val parsed = withContext(Dispatchers.Default) { updateManager.parseManifest(body) }
+                check(parsed.isNotEmpty()) { "Update catalog is empty or invalid." }
+                val inspected = withContext(Dispatchers.IO) { updateManager.inspect(parsed) }
+                components = parsed
+                componentStates = inspected
                 message = "Catalog refreshed."
             } catch (error: Throwable) {
-                message = error.message ?: "Could not load update catalog."
+                message = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
             } finally {
                 loading = false
             }
