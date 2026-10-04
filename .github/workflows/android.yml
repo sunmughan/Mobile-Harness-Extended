@@ -194,6 +194,7 @@ jobs:
           - Environment Update actions are enabled only for components with a supported live updater or verified HTTPS package; metadata-only core/Python/Android entries no longer trigger a fake package update.
           - Added real install/update routing for Python and Android toolchains through the verified upstream runtime bundles; their versions are discovered from published runtime assets instead of hard-coded package URLs.
           - Removed misleading disabled actions for components that do not have a standalone package; bundled Core remains runtime-managed while Python/Android expose real Install/Update actions.
+          - Added persistent operation-failure logging for environment updates so caught runtime update exceptions are captured in crash.log.
           - Verified online/offline builds, unit tests, permanent release signing, APK alignment, and release integrity in CI.
 
           ### Release files
