@@ -490,6 +490,8 @@ fun SettingsScreen(
 
 @Composable
 private fun EnvironmentUpdateCenter() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val manager = remember { runCatching { EnvironmentUpdateManager(context, RuntimeInstaller(context)) }.getOrNull() }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
