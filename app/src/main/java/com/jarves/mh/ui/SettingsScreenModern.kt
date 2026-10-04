@@ -667,8 +667,12 @@ private fun EnvironmentUpdateCenter() {
                                         busyId = component.id
                                         scope.launch {
                                             try {
-                                                manager?.rollback(component) { progress ->
-                                                    operationMessage = progress.message
+                                                withContext(Dispatchers.IO) {
+                                                    manager?.rollback(component) { progress ->
+                                                        withContext(Dispatchers.Main.immediate) {
+                                                            operationMessage = progress.message
+                                                        }
+                                                    }
                                                 }
                                                 operationMessage = component.label + " rollback completed."
                                             } catch (error: Throwable) {
