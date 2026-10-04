@@ -103,11 +103,14 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.runtime.AntigravityAuthStatus
+import com.jarves.mh.runtime.EnvironmentManifestComponent
+import com.jarves.mh.runtime.EnvironmentUpdateManager
+import com.jarves.mh.runtime.RuntimeInstaller
 import com.jarves.mh.ui.theme.AppThemeMode
 import com.jarves.mh.ui.theme.PocketOrange
 import kotlinx.coroutines.launch
 
-private enum class SettingsSection { APPEARANCE, TOOLS, RUNTIME, UPDATE_CHANNEL }
+private enum class SettingsSection { APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, UPDATE_CHANNEL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -389,6 +392,18 @@ fun SettingsScreen(
                 }
             }
 
+            item {
+                SettingsAccordion(
+                    title = "Environment updates",
+                    subtitle = "PHP, Python, Node, Composer and toolchains",
+                    icon = Icons.Default.Refresh,
+                    expanded = expanded == SettingsSection.ENVIRONMENT,
+                    onClick = { toggle(SettingsSection.ENVIRONMENT) },
+                ) {
+                    EnvironmentUpdateCenter()
+                }
+            }
+
             if (BuildConfig.DEBUG) {
                 item {
                     DebugUpdateChannelSection(
@@ -450,6 +465,78 @@ fun SettingsScreen(
                     )
                 }
                 Spacer(Modifier.height(18.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun EnvironmentUpdateCenter() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val manager = remember { runCatching { EnvironmentUpdateManager(context, RuntimeInstaller(context)) }.getOrNull() }
+    var loading by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var components by remember { mutableStateOf(emptyList<EnvironmentManifestComponent>()) }
+
+    fun refresh() {
+        val updateManager = manager ?: run {
+            message = "Runtime is not installed yet."
+            return
+        }
+        loading = true
+        scope.launch {
+            try {
+                val connection = (java.net.URL("https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/environment-update.json").openConnection() as java.net.HttpURLConnection)
+                connection.connectTimeout = 10_000
+                connection.readTimeout = 15_000
+                connection.instanceFollowRedirects = true
+                check(connection.responseCode in 200..299) { "Update catalog is not published yet." }
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                connection.disconnect()
+                components = updateManager.parseManifest(body)
+                message = "Catalog refreshed."
+            } catch (error: Throwable) {
+                message = error.message ?: "Could not load update catalog."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Updates are staged, verified, health-checked and rolled back through compressed backups. The active runtime is never overwritten directly.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(onClick = { refresh() }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+            if (loading) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Default.Refresh, null, Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(if (loading) "Checking…" else "Check for updates")
+        }
+        message?.let {
+            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        components.forEach { component ->
+            Surface(
+                shape = RoundedCornerShape(13.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(component.label, fontWeight = FontWeight.SemiBold)
+                            Text("Version " + component.version, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(component.status.uppercase(), fontSize = 10.sp, color = PocketOrange, fontWeight = FontWeight.Bold)
+                    }
+                    if (component.notes.isNotBlank()) {
+                        Text(component.notes, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("Package verification: SHA-256", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
