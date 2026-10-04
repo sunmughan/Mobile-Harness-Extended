@@ -3221,26 +3221,31 @@ private fun ProjectsScreen(
                             color = MaterialTheme.colorScheme.onBackground,
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = "Harness",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(4.dp),
-                        ) {
+                        Box {
                             Text(
-                                text = "Extended",
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 0.5.dp),
-                                fontSize = 7.sp,
+                                text = "Harness",
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.2.sp,
-                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onBackground,
                             )
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(y = (-9).dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(50),
+                            ) {
+                                Text(
+                                    text = "EXTENDED",
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 6.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.45.sp,
+                                    lineHeight = 8.sp,
+                                )
+                            }
                         }
                     }
                 }
