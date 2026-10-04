@@ -55,10 +55,14 @@ fun SkillsScreen(
     results: List<SkillSearchResult>,
     busy: Boolean,
     message: String?,
+    skillUpdates: Set<String> = emptySet(),
     onSearch: (String) -> Unit,
     onImportGitHub: (String) -> Unit,
     onImportZip: (Uri) -> Unit,
     onRemove: (String) -> Unit,
+    onCheckUpdates: () -> Unit = {},
+    onUpdate: (String) -> Unit = {},
+
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var githubUrl by rememberSaveable { mutableStateOf("") }
@@ -146,6 +150,16 @@ fun SkillsScreen(
                             }
                         }
                         message?.let { Text(it, fontSize = 12.sp) }
+                        OutlinedButton(
+                            onClick = onCheckUpdates,
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text("Check for skill updates")
+                        }
                     }
                 }
             }
@@ -153,7 +167,13 @@ fun SkillsScreen(
             if (installed.isNotEmpty()) {
                 item { Text("Installed", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
                 items(installed, key = { it.name }) { skill ->
-                    SkillCard(skill = skill, onRemove = { onRemove(skill.name) })
+                    SkillCard(
+                        skill = skill,
+                        updateAvailable = skill.name in skillUpdates,
+                        busy = busy,
+                        onUpdate = { onUpdate(skill.name) },
+                        onRemove = { onRemove(skill.name) },
+                    )
                 }
             }
 
@@ -187,7 +207,13 @@ fun SkillsScreen(
 }
 
 @Composable
-private fun SkillCard(skill: SkillInfo, onRemove: () -> Unit) {
+private fun SkillCard(
+    skill: SkillInfo,
+    updateAvailable: Boolean,
+    busy: Boolean,
+    onUpdate: () -> Unit,
+    onRemove: () -> Unit,
+) {
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.AutoAwesome, null)
@@ -197,7 +223,10 @@ private fun SkillCard(skill: SkillInfo, onRemove: () -> Unit) {
                 Text(skill.description, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Text(skill.source, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = onRemove) {
+            if (updateAvailable && skill.source.startsWith("https://github.com/", ignoreCase = true)) {
+                Button(onClick = onUpdate, enabled = !busy) { Text("Update") }
+            }
+            IconButton(onClick = onRemove, enabled = !busy) {
                 Icon(Icons.Default.Delete, contentDescription = "Remove skill")
             }
         }
