@@ -159,13 +159,13 @@ class EnvironmentUpdateManager(
         onProgress(RuntimeInstallProgress("Restoring " + item.label + " " + version, 0.15f, indeterminate = true))
         extractZip(backup, restore)
         verifyPackage(restore, item.copy(version = version))
-        activate(item.copy(version = version), restore)
         healthCheck(item.copy(version = version), restore)
 
         if (current != null && current != version) File(componentRoot, current).deleteRecursively()
         val active = File(componentRoot, version)
         active.deleteRecursively()
         check(restore.renameTo(active)) { "Could not finalize rollback" }
+        activate(item.copy(version = version), active)
         backup.delete()
         onProgress(RuntimeInstallProgress(item.label + " rollback complete", 1f, event = RuntimeInstallEvent.COMPLETED))
     }
