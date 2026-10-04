@@ -214,6 +214,7 @@ data class AppUiState(
     val skillSearchResults: List<SkillSearchResult> = emptyList(),
     val skillsBusy: Boolean = false,
     val skillsMessage: String? = null,
+    val skillUpdates: Set<String> = emptySet(),
     val toastMessage: String? = null,
     val projectTerminalLines: List<TerminalOutputLine> = emptyList(),
     val projectTerminalLiveOutput: String = "",
@@ -3783,6 +3784,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(skills = skillManager.installed()) }
     }
 
+    fun checkSkillUpdates() {
+        if (_state.value.skillsBusy) return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Checking installed skills for updates…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.checkUpdates() } }
+            result.onSuccess { updates ->
+                _state.update {
+                    it.copy(
+                        skillsBusy = false,
+                        skillUpdates = updates.mapTo(mutableSetOf()) { update -> update.name },
+                        skillsMessage = if (updates.isEmpty()) "All remotely sourced skills are up to date." else updates.size.toString() + " skill update" + if (updates.size == 1) "" else "s" + " available.",
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill update check failed.") }
+            }
+        }
+    }
+
+    fun updateSkill(name: String) {
+        if (_state.value.skillsBusy) return
+        val skill = _state.value.skills.firstOrNull { it.name == name } ?: return
+        _state.update { it.copy(skillsBusy = true, skillsMessage = "Updating $name…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { skillManager.update(skill) } }
+            result.onSuccess {
+                _state.update {
+                    it.copy(
+                        skills = skillManager.installed(),
+                        skillsBusy = false,
+                        skillUpdates = it.skillUpdates - name,
+                        skillsMessage = "$name updated successfully.",
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill update failed.") }
+            }
+        }
+    }
+
     fun searchSkills(query: String) {
         if (_state.value.skillsBusy) return
         _state.update { it.copy(skillsBusy = true, skillsMessage = "Searching GitHub…") }
@@ -3798,7 +3839,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing skill bundle…") }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromGitHub(url) } }
-            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
+            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillUpdates = it.skillUpdates - installed.map { skill -> skill.name }.toSet(), skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
                 .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
         }
     }
@@ -3808,7 +3849,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(skillsBusy = true, skillsMessage = "Importing local skill bundle…") }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { skillManager.installFromUri(uri) } }
-            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
+            result.onSuccess { installed -> _state.update { it.copy(skills = skillManager.installed(), skillsBusy = false, skillUpdates = it.skillUpdates - installed.map { skill -> skill.name }.toSet(), skillsMessage = "Imported " + installed.size + " skill bundle(s).") } }
                 .onFailure { error -> _state.update { it.copy(skillsBusy = false, skillsMessage = error.message ?: "Skill import failed.") } }
         }
     }
