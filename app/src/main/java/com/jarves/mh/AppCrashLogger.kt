@@ -101,6 +101,14 @@ object AppCrashLogger {
         )
     }
 
+    fun logOperationFailure(operation: String, throwable: Throwable) {
+        logThrowable("OPERATION FAILED: $operation", throwable)
+    }
+
+    fun checkpoint(name: String, details: String? = null) {
+        log("CHECKPOINT $name" + (details?.let { " | " + it.replace('\n', ' ').take(1000) } ?: ""))
+    }
+
     fun logSection(message: String, block: () -> Unit) {
         log("START $message")
         try {
