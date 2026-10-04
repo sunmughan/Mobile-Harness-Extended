@@ -2047,7 +2047,14 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
         connection.readTimeout = 30_000
-        connection.setRequestProperty("Accept", "application/json")
+        connection.setRequestProperty(
+            "Accept",
+            if (url.startsWith("https://api.github.com/")) "application/vnd.github+json" else "application/json",
+        )
+        connection.setRequestProperty("User-Agent", "Mobile-Harness")
+        if (url.startsWith("https://api.github.com/")) {
+            connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        }
         check(connection.responseCode in 200..299) { "Request failed with HTTP ${connection.responseCode}" }
         return connection.inputStream.bufferedReader().use { it.readText() }.also { connection.disconnect() }
     }
