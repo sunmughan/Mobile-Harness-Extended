@@ -1,5 +1,7 @@
 package com.jarves.mh.ui
 
+import com.jarves.mh.AppCrashLogger
+
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
