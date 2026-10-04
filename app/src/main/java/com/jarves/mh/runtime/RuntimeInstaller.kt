@@ -587,7 +587,7 @@ class RuntimeInstaller(private val context: Context) {
                 "rm -rf \"${'$'}next\" \"${'$'}old\"; mkdir -p \"${'$'}next\"; " +
                 "cd \"${'$'}next\"; npm init -y >/dev/null; " +
                 "npm install --omit=dev --no-audit --no-fund @deepseek-ai/dsh@$quotedVersion; " +
-                "if [ -d /usr/local/lib/dsh ]; then mv /usr/local/lib/dsh \"\${'$'}old\"; fi; " +
+                "if [ -d /usr/local/lib/dsh ]; then mv /usr/local/lib/dsh \"${'$'}old\"; fi; " +
                 "if mv \"${'$'}next\" /usr/local/lib/dsh; then rm -rf \"${'$'}old\"; " +
                 "else mv \"${'$'}old\" /usr/local/lib/dsh; exit 1; fi",
             displayCommand = "npm install @deepseek-ai/dsh@$quotedVersion",
