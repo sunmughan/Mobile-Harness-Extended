@@ -139,6 +139,7 @@ fun SettingsScreen(
     onRemoveApiKey: (ProviderKind, String) -> List<ApiKeyInfo>,
     onInstallDevStack: (DevStack) -> Unit = {},
     onRemoveDevStack: (DevStack) -> Unit = {},
+    onRefreshInstalledAgents: () -> Unit = {},
     onStartAntigravityLogin: () -> Unit = {},
     onSubmitAntigravityCode: (String) -> Unit = {},
     onLogoutAntigravity: () -> Unit = {},
@@ -154,6 +155,7 @@ fun SettingsScreen(
     var terminalCleared by remember { mutableStateOf(false) }
     var showReliabilityHelp by rememberSaveable { mutableStateOf(false) }
     var stackPendingRemoval by remember { mutableStateOf<DevStack?>(null) }
+    LaunchedEffect(Unit) { onRefreshInstalledAgents() }
 
     stackPendingRemoval?.let { stack ->
         AlertDialog(
