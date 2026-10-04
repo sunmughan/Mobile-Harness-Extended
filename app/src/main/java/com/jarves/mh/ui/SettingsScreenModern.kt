@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
@@ -492,8 +493,6 @@ fun SettingsScreen(
 
 @Composable
 private fun EnvironmentUpdateCenter() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val manager = remember { runCatching { EnvironmentUpdateManager(context, RuntimeInstaller(context)) }.getOrNull() }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
