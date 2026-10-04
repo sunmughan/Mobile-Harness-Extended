@@ -531,9 +531,12 @@ private fun EnvironmentUpdateCenter() {
                 }
                 val parsed = withContext(Dispatchers.Default) { updateManager.parseManifest(body) }
                 check(parsed.isNotEmpty()) { "Update catalog is empty or invalid." }
-                val live = updateManager.refreshManifest(parsed)
-                val inspected = withContext(Dispatchers.IO) { updateManager.inspect(live) }
-                components = live
+                val live = withContext(Dispatchers.IO) {
+                    updateManager.refreshManifest(parsed)
+                }
+                val environmentComponents = live.filterNot { it.id in setOf("claude", "deepseek", "antigravity") }
+                val inspected = withContext(Dispatchers.IO) { updateManager.inspect(environmentComponents) }
+                components = environmentComponents
                 componentStates = inspected
                 message = "Catalog refreshed."
             } catch (error: Throwable) {
@@ -602,8 +605,12 @@ private fun EnvironmentUpdateCenter() {
                                     busyId = component.id
                                     scope.launch {
                                         try {
-                                            manager?.update(component) { progress ->
-                                                operationMessage = progress.message
+                                            withContext(Dispatchers.IO) {
+                                                manager?.update(component) { progress ->
+                                                    withContext(Dispatchers.Main.immediate) {
+                                                        operationMessage = progress.message
+                                                    }
+                                                }
                                             }
                                             operationMessage = component.label + if (installedState?.currentVersion == null) " installed successfully." else " updated successfully."
                                         } catch (error: Throwable) {
