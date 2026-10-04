@@ -1,5 +1,7 @@
 package com.jarves.mh.runtime
 
+import com.jarves.mh.AppCrashLogger
+
 import android.content.Context
 import android.os.StatFs
 import android.system.Os
@@ -105,11 +107,23 @@ class EnvironmentUpdateManager(
         require(item.minRuntimeGeneration <= 1) { "This package requires a newer runtime generation" }
         val old = currentVersion(item.id)
         if (item.id in AGENT_COMPONENT_IDS) {
-            updateAgent(item, old, onProgress)
+            try {
+                AppCrashLogger.checkpoint("ENVIRONMENT_AGENT_UPDATE", "id=" + item.id + ", current=" + (old ?: "<none>") + ", target=" + item.version)
+                updateAgent(item, old, onProgress)
+            } catch (error: Throwable) {
+                AppCrashLogger.logOperationFailure("Agent update " + item.id + " " + item.version, error)
+                throw error
+            }
             return
         }
         if (item.id in STACK_COMPONENT_IDS) {
-            runtime.installEnvironmentStack(item.id, item.version, onProgress)
+            try {
+                AppCrashLogger.checkpoint("ENVIRONMENT_STACK_UPDATE", "id=" + item.id + ", current=" + (old ?: "<none>") + ", target=" + item.version)
+                runtime.installEnvironmentStack(item.id, item.version, onProgress)
+            } catch (error: Throwable) {
+                AppCrashLogger.logOperationFailure("Stack update " + item.id + " " + item.version, error)
+                throw error
+            }
             return
         }
         require(item.packageUrl.startsWith("https://")) { "Environment package must use HTTPS" }
