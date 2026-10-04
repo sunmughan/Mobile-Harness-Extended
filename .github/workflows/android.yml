@@ -220,8 +220,36 @@ jobs:
             }
           }
           EOF
-          gh release upload "$TAG" "$ONLINE" "$OFFLINE" --clobber
-          gh release delete-asset "$TAG" "mobile-harness-update.json" --yes || true
+          cat > mobile-harness-update.json <<EOF
+          {
+            "schemaVersion": 2,
+            "versionCode": $VERSION_CODE,
+            "versionName": "$VERSION_NAME",
+            "channel": "stable",
+            "notes": "Mobile Harness v1.0.13 — Agent detection, state synchronization, skill updates, and offline-runtime reliability fixes.\n\nEnvironment catalog metadata is shipped in this same JSON so the app can inspect bundled/runtime tool versions. Environment package installation is enabled only when a verified package URL is present.",
+            "artifacts": {
+              "online": {
+                "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
+                "sha256": "$ONLINE_SHA",
+                "sizeBytes": $ONLINE_SIZE
+              },
+              "offline": {
+                "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-offline-release.apk",
+                "sha256": "$OFFLINE_SHA",
+                "sizeBytes": $OFFLINE_SIZE
+              }
+            },
+            "components": [
+              {"id":"core","label":"Core tools","version":"2026.09.5","packageUrl":"","sha256":"df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012","sizeBytes":72185773,"status":"stable","minRuntimeGeneration":1,"activeLink":"","healthCommand":"","notes":"Node.js 24.19.0, npm 11.17.0 and Git 2.25.1 are bundled in the verified core runtime."},
+              {"id":"python","label":"Python","version":"2026.09.2","packageUrl":"","sha256":"6b3f56f7743fec142bc045db3ea561ee83fe89af87c2799165ef60351164ef85","sizeBytes":55419626,"status":"stable","minRuntimeGeneration":1,"activeLink":"","healthCommand":"python3 --version","notes":"Verified ARM64 Python bundle metadata. A standalone update package is not published yet."},
+              {"id":"android","label":"Android SDK / Build Tools / Gradle","version":"2026.09.1","packageUrl":"","sha256":"01bea058ebcb17416d1eb08c0211b3782da3228eb3c8348eb3719f2d61dd3ec6","sizeBytes":569652007,"status":"stable","minRuntimeGeneration":1,"activeLink":"","healthCommand":"java -version && gradle --version","notes":"Temurin 17, Android SDK 36, Build Tools 35.0.0 and Gradle 8.14.3 bundle metadata."},
+              {"id":"claude","label":"Claude Code","version":"2.1.263","packageUrl":"","sha256":"0f68e15630e8c0fc941afe3f61ab5a3eb4407b334018de6dbdabfa5eca627724","sizeBytes":75289800,"status":"stable","minRuntimeGeneration":1,"activeLink":"","healthCommand":"claude --version","notes":"Bundled ARM64 Claude Code version."},
+              {"id":"deepseek","label":"DeepSeek Harness","version":"0.1.2-rc.1","packageUrl":"","sha256":"88e6a23ba74e1cd74a2c923b7e0d6bd78ba4b7e5f8a9b649f12bf4ffe158cce5","sizeBytes":27752194,"status":"stable","minRuntimeGeneration":1,"activeLink":"","healthCommand":"dsh --version","notes":"Bundled ARM64 DeepSeek Harness version."},
+              {"id":"antigravity","label":"Antigravity CLI","version":"1.1.27","packageUrl":"","sha256":"a659ab9188956fc4721ca86fb21b5118e0e489f47a5e02ae6b4f2fb423659d78","sizeBytes":41870025,"status":"stable","minRuntimeGeneration":1,"activeLink":"","healthCommand":"agy --version","notes":"Bundled ARM64 Antigravity CLI version."}
+            ]
+          }
+          EOF
+          gh release upload "$TAG" "$ONLINE" "$OFFLINE" mobile-harness-update.json --clobber
           gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
 
