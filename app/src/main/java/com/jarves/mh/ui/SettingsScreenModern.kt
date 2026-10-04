@@ -106,6 +106,7 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.runtime.AntigravityAuthStatus
+import com.jarves.mh.runtime.EnvironmentComponentState
 import com.jarves.mh.runtime.EnvironmentManifestComponent
 import com.jarves.mh.runtime.EnvironmentUpdateManager
 import com.jarves.mh.runtime.RuntimeInstaller
@@ -496,6 +497,7 @@ private fun EnvironmentUpdateCenter() {
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var components by remember { mutableStateOf(emptyList<EnvironmentManifestComponent>()) }
+    var componentStates by remember { mutableStateOf(emptyList<EnvironmentComponentState>()) }
     var busyId by remember { mutableStateOf<String?>(null) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
 
@@ -515,6 +517,7 @@ private fun EnvironmentUpdateCenter() {
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
                 connection.disconnect()
                 components = updateManager.parseManifest(body)
+                componentStates = updateManager.inspect(components)
                 message = "Catalog refreshed."
             } catch (error: Throwable) {
                 message = error.message ?: "Could not load update catalog."
@@ -539,6 +542,8 @@ private fun EnvironmentUpdateCenter() {
         message?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         operationMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         components.forEach { component ->
+            val installedState = componentStates.firstOrNull { it.id == component.id }
+            val hasUpdate = installedState?.latestVersion != null && installedState.latestVersion != installedState.currentVersion
             Surface(
                 shape = RoundedCornerShape(13.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -547,7 +552,15 @@ private fun EnvironmentUpdateCenter() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(component.label, fontWeight = FontWeight.SemiBold)
-                            Text("Version " + component.version, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                when {
+                                    installedState?.currentVersion == null -> "Not installed · latest " + component.version
+                                    hasUpdate -> "Installed " + installedState.currentVersion + " · latest " + component.version
+                                    else -> "Up to date · v" + installedState.currentVersion
+                                },
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                         Text(component.status.uppercase(), fontSize = 10.sp, color = PocketOrange, fontWeight = FontWeight.Bold)
                     }
@@ -572,11 +585,11 @@ private fun EnvironmentUpdateCenter() {
                                     }
                                 }
                             },
-                            enabled = busyId == null,
+                            enabled = busyId == null && hasUpdate,
                             modifier = Modifier.weight(1f),
                         ) {
                             if (busyId == component.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Text("Update")
+                            else Text(if (installedState?.currentVersion == null) "Install" else "Update")
                         }
                         OutlinedButton(
                             onClick = {
@@ -594,7 +607,7 @@ private fun EnvironmentUpdateCenter() {
                                     }
                                 }
                             },
-                            enabled = busyId == null,
+                            enabled = busyId == null && installedState?.rollbackAvailable == true,
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("Rollback")
