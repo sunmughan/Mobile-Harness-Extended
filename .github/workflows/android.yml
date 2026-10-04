@@ -178,8 +178,29 @@ jobs:
           OFFLINE_SHA=$(sha256sum "$OFFLINE" | awk '{print $1}')
           ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
+          cat > release-notes.md <<EOF
+          ## Mobile Harness v1.0.13
+
+          ### Changes in this build
+          - Fixed Antigravity CLI detection when the guest executable is exposed through absolute or relative symlinks inside the Ubuntu PRoot rootfs.
+          - Unified guest-aware executable detection for Antigravity, Claude / Cloud Code, and DeepSeek.
+          - Fixed stale agent installation state so Settings reflects the actual installed agent inventory.
+          - Added live installed-agent refresh when opening Agent and Settings screens and after changing the active agent.
+          - Agent installation and update controls remain exclusively on the Agents screen; Settings remains focused on environment updates.
+          - Added skill update checking and per-skill update actions, including GitHub main/master fallback and safe extraction.
+          - Fixed Skills screen compile issues for the new update controls.
+          - Kept offline runtime setup network-free; missing non-bundled toolchains now fail clearly instead of silently downloading.
+          - Verified online/offline builds, unit tests, permanent release signing, APK alignment, and release integrity in CI.
+
+          ### Release files
+          - **Online Release:** app-online-release.apk
+          - **Offline Release:** app-offline-release.apk
+
+          Only these two **release APKs** are published here. Debug APKs are CI-only artifacts and are not release downloads.
+          EOF
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "Mobile Harness $TAG" --generate-notes
+            gh release create "$TAG" --title "Mobile Harness $TAG" --notes-file release-notes.md
+          gh release edit "$TAG" --title "Mobile Harness $TAG" --notes-file release-notes.md
           cat > mobile-harness-update.json <<EOF
           {
             "versionCode": $VERSION_CODE,
