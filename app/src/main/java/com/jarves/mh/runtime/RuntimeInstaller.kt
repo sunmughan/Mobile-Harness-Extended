@@ -1170,7 +1170,15 @@ class RuntimeInstaller(private val context: Context) {
     ): File {
         downloads.mkdirs()
         val destination = File(downloads, bundle.fileName)
-        val useEmbedded = preferEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES
+        val embeddedAvailable = runCatching {
+            context.assets.open("runtime/" + bundle.fileName).use { }
+            true
+        }.getOrDefault(false)
+        val requestedEmbedded = preferEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES
+        if (requestedEmbedded && !embeddedAvailable && BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            error(bundle.label + " " + bundle.fileName + " is not bundled in this offline APK")
+        }
+        val useEmbedded = requestedEmbedded && embeddedAvailable
         if (useEmbedded) {
             onProgress(RuntimeInstallProgress("Loading ${bundle.label} bundle", from, 0, bundle.compressedBytes))
             val temporary = File(downloads, "${bundle.fileName}.part")
