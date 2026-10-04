@@ -55,7 +55,10 @@ private data class RuntimeBundle(
     val sha256: String,
     val compressedBytes: Long,
     val remoteUrl: String? = null,
-)
+) {
+    val version: String
+        get() = fileName.substringAfterLast("-").removeSuffix(".tar.zst")
+}
 
 class RuntimeInstaller(private val context: Context) {
     private val runtimeDir = File(context.filesDir, "runtime")
