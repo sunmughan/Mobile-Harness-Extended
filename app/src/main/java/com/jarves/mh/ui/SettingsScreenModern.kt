@@ -512,7 +512,7 @@ private fun EnvironmentUpdateCenter() {
         loading = true
         scope.launch {
             try {
-                val connection = (java.net.URL("https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/environment-update.json").openConnection() as java.net.HttpURLConnection)
+                val connection = (java.net.URL("https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/mobile-harness-update.json").openConnection() as java.net.HttpURLConnection)
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 15_000
                 connection.instanceFollowRedirects = true
