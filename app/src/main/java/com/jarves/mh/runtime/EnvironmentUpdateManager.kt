@@ -9,6 +9,7 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import com.jarves.mh.model.AgentKind
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -72,14 +73,23 @@ class EnvironmentUpdateManager(
         return result
     }
 
+    suspend fun refreshManifest(manifest: List<EnvironmentManifestComponent>): List<EnvironmentManifestComponent> {
+        val latest = runtime.latestEnvironmentVersions()
+        return manifest.map { item ->
+            val version = latest[item.id] ?: item.version
+            item.copy(version = version, notes = if (latest.containsKey(item.id)) "Live upstream release: $version" else item.notes)
+        }
+    }
+
     fun inspect(manifest: List<EnvironmentManifestComponent>): List<EnvironmentComponentState> =
         manifest.map { item ->
+            val current = currentVersion(item.id)
             val backup = File(backups, item.id + ".zip")
             EnvironmentComponentState(
                 id = item.id,
                 label = item.label,
-                currentVersion = currentVersion(item.id),
-                latestVersion = item.version.takeIf { it != currentVersion(item.id) },
+                currentVersion = current,
+                latestVersion = item.version.takeIf { current == null || it != current },
                 rollbackVersion = backupVersion(backup),
                 rollbackAvailable = backup.isFile,
                 packageSizeBytes = item.sizeBytes,
@@ -94,9 +104,12 @@ class EnvironmentUpdateManager(
         require(item.packageUrl.startsWith("https://")) { "Environment package must use HTTPS" }
         require(item.status != "nightly") { "Nightly packages require an explicit development build" }
         require(item.minRuntimeGeneration <= 1) { "This package requires a newer runtime generation" }
-        preflightStorage(item.sizeBytes)
-
         val old = currentVersion(item.id)
+        if (item.id in AGENT_COMPONENT_IDS) {
+            updateAgent(item, old, onProgress)
+            return
+        }
+        preflightStorage(item.sizeBytes)
         if (old == item.version) return
 
         val componentRoot = File(components, item.id)
@@ -149,6 +162,10 @@ class EnvironmentUpdateManager(
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
         val backup = File(backups, item.id + ".zip")
+        if (item.id in AGENT_COMPONENT_IDS) {
+            runtime.rollbackEnvironmentAgent(item.id, backup, onProgress)
+            return
+        }
         val version = backupVersion(backup) ?: error("No rollback backup is available for " + item.label)
         val current = currentVersion(item.id)
         val componentRoot = File(components, item.id)
@@ -177,10 +194,27 @@ class EnvironmentUpdateManager(
         }
     }
 
-    private fun currentVersion(id: String): String? =
-        File(components, id).listFiles().orEmpty()
+    private fun currentVersion(id: String): String? {
+        runtime.installedEnvironmentVersions()[id]?.let { return it }
+        return File(components, id).listFiles().orEmpty()
             .firstOrNull { it.isDirectory && !it.name.startsWith(".") }
             ?.name
+    }
+
+    private suspend fun updateAgent(item: EnvironmentManifestComponent, old: String?, onProgress: suspend (RuntimeInstallProgress) -> Unit) {
+        val expected = item.version
+        if (old == expected) return
+        preflightStorage(8L * 1024L * 1024L)
+        val backup = File(backups, item.id + ".zip")
+        if (old != null) runtime.backupEnvironmentAgent(item.id, old, backup)
+        try {
+            runtime.updateEnvironmentAgent(item.id, expected, onProgress)
+            onProgress(RuntimeInstallProgress(item.label + " " + expected + " is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+        } catch (error: Throwable) {
+            if (old != null && backup.isFile) runCatching { runtime.rollbackEnvironmentAgent(item.id, backup, onProgress) }
+            throw error
+        }
+    }
 
     private fun backupVersion(file: File): String? {
         if (!file.isFile) return null
@@ -301,6 +335,10 @@ class EnvironmentUpdateManager(
         }
         connection.disconnect()
         check(sha256(destination).equals(expectedSha256, true)) { "Environment package SHA-256 verification failed" }
+    }
+
+    companion object {
+        private val AGENT_COMPONENT_IDS = setOf("claude", "deepseek", "antigravity")
     }
 
     private fun sha256(file: File): String {
