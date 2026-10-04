@@ -101,7 +101,6 @@ class EnvironmentUpdateManager(
         item: EnvironmentManifestComponent,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        require(item.packageUrl.startsWith("https://")) { "Environment package must use HTTPS" }
         require(item.status != "nightly") { "Nightly packages require an explicit development build" }
         require(item.minRuntimeGeneration <= 1) { "This package requires a newer runtime generation" }
         val old = currentVersion(item.id)
@@ -109,6 +108,11 @@ class EnvironmentUpdateManager(
             updateAgent(item, old, onProgress)
             return
         }
+        if (item.id in STACK_COMPONENT_IDS) {
+            runtime.installEnvironmentStack(item.id, item.version, onProgress)
+            return
+        }
+        require(item.packageUrl.startsWith("https://")) { "Environment package must use HTTPS" }
         preflightStorage(item.sizeBytes)
         if (old == item.version) return
 
@@ -339,6 +343,7 @@ class EnvironmentUpdateManager(
 
     companion object {
         private val AGENT_COMPONENT_IDS = setOf("claude", "deepseek", "antigravity")
+        private val STACK_COMPONENT_IDS = setOf("python", "android")
     }
 
     private fun sha256(file: File): String {
