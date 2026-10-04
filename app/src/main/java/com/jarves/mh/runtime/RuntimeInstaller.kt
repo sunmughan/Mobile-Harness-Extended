@@ -352,6 +352,105 @@ class RuntimeInstaller(private val context: Context) {
      * This intentionally reports what is present in PRoot, even when a newer app build
      * would subsequently offer an agent update.
      */
+    fun installedEnvironmentVersions(): Map<String, String> = buildMap {
+        installedAgentVersions().forEach { (agent, version) ->
+            put(
+                when (agent) {
+                    com.jarves.mh.model.AgentKind.CLAUDE_CODE -> "claude"
+                    com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> "deepseek"
+                    com.jarves.mh.model.AgentKind.ANTIGRAVITY -> "antigravity"
+                },
+                version,
+            )
+        }
+        coreToolsMarker.readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("core", it) }
+        File(rootfs, "opt/pocket-android-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("android", it) }
+    }
+
+    suspend fun latestEnvironmentVersions(): Map<String, String> = buildMap {
+        runCatching { JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version") }
+            .getOrNull()?.let { put("claude", it) }
+        runCatching { JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version") }
+            .getOrNull()?.let { put("deepseek", it) }
+        runCatching { fetchAgyManifest().getString("version") }.getOrNull()?.let { put("antigravity", it) }
+    }
+
+    suspend fun updateEnvironmentAgent(
+        id: String,
+        expectedVersion: String,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        val agent = when (id) {
+            "claude" -> com.jarves.mh.model.AgentKind.CLAUDE_CODE
+            "deepseek" -> com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS
+            "antigravity" -> com.jarves.mh.model.AgentKind.ANTIGRAVITY
+            else -> error("Unsupported environment agent: " + id)
+        }
+        updateAgent(agent, expectedVersion, onProgress)
+    }
+
+    fun backupEnvironmentAgent(id: String, version: String, destination: File) {
+        val entries = when (id) {
+            "claude" -> listOf(CLAUDE_GUEST_PATH.removePrefix("/"))
+            "antigravity" -> listOf(AGY_GUEST_PATH.removePrefix("/"))
+            "deepseek" -> listOf("usr/local/lib/dsh")
+            else -> error("Unsupported environment agent: " + id)
+        }
+        destination.parentFile?.mkdirs()
+        val part = File(destination.parentFile, destination.name + ".part")
+        part.delete()
+        ZipOutputStream(FileOutputStream(part)).use { zip ->
+            zip.putNextEntry(ZipEntry(".version"))
+            zip.write(version.toByteArray())
+            zip.closeEntry()
+            entries.forEach { relative ->
+                val source = File(rootfs, relative)
+                check(source.exists()) { "Installed " + id + " runtime is missing: " + relative }
+                source.walkTopDown().filter { it.isFile }.forEach { file ->
+                    val name = file.relativeTo(rootfs).path.replace(File.separatorChar, '/')
+                    zip.putNextEntry(ZipEntry(name))
+                    FileInputStream(file).use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+        }
+        destination.delete()
+        check(part.renameTo(destination)) { "Could not save " + id + " rollback backup" }
+    }
+
+    suspend fun rollbackEnvironmentAgent(
+        id: String,
+        backup: File,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        check(backup.isFile) { "No rollback backup is available for " + id }
+        val root = rootfs
+        onProgress(RuntimeInstallProgress("Restoring " + id + " " + backupVersionFromEnvironmentBackup(backup), 0.2f, indeterminate = true))
+        ZipInputStream(FileInputStream(backup)).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (entry.name != ".version") {
+                    val target = File(root, entry.name)
+                    check(target.canonicalFile.toPath().startsWith(root.canonicalFile.toPath())) { "Unsafe rollback path" }
+                    target.parentFile?.mkdirs()
+                    FileOutputStream(target).use { zip.copyTo(it) }
+                }
+                entry = zip.nextEntry
+            }
+        }
+        when (id) {
+            "claude" -> Os.chmod(File(root, CLAUDE_GUEST_PATH.removePrefix("/")).absolutePath, 0b111101101)
+            "antigravity" -> Os.chmod(File(root, AGY_GUEST_PATH.removePrefix("/")).absolutePath, 0b111101101)
+        }
+        onProgress(RuntimeInstallProgress(id + " rollback complete", 1f, event = RuntimeInstallEvent.COMPLETED))
+    }
+
+    private fun backupVersionFromEnvironmentBackup(file: File): String =
+        ZipInputStream(FileInputStream(file)).use { zip ->
+            val entry = zip.nextEntry ?: return@use "unknown"
+            if (entry.name != ".version") "unknown" else zip.bufferedReader().readText().trim()
+        }
+
     fun installedAgentVersions(): Map<com.jarves.mh.model.AgentKind, String> = buildMap {
         migrateLegacyClaudeMarker()
         claudeMarker.readTextOrNull()
