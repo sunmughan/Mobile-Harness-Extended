@@ -559,7 +559,8 @@ private fun EnvironmentUpdateCenter() {
         components.forEach { component ->
             val installedState = componentStates.firstOrNull { it.id == component.id }
             val hasUpdate = installedState?.latestVersion != null && installedState.latestVersion != installedState.currentVersion
-            val canInstallOrUpdate = installedState?.currentVersion == null || hasUpdate
+            val canInstallOrUpdate = component.id in setOf("claude", "deepseek", "antigravity") || component.packageUrl.startsWith("https://")
+            val updateAvailable = canInstallOrUpdate && (installedState?.currentVersion == null || hasUpdate)
             Surface(
                 shape = RoundedCornerShape(13.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -601,7 +602,7 @@ private fun EnvironmentUpdateCenter() {
                                     }
                                 }
                             },
-                            enabled = busyId == null && canInstallOrUpdate,
+                            enabled = busyId == null && updateAvailable,
                             modifier = Modifier.weight(1f),
                         ) {
                             if (busyId == component.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
