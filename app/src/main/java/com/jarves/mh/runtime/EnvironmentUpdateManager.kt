@@ -59,7 +59,7 @@ class EnvironmentUpdateManager(
                 id = item.getString("id"),
                 label = item.optString("label", item.getString("id")),
                 version = item.getString("version"),
-                packageUrl = item.getString("packageUrl"),
+                packageUrl = item.optString("packageUrl", ""),
                 sha256 = item.getString("sha256"),
                 sizeBytes = item.optLong("sizeBytes", 0L),
                 status = item.optString("status", "stable"),
