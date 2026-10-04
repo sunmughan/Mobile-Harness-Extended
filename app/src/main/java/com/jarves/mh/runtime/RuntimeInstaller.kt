@@ -242,21 +242,45 @@ class RuntimeInstaller(private val context: Context) {
     }
 
     fun isAgentInstalled(agent: com.jarves.mh.model.AgentKind): Boolean {
+        if (!isInstalled()) return false
         return when (agent) {
             com.jarves.mh.model.AgentKind.CLAUDE_CODE -> {
                 migrateLegacyClaudeMarker()
-                isInstalled() && File(rootfs, CLAUDE_GUEST_PATH.removePrefix("/")).canExecute() &&
+                guestExecutableFile(CLAUDE_GUEST_PATH) != null &&
                     !claudeMarker.readTextOrNull().isNullOrBlank()
             }
-            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> isInstalled() &&
-                // /usr/local/bin/dsh is an absolute guest symlink. File.exists() follows it
-                // against Android's host root and therefore reports false outside PRoot.
-                File(rootfs, "usr/local/lib/dsh/node_modules/.bin/dsh").isFile &&
-                !dshMarker.readTextOrNull().isNullOrBlank()
-            com.jarves.mh.model.AgentKind.ANTIGRAVITY -> isInstalled() &&
-                File(rootfs, AGY_GUEST_PATH.removePrefix("/")).canExecute() &&
-                !agyMarker.readTextOrNull().isNullOrBlank()
+            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS ->
+                guestExecutableFile("/usr/local/lib/dsh/node_modules/.bin/dsh") != null &&
+                    !dshMarker.readTextOrNull().isNullOrBlank()
+            com.jarves.mh.model.AgentKind.ANTIGRAVITY ->
+                guestExecutableFile(AGY_GUEST_PATH) != null &&
+                    !agyMarker.readTextOrNull().isNullOrBlank()
         }
+    }
+
+    /**
+     * Resolve an executable using the Ubuntu guest filesystem, not Android's host
+     * filesystem. Agent bundles may publish absolute guest symlinks (for example
+     * /root/.local/bin/agy); java.io.File would otherwise follow that link from
+     * the Android filesystem root and report a false "not installed".
+     */
+    private fun guestExecutableFile(guestPath: String): File? {
+        var candidate = File(rootfs, guestPath.removePrefix("/"))
+        repeat(16) {
+            val nio = candidate.toPath()
+            if (java.nio.file.Files.isSymbolicLink(nio)) {
+                val link = runCatching { java.nio.file.Files.readSymbolicLink(nio).toString() }.getOrNull()
+                    ?: return null
+                candidate = if (link.startsWith("/")) {
+                    File(rootfs, link.removePrefix("/"))
+                } else {
+                    File(candidate.parentFile ?: return null, link)
+                }
+                return@repeat
+            }
+            return if (candidate.isFile && candidate.canExecute()) candidate else null
+        }
+        return null
     }
 
     val dshVersion: String get() = dshMarker.readTextOrNull().orEmpty()
@@ -337,12 +361,12 @@ class RuntimeInstaller(private val context: Context) {
 
         dshMarker.readTextOrNull()
             ?.trim()
-            ?.takeIf { it.isNotEmpty() && File(rootfs, "usr/local/lib/dsh/node_modules/.bin/dsh").isFile }
+            ?.takeIf { it.isNotEmpty() && guestExecutableFile("/usr/local/lib/dsh/node_modules/.bin/dsh") != null }
             ?.let { put(com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS, it) }
 
         agyMarker.readTextOrNull()
             ?.trim()
-            ?.takeIf { it.isNotEmpty() && File(rootfs, AGY_GUEST_PATH.removePrefix("/")).canExecute() }
+            ?.takeIf { it.isNotEmpty() && guestExecutableFile(AGY_GUEST_PATH) != null }
             ?.let { put(com.jarves.mh.model.AgentKind.ANTIGRAVITY, it) }
     }
 
