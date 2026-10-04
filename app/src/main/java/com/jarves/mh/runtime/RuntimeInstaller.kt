@@ -675,7 +675,7 @@ class RuntimeInstaller(private val context: Context) {
         val selected = if (expectedVersion != null) {
             assets.firstOrNull { it.version == expectedVersion }
         } else {
-            assets.maxWithOrNull(compareBy<PublishedRuntimeAsset> { versionParts(it.version) }.thenBy { it.version })
+            assets.maxWithOrNull(Comparator { left, right -> compareVersions(left.version, right.version) })
         } ?: return null
         return RuntimeBundle(
             label = when (id) {
@@ -688,6 +688,16 @@ class RuntimeInstaller(private val context: Context) {
             compressedBytes = selected.sizeBytes,
             remoteUrl = selected.url,
         )
+    }
+
+    private fun compareVersions(left: String, right: String): Int {
+        val a = versionParts(left)
+        val b = versionParts(right)
+        repeat(maxOf(a.size, b.size)) { index ->
+            val comparison = (a.getOrElse(index) { 0 }).compareTo(b.getOrElse(index) { 0 })
+            if (comparison != 0) return comparison
+        }
+        return left.compareTo(right)
     }
 
     private fun versionParts(value: String): List<Int> =
