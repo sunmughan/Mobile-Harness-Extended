@@ -136,6 +136,33 @@ jobs:
             "$APKSIGNER" verify --verbose "$apk"
           done
 
+      - name: Verify in-place update compatibility against previous release
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          PREVIOUS_URL="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.18/app-online-release.apk"
+          PREVIOUS="$RUNNER_TEMP/mobile-harness-previous.apk"
+          curl -fL --retry 5 --retry-delay 2 --retry-all-errors -o "$PREVIOUS" "$PREVIOUS_URL"
+
+          current_cert="$($APKSIGNER verify --print-certs app/build/outputs/apk/online/release/app-online-release.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
+          previous_cert="$($APKSIGNER verify --print-certs "$PREVIOUS" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
+          echo "Previous release certificate: $previous_cert"
+          echo "Current release certificate:  $current_cert"
+          test -n "$current_cert"
+          test "$current_cert" = "$previous_cert"
+
+          current_badging="$($AAPT2 dump badging app/build/outputs/apk/online/release/app-online-release.apk)"
+          previous_badging="$($AAPT2 dump badging "$PREVIOUS")"
+          echo "$previous_badging" | grep -q "versionCode='19'"
+          echo "$previous_badging" | grep -q "versionName='1.0.18'"
+          echo "$current_badging" | grep -q "versionCode='20'"
+          echo "$current_badging" | grep -q "versionName='1.0.19'"
+          echo "$current_badging" | grep -q "package: name='com.jarves.mh'"
+          echo "$previous_badging" | grep -q "package: name='com.jarves.mh'"
+          echo "PASS: same package + same signing certificate + strictly increasing versionCode."
+
       - name: Inspect release APKs
         shell: bash
         run: |
