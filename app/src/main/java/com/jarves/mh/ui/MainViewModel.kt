@@ -1365,6 +1365,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Called from the first-launch setup screen; persists the agent choice for setup and Settings. */
+    fun refreshInstalledAgents() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val versions = runCatching { installer.installedAgentVersions() }.getOrDefault(emptyMap())
+            _state.update { it.copy(installedAgentVersions = versions) }
+        }
+    }
+
     fun selectAgent(kind: AgentKind) {
         if (_state.value.agentKind == kind) return
         if (_state.value.isRunning) {
@@ -1387,6 +1394,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 apiPingMessage = null,
             )
         }
+        refreshInstalledAgents()
     }
 
     /** Installs the other agent on demand (Settings) with live progress, then switches to it. */
