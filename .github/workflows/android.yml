@@ -199,7 +199,8 @@ jobs:
             }
           }
           EOF
-          gh release upload "$TAG" "$ONLINE" "$OFFLINE" mobile-harness-update.json --clobber
+          gh release upload "$TAG" "$ONLINE" "$OFFLINE" --clobber
+          gh release delete-asset "$TAG" "mobile-harness-update.json" --yes || true
           gh release delete-asset "$TAG" "mobile-harness-online-$TAG.apk" --yes || true
           gh release delete-asset "$TAG" "mobile-harness-offline-$TAG.apk" --yes || true
 
