@@ -125,7 +125,11 @@ class SkillManager(private val context: Context) {
         val archive = File(context.cacheDir, "skill-check-" + UUID.randomUUID() + ".zip")
         val extraction = File(context.cacheDir, "skill-check-extract-" + UUID.randomUUID()).apply { mkdirs() }
         try {
-            downloadSkillArchive("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/main", archive)
+            runCatching {
+                downloadSkillArchive("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/main", archive)
+            }.getOrElse {
+                downloadSkillArchive("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/master", archive)
+            }
             extractSkillArchive(archive, extraction)
             val remote = extraction.walkTopDown().filter { it.isFile && it.name == "SKILL.md" }
                 .firstOrNull { sanitizeSkillName(parseManifest(it.readText()).first) == skill.name }
