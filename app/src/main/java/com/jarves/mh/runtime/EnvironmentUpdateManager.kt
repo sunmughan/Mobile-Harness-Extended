@@ -274,7 +274,7 @@ class EnvironmentUpdateManager(
         }
     }
 
-    private fun download(
+    private suspend fun download(
         url: String,
         destination: File,
         expectedSha256: String,
