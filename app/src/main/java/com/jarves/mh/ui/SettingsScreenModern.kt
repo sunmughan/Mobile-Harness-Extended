@@ -478,6 +478,8 @@ private fun EnvironmentUpdateCenter() {
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var components by remember { mutableStateOf(emptyList<EnvironmentManifestComponent>()) }
+    var busyId by remember { mutableStateOf<String?>(null) }
+    var operationMessage by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         val updateManager = manager ?: run {
@@ -516,9 +518,8 @@ private fun EnvironmentUpdateCenter() {
             Spacer(Modifier.width(7.dp))
             Text(if (loading) "Checking…" else "Check for updates")
         }
-        message?.let {
-            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        message?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        operationMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         components.forEach { component ->
             Surface(
                 shape = RoundedCornerShape(13.dp),
@@ -536,6 +537,51 @@ private fun EnvironmentUpdateCenter() {
                         Text(component.notes, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text("Package verification: SHA-256", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                busyId = component.id
+                                scope.launch {
+                                    try {
+                                        manager?.update(component) { progress ->
+                                            operationMessage = progress.message
+                                        }
+                                        operationMessage = component.label + " updated successfully."
+                                    } catch (error: Throwable) {
+                                        operationMessage = error.message ?: "Update failed."
+                                    } finally {
+                                        busyId = null
+                                    }
+                                }
+                            },
+                            enabled = busyId == null,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            if (busyId == component.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Text("Update")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                busyId = component.id
+                                scope.launch {
+                                    try {
+                                        manager?.rollback(component) { progress ->
+                                            operationMessage = progress.message
+                                        }
+                                        operationMessage = component.label + " rollback completed."
+                                    } catch (error: Throwable) {
+                                        operationMessage = error.message ?: "Rollback unavailable."
+                                    } finally {
+                                        busyId = null
+                                    }
+                                }
+                            },
+                            enabled = busyId == null,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Rollback")
+                        }
+                    }
                 }
             }
         }
