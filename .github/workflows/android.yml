@@ -157,11 +157,11 @@ jobs:
           path: |
             app/build/outputs/apk/**/*.apk
 
-      # Publishes the freshly verified online/offline APKs to the current release. [publish-release]
+      # Every successful main-branch build publishes the freshly verified online/offline APKs to the current release.
       # Header layout release 1.0.12.
       # Release publication marker for the verified build.
       - name: Publish release assets
-        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-release]')
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
