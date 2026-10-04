@@ -384,7 +384,15 @@ fun SettingsScreen(
                         Text("Advanced runtime reliability")
                     }
                     AnimatedVisibility(showReliabilityHelp) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        fun refreshAfterEnvironmentAction() {
+        scope.launch {
+            components.takeIf { it.isNotEmpty() }?.let { current ->
+                componentStates = withContext(Dispatchers.IO) { manager?.inspect(current).orEmpty() }
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 "If large builds stop unexpectedly, Android Developer options may provide a child-process restriction toggle.",
                                 fontSize = 12.sp,
@@ -405,7 +413,7 @@ fun SettingsScreen(
             item {
                 SettingsAccordion(
                     title = "Environment updates",
-                    subtitle = "PHP, Python, Node, Composer and toolchains",
+                    subtitle = "Core, Python, Android & AI agent runtimes",
                     icon = Icons.Default.Refresh,
                     expanded = expanded == SettingsSection.ENVIRONMENT,
                     onClick = { toggle(SettingsSection.ENVIRONMENT) },
@@ -559,7 +567,7 @@ private fun EnvironmentUpdateCenter() {
         components.forEach { component ->
             val installedState = componentStates.firstOrNull { it.id == component.id }
             val hasUpdate = installedState?.latestVersion != null && installedState.latestVersion != installedState.currentVersion
-            val canInstallOrUpdate = component.id in setOf("claude", "deepseek", "antigravity") || component.packageUrl.startsWith("https://")
+            val canInstallOrUpdate = component.id in setOf("claude", "deepseek", "antigravity", "python", "android") || component.packageUrl.startsWith("https://")
             val updateAvailable = canInstallOrUpdate && (installedState?.currentVersion == null || hasUpdate)
             Surface(
                 shape = RoundedCornerShape(13.dp),
@@ -584,51 +592,63 @@ private fun EnvironmentUpdateCenter() {
                     if (component.notes.isNotBlank()) {
                         Text(component.notes, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("Package verification: SHA-256", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                busyId = component.id
-                                scope.launch {
-                                    try {
-                                        manager?.update(component) { progress ->
-                                            operationMessage = progress.message
+                    if (canInstallOrUpdate) {
+                        Text("Package verification: SHA-256", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    busyId = component.id
+                                    scope.launch {
+                                        try {
+                                            manager?.update(component) { progress ->
+                                                operationMessage = progress.message
+                                            }
+                                            operationMessage = component.label + if (installedState?.currentVersion == null) " installed successfully." else " updated successfully."
+                                        } catch (error: Throwable) {
+                                            operationMessage = error.message ?: "Update failed."
+                                        } finally {
+                                            busyId = null
+                                            refreshAfterEnvironmentAction()
                                         }
-                                        operationMessage = component.label + " updated successfully."
-                                    } catch (error: Throwable) {
-                                        operationMessage = error.message ?: "Update failed."
-                                    } finally {
-                                        busyId = null
                                     }
-                                }
-                            },
-                            enabled = busyId == null && updateAvailable,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            if (busyId == component.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Text(if (installedState?.currentVersion == null) "Install" else "Update")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                busyId = component.id
-                                scope.launch {
-                                    try {
-                                        manager?.rollback(component) { progress ->
-                                            operationMessage = progress.message
+                                },
+                                enabled = busyId == null && updateAvailable,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                if (busyId == component.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                else Text(if (installedState?.currentVersion == null) "Install" else "Update")
+                            }
+                            if (installedState?.rollbackAvailable == true) {
+                                OutlinedButton(
+                                    onClick = {
+                                        busyId = component.id
+                                        scope.launch {
+                                            try {
+                                                manager?.rollback(component) { progress ->
+                                                    operationMessage = progress.message
+                                                }
+                                                operationMessage = component.label + " rollback completed."
+                                            } catch (error: Throwable) {
+                                                operationMessage = error.message ?: "Rollback unavailable."
+                                            } finally {
+                                                busyId = null
+                                                refreshAfterEnvironmentAction()
+                                            }
                                         }
-                                        operationMessage = component.label + " rollback completed."
-                                    } catch (error: Throwable) {
-                                        operationMessage = error.message ?: "Rollback unavailable."
-                                    } finally {
-                                        busyId = null
-                                    }
+                                    },
+                                    enabled = busyId == null,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Rollback")
                                 }
-                            },
-                            enabled = busyId == null && installedState?.rollbackAvailable == true,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text("Rollback")
+                            }
                         }
+                    } else {
+                        Text(
+                            "Managed by the bundled runtime. No standalone update package is published for this component.",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
