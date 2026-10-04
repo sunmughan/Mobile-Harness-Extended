@@ -26,6 +26,11 @@ data class SkillSearchResult(
     val repositoryUrl: String,
 )
 
+data class SkillUpdateInfo(
+    val name: String,
+    val source: String,
+)
+
 class SkillManager(private val context: Context) {
     private val root = File(context.filesDir, "skills").apply { mkdirs() }
     private val registryFile = File(root, "registry.json")
@@ -99,6 +104,42 @@ class SkillManager(private val context: Context) {
         }
     }
 
+    fun checkUpdates(): List<SkillUpdateInfo> {
+        val updates = mutableListOf<SkillUpdateInfo>()
+        installed().filter { it.source.startsWith("https://github.com/", ignoreCase = true) }.forEach { skill ->
+            runCatching { if (githubSkillChanged(skill)) updates += SkillUpdateInfo(skill.name, skill.source) }
+        }
+        return updates
+    }
+
+    fun update(skill: SkillInfo): List<SkillInfo> {
+        require(skill.source.startsWith("https://github.com/", ignoreCase = true)) {
+            "This skill was imported from a local ZIP and has no remote update source."
+        }
+        return installFromGitHub(skill.source)
+    }
+
+    private fun githubSkillChanged(skill: SkillInfo): Boolean {
+        val normalized = normalizeGitHubRepositoryUrl(skill.source)
+        val ownerRepo = URI(normalized).path.trim('/').removeSuffix(".git")
+        val archive = File(context.cacheDir, "skill-check-" + UUID.randomUUID() + ".zip")
+        val extraction = File(context.cacheDir, "skill-check-extract-" + UUID.randomUUID()).apply { mkdirs() }
+        try {
+            downloadSkillArchive("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/main", archive)
+            extractSkillArchive(archive, extraction)
+            val remote = extraction.walkTopDown().filter { it.isFile && it.name == "SKILL.md" }
+                .firstOrNull { sanitizeSkillName(parseManifest(it.readText()).first) == skill.name }
+                ?: return false
+            val local = File(skill.path, "SKILL.md")
+            return !local.isFile || local.readText() != remote.readText()
+        } catch (_: Throwable) {
+            return false
+        } finally {
+            archive.delete()
+            extraction.deleteRecursively()
+        }
+    }
+
     fun remove(name: String): Boolean {
         val current = installed()
         val target = current.firstOrNull { it.name == name } ?: return false
@@ -137,22 +178,46 @@ class SkillManager(private val context: Context) {
     private fun installZipDownload(url: String, source: String): List<SkillInfo> {
         val temp = File(context.cacheDir, "skill-download-" + UUID.randomUUID() + ".zip")
         try {
-            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "Mobile-Harness-Extended")
-            }
-            try {
-                val status = connection.responseCode
-                check(status in 200..299) { "GitHub skill download failed with HTTP " + status }
-                connection.inputStream.use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
-            } finally {
-                connection.disconnect()
-            }
+            downloadSkillArchive(url, temp)
             return installZip(temp, source)
         } finally {
             temp.delete()
+        }
+    }
+
+    private fun downloadSkillArchive(url: String, destination: File) {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "Mobile-Harness-Extended")
+        }
+        try {
+            val status = connection.responseCode
+            check(status in 200..299) { "GitHub skill download failed with HTTP " + status }
+            connection.inputStream.use { input -> destination.outputStream().use { output -> input.copyTo(output) } }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun extractSkillArchive(zip: File, extraction: File) {
+        ZipInputStream(zip.inputStream().buffered()).use { input ->
+            var entries = 0
+            while (true) {
+                val entry = input.nextEntry ?: break
+                entries++
+                require(entries <= 10_000) { "Skill archive contains too many files." }
+                val name = entry.name.replace('\\', '/')
+                require(!name.startsWith("/") && !name.split('/').any { it == ".." }) { "Skill archive contains an unsafe path." }
+                val target = File(extraction, name).canonicalFile
+                require(target.toPath().startsWith(extraction.canonicalFile.toPath())) { "Skill archive escapes its extraction directory." }
+                if (entry.isDirectory) target.mkdirs() else {
+                    target.parentFile?.mkdirs()
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                input.closeEntry()
+            }
         }
     }
 
