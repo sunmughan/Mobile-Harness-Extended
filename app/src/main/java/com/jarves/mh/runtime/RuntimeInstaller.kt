@@ -366,7 +366,7 @@ class RuntimeInstaller(private val context: Context) {
                 version,
             )
         }
-        coreToolsMarker.readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("core", it) }
+        coreToolsMarker.readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { put("core", it.removePrefix("core-bundle-")) }
         File(rootfs, "opt/pocket-android-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("android", it) }
     }
 
