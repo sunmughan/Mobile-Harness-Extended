@@ -271,9 +271,10 @@ class RuntimeInstaller(private val context: Context) {
     /** Installs GitHub's official ARM64 CLI on demand; it is not bundled in the APK. */
     suspend fun ensureGitHubCliInstalled(onProgress: suspend (RuntimeInstallProgress) -> Unit) {
         if (isGitHubCliInstalled()) return
-        check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            "GitHub sign-in needs the PocketDev online APK."
-        }
+        // The offline APK contains the core runtime locally, but GitHub itself is
+        // an online service. Do not disable GitHub authentication merely because
+        // runtime bundles were embedded in this APK. The verified gh binary is
+        // downloaded on demand when the device has network access.
         writeResolver()
         downloads.mkdirs()
         val downloaded = File(downloads, "gh-$GITHUB_CLI_VERSION-linux-arm64.tar.gz")
