@@ -78,6 +78,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -108,9 +110,15 @@ import com.jarves.mh.runtime.EnvironmentUpdateManager
 import com.jarves.mh.runtime.RuntimeInstaller
 import com.jarves.mh.ui.theme.AppThemeMode
 import com.jarves.mh.ui.theme.PocketOrange
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
-private enum class SettingsSection { APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, UPDATE_CHANNEL }
+private enum class SettingsSection { APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -411,6 +419,18 @@ fun SettingsScreen(
                         onSave = onSetDebugUpdateManifestUrl,
                         onClear = onClearDebugUpdateManifestUrl,
                     )
+                }
+            }
+
+            item {
+                SettingsAccordion(
+                    title = "Contributors",
+                    subtitle = "People building Mobile Harness Extended",
+                    icon = Icons.Default.Person,
+                    expanded = expanded == SettingsSection.CONTRIBUTORS,
+                    onClick = { toggle(SettingsSection.CONTRIBUTORS) },
+                ) {
+                    ContributorCard()
                 }
             }
 
@@ -1068,4 +1088,77 @@ private fun DebugUpdateChannelSection(
             )
         }
     }
+}@Composable
+private fun ContributorCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var avatar by remember { mutableStateOf<Bitmap?>(null) }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        avatar = withContext(Dispatchers.IO) {
+            runCatching {
+                val connection = URL("https://github.com/sunmughan.png?size=256").openConnection() as HttpURLConnection
+                connection.connectTimeout = 8_000
+                connection.readTimeout = 12_000
+                connection.instanceFollowRedirects = true
+                connection.inputStream.use { BitmapFactory.decodeStream(it) }.also { connection.disconnect() }
+            }.getOrNull()
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(58.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    avatar?.let {
+                        Image(
+                            bitmap = it.asImageBitmap(),
+                            contentDescription = "Sunmughan Swamy",
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } ?: Box(contentAlignment = Alignment.Center) {
+                        Text("SS", fontWeight = FontWeight.Bold, color = PocketOrange)
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Sunmughan Swamy", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Founder · Technical Architect · Software Engineer", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("@sunmughan", fontSize = 11.sp, color = PocketOrange, fontFamily = FontFamily.Monospace)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ContributorLinkButton("GitHub", "https://github.com/sunmughan", Modifier.weight(1f))
+                ContributorLinkButton("Instagram", "https://instagram.com/sunmughan", Modifier.weight(1f))
+                ContributorLinkButton("Facebook", "https://www.facebook.com/sunmughan", Modifier.weight(1f))
+            }
+        }
+    }
 }
+
+@Composable
+private fun ContributorLinkButton(label: String, url: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    OutlinedButton(
+        onClick = {
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+        },
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+    ) {
+        Text(label, fontSize = 10.sp, maxLines = 1, softWrap = false)
+    }
+}
+
+
