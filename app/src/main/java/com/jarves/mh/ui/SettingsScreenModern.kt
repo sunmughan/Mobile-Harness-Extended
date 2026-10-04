@@ -139,8 +139,6 @@ fun SettingsScreen(
     onInstallDevStack: (DevStack) -> Unit = {},
     onRemoveDevStack: (DevStack) -> Unit = {},
     onInstallAgent: (AgentKind) -> Unit = {},
-    onCheckAgentUpdates: () -> Unit = {},
-    onUpdateAgent: (AgentKind) -> Unit = {},
     onStartAntigravityLogin: () -> Unit = {},
     onSubmitAntigravityCode: (String) -> Unit = {},
     onLogoutAntigravity: () -> Unit = {},
