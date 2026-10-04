@@ -316,3 +316,5 @@ jobs:
         run: |
           set -euxo pipefail
           gh release upload v1.0.6 app-online-release.apk app-offline-release.apk mobile-harness-update.json --clobber
+
+# publish-current-release
