@@ -529,8 +529,9 @@ private fun EnvironmentUpdateCenter() {
                 }
                 val parsed = withContext(Dispatchers.Default) { updateManager.parseManifest(body) }
                 check(parsed.isNotEmpty()) { "Update catalog is empty or invalid." }
-                val inspected = withContext(Dispatchers.IO) { updateManager.inspect(parsed) }
-                components = parsed
+                val live = updateManager.refreshManifest(parsed)
+                val inspected = withContext(Dispatchers.IO) { updateManager.inspect(live) }
+                components = live
                 componentStates = inspected
                 message = "Catalog refreshed."
             } catch (error: Throwable) {
@@ -558,7 +559,7 @@ private fun EnvironmentUpdateCenter() {
         components.forEach { component ->
             val installedState = componentStates.firstOrNull { it.id == component.id }
             val hasUpdate = installedState?.latestVersion != null && installedState.latestVersion != installedState.currentVersion
-            val canInstallOrUpdate = (installedState?.currentVersion == null || hasUpdate) && component.packageUrl.isNotBlank()
+            val canInstallOrUpdate = installedState?.currentVersion == null || hasUpdate
             Surface(
                 shape = RoundedCornerShape(13.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
