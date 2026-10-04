@@ -498,13 +498,15 @@ fun SettingsScreen(
 private fun EnvironmentUpdateCenter() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val manager = remember { runCatching { EnvironmentUpdateManager(context, RuntimeInstaller(context)) }.getOrNull() }
+    val runtimeInspector = remember { RuntimeInstaller(context) }
+    val manager = remember { runCatching { EnvironmentUpdateManager(context, runtimeInspector) }.getOrNull() }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var components by remember { mutableStateOf(emptyList<EnvironmentManifestComponent>()) }
     var componentStates by remember { mutableStateOf(emptyList<EnvironmentComponentState>()) }
     var busyId by remember { mutableStateOf<String?>(null) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
+    var installedStacks by remember { mutableStateOf(emptySet<DevStack>()) }
 
     fun refresh() {
         val updateManager = manager ?: run {
@@ -536,8 +538,10 @@ private fun EnvironmentUpdateCenter() {
                 }
                 val environmentComponents = live.filterNot { it.id in setOf("claude", "deepseek", "antigravity") }
                 val inspected = withContext(Dispatchers.IO) { updateManager.inspect(environmentComponents) }
+                val stacks = withContext(Dispatchers.IO) { runtimeInspector.installedStacks() }
                 components = environmentComponents
                 componentStates = inspected
+                installedStacks = stacks
                 message = "Catalog refreshed."
             } catch (error: Throwable) {
                 message = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
@@ -555,9 +559,11 @@ private fun EnvironmentUpdateCenter() {
         }
     }
 
+    LaunchedEffect(Unit) { refresh() }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            "Updates are staged, verified, health-checked and rolled back through compressed backups. The active runtime is never overwritten directly.",
+            "Agents are managed only from the Agents screen. This page manages the Linux runtime, toolchains and development resources.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -569,6 +575,31 @@ private fun EnvironmentUpdateCenter() {
         }
         message?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         operationMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+
+        Surface(
+            shape = RoundedCornerShape(13.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Runtime resources", fontWeight = FontWeight.SemiBold)
+                Text("Core Linux tooling is included. Optional development stacks are shown from the actual installed runtime state.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                listOf(
+                    "Ubuntu 20.04 ARM64" to "Included core runtime",
+                    "Node.js + npm" to "Included core tooling",
+                    "Git + OpenSSL + curl + GNU coreutils" to "Included core tooling",
+                ).forEach { (label, detail) ->
+                    RuntimeInfoRow(label, detail)
+                }
+                DevStack.entries.forEach { stack ->
+                    val installed = stack in installedStacks
+                    RuntimeInfoRow(
+                        stack.label,
+                        if (installed) "Installed" else if (stack == DevStack.WEB) "Included core tooling" else "Available · manage in Developer tools",
+                    )
+                }
+            }
+        }
+
         components.forEach { component ->
             val installedState = componentStates.firstOrNull { it.id == component.id }
             val hasUpdate = installedState?.latestVersion != null && installedState.latestVersion != installedState.currentVersion
@@ -618,6 +649,9 @@ private fun EnvironmentUpdateCenter() {
                                         } finally {
                                             busyId = null
                                             refreshAfterEnvironmentAction()
+                                            withContext(Dispatchers.IO) {
+                                                installedStacks = runtimeInspector.installedStacks()
+                                            }
                                         }
                                     }
                                 },
