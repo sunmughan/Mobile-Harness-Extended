@@ -384,15 +384,7 @@ fun SettingsScreen(
                         Text("Advanced runtime reliability")
                     }
                     AnimatedVisibility(showReliabilityHelp) {
-                        fun refreshAfterEnvironmentAction() {
-        scope.launch {
-            components.takeIf { it.isNotEmpty() }?.let { current ->
-                componentStates = withContext(Dispatchers.IO) { manager?.inspect(current).orEmpty() }
-            }
-        }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 "If large builds stop unexpectedly, Android Developer options may provide a child-process restriction toggle.",
                                 fontSize = 12.sp,
@@ -546,6 +538,14 @@ private fun EnvironmentUpdateCenter() {
                 message = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
             } finally {
                 loading = false
+            }
+        }
+    }
+
+    fun refreshAfterEnvironmentAction() {
+        scope.launch {
+            components.takeIf { it.isNotEmpty() }?.let { current ->
+                componentStates = withContext(Dispatchers.IO) { manager?.inspect(current).orEmpty() }
             }
         }
     }
