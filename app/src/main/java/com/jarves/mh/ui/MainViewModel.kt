@@ -3794,7 +3794,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         skillsBusy = false,
                         skillUpdates = updates.mapTo(mutableSetOf()) { update -> update.name },
-                        skillsMessage = if (updates.isEmpty()) "All remotely sourced skills are up to date." else updates.size.toString() + " skill update" + if (updates.size == 1) "" else "s" + " available.",
+                        skillsMessage = if (updates.isEmpty()) "All remotely sourced skills are up to date." else updates.size.toString() + " skill update" + (if (updates.size == 1) "" else "s") + " available.",
                     )
                 }
             }.onFailure { error ->
