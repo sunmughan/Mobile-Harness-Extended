@@ -10,6 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import com.jarves.mh.model.AgentKind
+import com.jarves.mh.model.AgentKind
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -335,6 +336,10 @@ class EnvironmentUpdateManager(
         }
         connection.disconnect()
         check(sha256(destination).equals(expectedSha256, true)) { "Environment package SHA-256 verification failed" }
+    }
+
+    companion object {
+        private val AGENT_COMPONENT_IDS = setOf("claude", "deepseek", "antigravity")
     }
 
     companion object {
