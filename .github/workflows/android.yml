@@ -192,7 +192,8 @@ jobs:
           - Kept offline runtime setup network-free; missing non-bundled toolchains now fail clearly instead of silently downloading.
           - Added live environment version refresh for Claude Code, DeepSeek Harness, and Antigravity CLI from their real upstream sources.
           - Environment Update actions are enabled only for components with a supported live updater or verified HTTPS package; metadata-only core/Python/Android entries no longer trigger a fake package update.
-          - Added safe backup/rollback around live agent environment updates.
+          - Added real install/update routing for Python and Android toolchains through the verified upstream runtime bundles; their versions are discovered from published runtime assets instead of hard-coded package URLs.
+          - Removed misleading disabled actions for components that do not have a standalone package; bundled Core remains runtime-managed while Python/Android expose real Install/Update actions.
           - Verified online/offline builds, unit tests, permanent release signing, APK alignment, and release integrity in CI.
 
           ### Release files
@@ -229,7 +230,7 @@ jobs:
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
             "channel": "stable",
-            "notes": "Mobile Harness $TAG — Live environment version detection and update controls.\n\nClaude Code, DeepSeek Harness, and Antigravity CLI are checked against their real upstream versions and use their supported live update paths. Core/Python/Android remain metadata-only until standalone verified packages are published; the UI will not offer a fake package update for them. Live agent updates are protected by backup and rollback handling.",
+            "notes": "Mobile Harness $TAG — Live environment version detection and update controls.\n\nClaude Code, DeepSeek Harness, and Antigravity CLI are checked against their real upstream versions and use their supported live update paths. Python and Android are installed/updated from verified runtime release assets discovered from the upstream runtime release feed. Core remains runtime-managed because it is the base filesystem, so the UI does not expose a fake standalone package update. All downloadable runtime assets are checksum-verified.",
             "artifacts": {
               "online": {
                 "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
