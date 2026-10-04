@@ -547,7 +547,7 @@ private fun EnvironmentUpdateCenter() {
         components.forEach { component ->
             val installedState = componentStates.firstOrNull { it.id == component.id }
             val hasUpdate = installedState?.latestVersion != null && installedState.latestVersion != installedState.currentVersion
-            val canInstallOrUpdate = installedState?.currentVersion == null || hasUpdate
+            val canInstallOrUpdate = (installedState?.currentVersion == null || hasUpdate) && component.packageUrl.isNotBlank()
             Surface(
                 shape = RoundedCornerShape(13.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
