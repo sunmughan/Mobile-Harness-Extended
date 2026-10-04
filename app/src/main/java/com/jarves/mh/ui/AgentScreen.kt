@@ -70,6 +70,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -168,6 +169,7 @@ fun AgentScreen(
     onInstallAgent: (AgentKind) -> Unit = {},
     onCheckAgentUpdates: () -> Unit = {},
     onUpdateAgent: (AgentKind) -> Unit = {},
+    onRefreshInstalledAgents: () -> Unit = {},
     onStartAntigravityLogin: () -> Unit = {},
     onSubmitAntigravityCode: (String) -> Unit = {},
     onLogoutAntigravity: () -> Unit = {},
@@ -175,6 +177,7 @@ fun AgentScreen(
     onSetAntigravityModel: (String) -> Unit = {},
     onSetAntigravityEffort: (String) -> Unit = {},
 ) {
+    LaunchedEffect(Unit) { onRefreshInstalledAgents() }
     val scope = rememberCoroutineScope()
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
     var baseUrl by rememberSaveable(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
