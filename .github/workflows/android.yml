@@ -179,7 +179,7 @@ jobs:
           ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
           cat > release-notes.md <<EOF
-          ## Mobile Harness v1.0.13
+          ## Mobile Harness $TAG
 
           ### Changes in this build
           - Fixed Antigravity CLI detection when the guest executable is exposed through absolute or relative symlinks inside the Ubuntu PRoot rootfs.
@@ -196,7 +196,7 @@ jobs:
           - **Online Release:** app-online-release.apk
           - **Offline Release:** app-offline-release.apk
 
-          Only these two **release APKs** are published here. Debug APKs are CI-only artifacts and are not release downloads.
+          The release contains the two APKs plus the `mobile-harness-update.json` manifest. Debug APKs are CI-only artifacts and are not release downloads.
           EOF
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Mobile Harness $TAG" --notes-file release-notes.md
@@ -226,7 +226,7 @@ jobs:
             "versionCode": $VERSION_CODE,
             "versionName": "$VERSION_NAME",
             "channel": "stable",
-            "notes": "Mobile Harness v1.0.13 — Agent detection, state synchronization, skill updates, and offline-runtime reliability fixes.\n\nEnvironment catalog metadata is shipped in this same JSON so the app can inspect bundled/runtime tool versions. Environment package installation is enabled only when a verified package URL is present.",
+            "notes": "Mobile Harness $TAG — Environment catalog loading and runtime metadata fixes.\n\nEnvironment catalog metadata is shipped in this same JSON so the app can inspect bundled/runtime tool versions. Environment package installation is enabled only when a verified package URL is present.",
             "artifacts": {
               "online": {
                 "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/$TAG/app-online-release.apk",
