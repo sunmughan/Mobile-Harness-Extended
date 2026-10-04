@@ -185,8 +185,14 @@ class RuntimeInstaller(private val context: Context) {
             installNodeIfNeeded(proot, 0.58f, 0.66f, onProgress)
         }
         if (systemUpgradeMarker.readTextOrNull() != SYSTEM_UPGRADE_VERSION) {
-            runSystemMaintenance(proot, onProgress)
-            systemUpgradeMarker.writeText(SYSTEM_UPGRADE_VERSION)
+            if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                // Offline first-run setup must never turn into a network operation.
+                onProgress(RuntimeInstallProgress("Using the bundled Ubuntu environment", 0.69f))
+                systemUpgradeMarker.writeText(SYSTEM_UPGRADE_VERSION)
+            } else {
+                runSystemMaintenance(proot, onProgress)
+                systemUpgradeMarker.writeText(SYSTEM_UPGRADE_VERSION)
+            }
         }
         if (coreNeeded) {
             aptInstall(
@@ -772,6 +778,9 @@ class RuntimeInstaller(private val context: Context) {
                 installAndroidToolchain(proot, from, to, onProgress)
             }
             DevStack.CPP -> {
+                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    "C/C++ tools are not bundled in this offline APK; use the online APK or install an offline toolchain bundle"
+                }
                 aptInstall(
                     proot,
                     listOf("build-essential", "cmake", "gdb"),
@@ -786,6 +795,9 @@ class RuntimeInstaller(private val context: Context) {
                 )
             }
             DevStack.PHP -> {
+                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    "PHP tools are not bundled in this offline APK; use the online APK or install an offline PHP bundle"
+                }
                 aptInstall(
                     proot,
                     listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
@@ -813,6 +825,9 @@ class RuntimeInstaller(private val context: Context) {
     ) {
         val composer = File(rootfs, "usr/local/bin/composer")
         if (composer.isFile) return
+        check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            "Composer is not bundled in this offline APK; use the online APK or install an offline PHP bundle"
+        }
         onProgress(RuntimeInstallProgress("Downloading Composer", fraction))
         downloads.mkdirs()
         val staged = File(downloads, "composer.phar")
@@ -1130,6 +1145,9 @@ class RuntimeInstaller(private val context: Context) {
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
         if (File(rootfs, "usr/local/bin/node").exists()) return
+        check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            "Bundled offline runtime is missing Node.js; reinstall the latest offline APK"
+        }
         onProgress(RuntimeInstallProgress("Downloading Node.js $NODE_VERSION LTS", from))
         downloads.mkdirs()
         val nodeFileName = "node-$NODE_VERSION-linux-arm64.tar.gz"
