@@ -550,6 +550,7 @@ class RuntimeInstaller(private val context: Context) {
             onProgress(RuntimeInstallProgress("Downloading Antigravity CLI $latest", ratio * 0.9f, bytes, total.takeIf { it > 0L }, event = RuntimeInstallEvent.DOWNLOAD))
         }
         val destination = File(rootfs, AGY_GUEST_PATH.removePrefix("/"))
+        destination.parentFile?.mkdirs()
         var found = false
         TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(downloaded.inputStream()))).use { archive ->
             var entry = archive.nextEntry
@@ -586,7 +587,7 @@ class RuntimeInstaller(private val context: Context) {
                 "rm -rf \"${'$'}next\" \"${'$'}old\"; mkdir -p \"${'$'}next\"; " +
                 "cd \"${'$'}next\"; npm init -y >/dev/null; " +
                 "npm install --omit=dev --no-audit --no-fund @deepseek-ai/dsh@$quotedVersion; " +
-                "mv /usr/local/lib/dsh \"${'$'}old\"; " +
+                "if [ -d /usr/local/lib/dsh ]; then mv /usr/local/lib/dsh \"${'$' }old\"; fi; " +
                 "if mv \"${'$'}next\" /usr/local/lib/dsh; then rm -rf \"${'$'}old\"; " +
                 "else mv \"${'$'}old\" /usr/local/lib/dsh; exit 1; fi",
             displayCommand = "npm install @deepseek-ai/dsh@$quotedVersion",
