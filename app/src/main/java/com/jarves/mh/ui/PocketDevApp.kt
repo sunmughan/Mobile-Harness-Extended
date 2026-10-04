@@ -2206,10 +2206,13 @@ private fun RootScreenHost(
                     results = state.skillSearchResults,
                     busy = state.skillsBusy,
                     message = state.skillsMessage,
+                    skillUpdates = state.skillUpdates,
                     onSearch = viewModel::searchSkills,
                     onImportGitHub = viewModel::importSkillFromGitHub,
                     onImportZip = viewModel::importSkillFromUri,
                     onRemove = viewModel::removeSkill,
+                    onCheckUpdates = viewModel::checkSkillUpdates,
+                    onUpdate = viewModel::updateSkill,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
