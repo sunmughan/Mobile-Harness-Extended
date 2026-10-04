@@ -24,6 +24,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream
+import org.json.JSONArray
 import org.json.JSONObject
 
 data class InstalledRuntime(
@@ -53,6 +54,7 @@ private data class RuntimeBundle(
     val fileName: String,
     val sha256: String,
     val compressedBytes: Long,
+    val remoteUrl: String? = null,
 )
 
 class RuntimeInstaller(private val context: Context) {
@@ -367,7 +369,8 @@ class RuntimeInstaller(private val context: Context) {
             )
         }
         coreToolsMarker.readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { put("core", it.removePrefix("core-bundle-")) }
-        File(rootfs, "opt/pocket-android-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("android", it) }
+        File(rootfs, "opt/pocket-android-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("android", ENV_ANDROID_VERSION) }
+        if (isStackInstalled(DevStack.PYTHON)) put("python", ENV_PYTHON_VERSION)
     }
 
     suspend fun latestEnvironmentVersions(): Map<String, String> = buildMap {
@@ -376,6 +379,33 @@ class RuntimeInstaller(private val context: Context) {
         runCatching { JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version") }
             .getOrNull()?.let { put("deepseek", it) }
         runCatching { fetchAgyManifest().getString("version") }.getOrNull()?.let { put("antigravity", it) }
+        runCatching { latestRuntimeBundle("python")?.version }.getOrNull()?.let { put("python", it) }
+        runCatching { latestRuntimeBundle("android")?.version }.getOrNull()?.let { put("android", it) }
+    }
+
+    suspend fun installEnvironmentStack(
+        id: String,
+        expectedVersion: String,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        val stack = when (id) {
+            "python" -> DevStack.PYTHON
+            "android" -> DevStack.ANDROID
+            else -> error("Unsupported environment stack: $id")
+        }
+        val bundle = latestRuntimeBundle(id, expectedVersion)
+            ?: error("No verified runtime package is published for $id $expectedVersion")
+        val runtime = installedRuntime()
+        when (stack) {
+            DevStack.PYTHON -> {
+                installRuntimeOverlay(bundle, "Installing Python $expectedVersion", 0.05f, 0.95f, onProgress)
+                verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
+            }
+            DevStack.ANDROID -> installAndroidToolchain(runtime.proot, 0.05f, 0.95f, onProgress, bundle)
+            else -> error("Unsupported environment stack: $id")
+        }
+        writeDevStackState(readDevStackState().apply { put(stack.name, true) })
+        onProgress(RuntimeInstallProgress("$id $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
     }
 
     suspend fun updateEnvironmentAgent(
@@ -608,6 +638,61 @@ class RuntimeInstaller(private val context: Context) {
     private fun fetchAgyManifest(): JSONObject = JSONObject(
         fetchText("https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json"),
     )
+    private data class PublishedRuntimeAsset(
+        val version: String,
+        val fileName: String,
+        val url: String,
+        val sha256: String,
+        val sizeBytes: Long,
+    )
+
+    private suspend fun latestRuntimeBundle(id: String, expectedVersion: String? = null): RuntimeBundle? {
+        val prefix = when (id) {
+            "core" -> "pocketdev-core-arm64-"
+            "python" -> "pocketdev-python-arm64-"
+            "android" -> "pocketdev-android-arm64-"
+            else -> return null
+        }
+        val releases = JSONArray(fetchText("https://api.github.com/repos/techjarves/Mobile-Harness/releases?per_page=30"))
+        val assets = buildList {
+            for (i in 0 until releases.length()) {
+                val release = releases.getJSONObject(i)
+                if (release.optBoolean("draft") || release.optBoolean("prerelease")) continue
+                if (!release.optString("tag_name").startsWith("runtime-")) continue
+                val array = release.optJSONArray("assets") ?: continue
+                for (j in 0 until array.length()) {
+                    val asset = array.getJSONObject(j)
+                    val name = asset.optString("name")
+                    if (!name.startsWith(prefix) || !name.endsWith(".tar.zst")) continue
+                    val version = name.removePrefix(prefix).removeSuffix(".tar.zst")
+                    val digest = asset.optString("digest").removePrefix("sha256:")
+                    if (version.isNotBlank() && digest.matches(Regex("[0-9a-fA-F]{64}"))) {
+                        add(PublishedRuntimeAsset(version, name, asset.optString("browser_download_url"), digest, asset.optLong("size", 0L)))
+                    }
+                }
+            }
+        }
+        val selected = if (expectedVersion != null) {
+            assets.firstOrNull { it.version == expectedVersion }
+        } else {
+            assets.maxWithOrNull(compareBy<PublishedRuntimeAsset> { versionParts(it.version) }.thenBy { it.version })
+        } ?: return null
+        return RuntimeBundle(
+            label = when (id) {
+                "core" -> "Core"
+                "python" -> "Python"
+                else -> "Android"
+            },
+            fileName = selected.fileName,
+            sha256 = selected.sha256,
+            compressedBytes = selected.sizeBytes,
+            remoteUrl = selected.url,
+        )
+    }
+
+    private fun versionParts(value: String): List<Int> =
+        Regex("\\d+").findAll(value).map { it.value.toIntOrNull() ?: 0 }.toList()
+
 
     private fun isVersionNewer(candidate: String, current: String): Boolean {
         fun parts(value: String) = Regex("\\d+").findAll(value).map { it.value.toIntOrNull() ?: 0 }.toList()
@@ -984,6 +1069,7 @@ class RuntimeInstaller(private val context: Context) {
         from: Float,
         to: Float,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
+        bundleOverride: RuntimeBundle? = null,
     ) {
         val marker = File(rootfs, "root/.pocket-android-tools-version")
         val androidHome = File(rootfs, "root/android-sdk")
@@ -995,7 +1081,7 @@ class RuntimeInstaller(private val context: Context) {
             !File(gradleHome, "gradle-8.14.3/bin/gradle").isFile ||
             !localMaven.isDirectory) {
             installRuntimeOverlay(
-                ANDROID_BUNDLE,
+                bundleOverride ?: ANDROID_BUNDLE,
                 "Installing the Android development tools",
                 from,
                 to,
@@ -1101,7 +1187,7 @@ class RuntimeInstaller(private val context: Context) {
             return destination
         }
 
-        val url = "${BuildConfig.RUNTIME_RELEASE_BASE_URL}/${bundle.fileName}"
+        val url = bundle.remoteUrl ?: "${BuildConfig.RUNTIME_RELEASE_BASE_URL}/${bundle.fileName}"
         downloadVerified(url, destination, bundle.sha256) { downloaded, total ->
             val ratio = if (total > 0) downloaded.toFloat() / total else 0f
             onProgress(RuntimeInstallProgress("Downloading ${bundle.label} bundle", from + ratio * (to - from), downloaded, total.takeIf { it > 0 }))
@@ -1981,6 +2067,8 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         private const val LEGACY_CORE_TOOLS_VERSION = "core-bundle-2026.09.4"
         private const val SYSTEM_UPGRADE_VERSION = "ubuntu-maintenance-v1"
         private const val ANDROID_TOOLS_VERSION = "sdk36-build-tools35-gradle8.14.3-maven-2026.09"
+        private const val ENV_PYTHON_VERSION = "2026.09.2"
+        private const val ENV_ANDROID_VERSION = "2026.09.1"
         private const val ANDROID_ASSET_BASE = "https://appdevforall.org/dev-assets/debug"
         private const val ANDROID_SDK_URL = "$ANDROID_ASSET_BASE/android-sdk-arm64-v8a.zip"
         private const val ANDROID_SDK_SHA256 = "bfe5bc940a7ede14735817a40962256666ce4152b9f3135f34a4ab9bccb87c3f"
