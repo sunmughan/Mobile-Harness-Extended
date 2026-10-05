@@ -1105,6 +1105,7 @@ class RuntimeInstaller(private val context: Context) {
                 check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
                     "PHP tools are not bundled in this offline APK; use the online APK or install an offline PHP bundle"
                 }
+                preparePhpRepository(proot, onProgress)
                 aptInstall(
                     proot,
                     listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip"),
@@ -1119,6 +1120,32 @@ class RuntimeInstaller(private val context: Context) {
         if (!verified) return
         writeDevStackState(readDevStackState().apply { put(stack.name, true) })
         onProgress(RuntimeInstallProgress("${stack.label} installed", to))
+    }
+
+    private suspend fun preparePhpRepository(
+        proot: File,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        val listFile = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list")
+        if (listFile.isFile) return
+        onProgress(RuntimeInstallProgress("Configuring PHP repository", 0.15f))
+        writeResolver()
+        val command = "export DEBIAN_FRONTEND=noninteractive; " +
+            "dpkg --configure -a && " +
+            "apt-get -o DPkg::Lock::Timeout=120 -f install -y && " +
+            "apt-get -o DPkg::Lock::Timeout=120 update && " +
+            "apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends software-properties-common ca-certificates gnupg && " +
+            "add-apt-repository -y ppa:ondrej/php && " +
+            "apt-get -o DPkg::Lock::Timeout=120 update"
+        runGuestCommand(
+            proot = proot,
+            command = command,
+            displayCommand = "add-apt-repository -y ppa:ondrej/php && apt-get update",
+            fraction = 0.15f,
+            timeoutMs = 15 * 60 * 1_000L,
+            onProgress = onProgress,
+            failureMessage = "Could not configure PHP package repository",
+        )
     }
 
     /**
@@ -1342,9 +1369,6 @@ class RuntimeInstaller(private val context: Context) {
             }
         }
     }
-
-    private fun versionParts(value: String): List<Int> =
-        Regex("\\d+").findAll(value).map { it.value.toIntOrNull() ?: 0 }.toList()
 
     private fun latestVersionedDirectory(parent: File, prefix: String, required: (File) -> Boolean): File? =
         parent.listFiles { file -> file.isDirectory && file.name.startsWith(prefix) }
