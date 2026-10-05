@@ -650,6 +650,18 @@ class RuntimeInstaller(private val context: Context) {
     )
 
     private suspend fun latestRuntimeBundle(id: String, expectedVersion: String? = null): RuntimeBundle? {
+        // Offline APKs already contain the verified Python/Android bundles. Do not
+        // hit GitHub just to resolve an asset that is guaranteed to be embedded.
+        if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            val bundled = when (id) {
+                "python" -> PYTHON_BUNDLE
+                "android" -> ANDROID_BUNDLE
+                "core" -> CORE_BUNDLE
+                else -> return null
+            }
+            return if (expectedVersion == null || bundled.version == expectedVersion) bundled else null
+        }
+
         val prefix = when (id) {
             "core" -> "pocketdev-core-arm64-"
             "python" -> "pocketdev-python-arm64-"
