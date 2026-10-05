@@ -1731,6 +1731,79 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Updates an installed optional toolchain in place. */
+    fun updateDevStack(stack: DevStack) {
+        if (_state.value.devStackInstalling != null || stack == DevStack.WEB) return
+        if (stack !in _state.value.installedDevStacks) return
+        if (_state.value.isRunning || _state.value.projectTerminalRunning) {
+            _state.update { it.copy(toastMessage = "Stop running tasks and terminal commands before updating tools") }
+            return
+        }
+        _state.update {
+            it.copy(
+                devStackInstalling = stack,
+                devStackRemoving = false,
+                devStackMessage = "Updating ${stack.label}…",
+                devStackProgress = 0f,
+                devStackBytes = null,
+                devStackBytesPerSecond = null,
+            )
+        }
+        viewModelScope.launch {
+            var sampleBytes = 0L
+            var sampleTime = android.os.SystemClock.elapsedRealtime()
+            var latestSpeed: Long? = null
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    installer.updateStack(stack) { progress ->
+                        val transfer = progress.totalBytes?.let { total ->
+                            (progress.downloadedBytes ?: 0L) to total
+                        }
+                        if (transfer != null) {
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            val elapsed = now - sampleTime
+                            val delta = transfer.first - sampleBytes
+                            if (delta < 0L) {
+                                sampleBytes = transfer.first
+                                sampleTime = now
+                                latestSpeed = null
+                            } else if (elapsed >= 500L) {
+                                latestSpeed = (delta * 1_000L / elapsed).coerceAtLeast(0L)
+                                sampleBytes = transfer.first
+                                sampleTime = now
+                            }
+                        }
+                        _state.update { current ->
+                            current.copy(
+                                devStackMessage = progress.message,
+                                devStackProgress = progress.fraction.coerceIn(0f, 1f),
+                                devStackBytes = transfer,
+                                devStackBytesPerSecond = latestSpeed,
+                            )
+                        }
+                    }
+                }
+            }
+            _state.update { current ->
+                current.copy(
+                    devStackInstalling = null,
+                    devStackRemoving = false,
+                    devStackProgress = 0f,
+                    devStackBytes = null,
+                    devStackBytesPerSecond = null,
+                    devStackMessage = result.fold(
+                        onSuccess = { "${stack.label} updated successfully" },
+                        onFailure = { error -> error.message?.take(200) ?: "Could not update ${stack.label}" },
+                    ),
+                    toastMessage = result.fold(
+                        onSuccess = { "${stack.label} updated" },
+                        onFailure = { "Could not update ${stack.label}" },
+                    ),
+                )
+            }
+        }
+    }
+
     /** Removes an optional toolchain after the Settings confirmation dialog. */
     fun removeDevStack(stack: DevStack) {
         if (_state.value.devStackInstalling != null || stack == DevStack.WEB) return
