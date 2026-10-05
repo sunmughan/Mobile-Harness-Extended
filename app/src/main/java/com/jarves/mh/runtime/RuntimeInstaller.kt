@@ -883,6 +883,55 @@ class RuntimeInstaller(private val context: Context) {
     }
 
     /**
+     * Updates an installed optional development stack in place.
+     * Bundled stacks use the verified runtime asset; package-backed stacks
+     * refresh APT metadata and install the current packages without removing
+     * the existing toolchain first.
+     */
+    suspend fun updateStack(
+        stack: DevStack,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        require(stack != DevStack.WEB) { "Web tools are part of the core runtime and cannot be updated separately" }
+        check(isStackInstalled(stack)) { stack.label + " is not installed" }
+        val runtime = installedRuntime()
+        when (stack) {
+            DevStack.PYTHON -> installEnvironmentStack("python", latestRuntimeBundle("python")?.version ?: ENV_PYTHON_VERSION, onProgress)
+            DevStack.ANDROID -> installEnvironmentStack("android", latestRuntimeBundle("android")?.version ?: ENV_ANDROID_VERSION, onProgress)
+            DevStack.CPP -> {
+                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    "C/C++ updates require the online APK because APT packages are not bundled offline"
+                }
+                aptInstall(
+                    runtime.proot,
+                    listOf("build-essential", "cmake", "gdb"),
+                    "Updating C/C++ compilers and build tools",
+                    0.2f,
+                    onProgress,
+                )
+                verifyGuest(runtime.proot, "gcc --version && g++ --version && make --version && cmake --version", "C/C++ tools could not be verified")
+                onProgress(RuntimeInstallProgress("C/C++ tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
+            }
+            DevStack.PHP -> {
+                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    "PHP updates require the online APK because PHP packages are not bundled offline"
+                }
+                aptInstall(
+                    runtime.proot,
+                    listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
+                    "Updating PHP and common extensions",
+                    0.2f,
+                    onProgress,
+                )
+                installComposer(runtime.proot, 0.75f, onProgress, force = true)
+                verifyGuest(runtime.proot, "php --version && composer --version", "PHP tools could not be verified")
+                onProgress(RuntimeInstallProgress("PHP and Composer are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
+            }
+            DevStack.WEB -> error("Web tools are part of the core runtime")
+        }
+    }
+
+    /**
      * Removes an optional development stack without touching projects or the core
      * Node.js/Git runtime. Package-backed stacks are purged through dpkg; bundled
      * stacks remove only their dedicated SDK/language directories.
@@ -1059,9 +1108,10 @@ class RuntimeInstaller(private val context: Context) {
         proot: File,
         fraction: Float,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
+        force: Boolean = false,
     ) {
         val composer = File(rootfs, "usr/local/bin/composer")
-        if (composer.isFile) return
+        if (composer.isFile && !force) return
         check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
             "Composer is not bundled in this offline APK; use the online APK or install an offline PHP bundle"
         }
