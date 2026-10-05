@@ -268,6 +268,7 @@ class AntigravityRuntimeBridge(
         provider: ProviderProfile,
     ): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = UUID.randomUUID().toString()
+        val startedAt = System.currentTimeMillis()
         activeSessionId = sessionId
         userStopRequested = false
         foregroundResultPosted = false
@@ -367,13 +368,22 @@ class AntigravityRuntimeBridge(
             if (paths.isNotEmpty()) {
                 eventBus.emit(RuntimeEvent.FilesChanged(sessionId, checkpoints.buildChangeDetails(projectId, workspace, paths)))
             }
+            val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
+            val durationText = formatDurationText(durationSeconds)
             emitCompleted(sessionId)
-            finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug.")
+            finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
         }.onFailure {
-            val message = if (userStopRequested) "Stopped by user" else friendlyError(it.message.orEmpty())
+            val rawError = it.message.orEmpty()
+            val isTransient = RuntimeFailureClassifier.isTransientNetworkFailure(rawError)
+            val message = if (userStopRequested) "Stopped by user"
+                else if (isTransient) RuntimeFailureClassifier.friendlyNetworkErrorMessage(rawError)
+                else friendlyError(rawError)
             emitFailure(sessionId, message)
-            if (userStopRequested) cancelForegroundRuntime()
-            else finishForegroundRuntime(false, projectSlug, message)
+            if (userStopRequested) {
+                cancelForegroundRuntime()
+            } else if (!isTransient) {
+                finishForegroundRuntime(false, projectSlug, message)
+            }
         }
         activeProcess = null
         activeSessionId = null
@@ -492,6 +502,8 @@ class AntigravityRuntimeBridge(
     private fun friendlyError(raw: String): String {
         val value = raw.replace(Regex("\\s+"), " ").trim()
         return when {
+            RuntimeFailureClassifier.isTransientNetworkFailure(value) ->
+                RuntimeFailureClassifier.friendlyNetworkErrorMessage(value)
             value.contains("authentication required", true) ||
                 value.contains("authentication failed", true) ||
                 value.contains("not signed in", true) ->

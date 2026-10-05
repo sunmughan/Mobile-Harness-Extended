@@ -63,6 +63,9 @@ import com.jarves.mh.runtime.SkillInfo
 import com.jarves.mh.runtime.SkillManager
 import com.jarves.mh.runtime.SkillSearchResult
 import com.jarves.mh.runtime.AndroidAppInstaller
+import com.jarves.mh.runtime.NotificationCoordinator
+import com.jarves.mh.runtime.RuntimeExecutionService
+import com.jarves.mh.runtime.formatDurationText
 import com.jarves.mh.update.AppUpdateInfo
 import com.jarves.mh.update.AppUpdater
 import java.io.File
@@ -290,6 +293,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
     private var runtimeRecoveryJob: Job? = null
     private var runtimeRecoveryAttempt = 0
+    private var runtimeRecoveryStartedAtMillis: Long? = null
     private fun appUpdater(): AppUpdater = AppUpdater(
         getApplication(),
         if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else "",
@@ -3345,6 +3349,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val enriched = request.copy(prompt = enrichedPrompt)
             activeRuntimeRequest = enriched
+            runtimeRecoveryStartedAtMillis = null
+            runtimeRecoveryAttempt = 0
             enriched.runtime.startSession(
                 enriched.project.id,
                 enriched.project.slug,
@@ -3381,6 +3387,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!_state.value.isRunning) return
         runtimeRecoveryJob?.cancel()
         runtimeRecoveryJob = null
+        runtimeRecoveryStartedAtMillis = null
+        runtimeRecoveryAttempt = 0
         activeRuntimeRequest = null
         _state.update { it.copy(runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
         viewModelScope.launch { activeRuntime().stopActiveSession() }
@@ -3701,10 +3709,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 is RuntimeEvent.SessionCompleted -> {
                     val finishedAt = System.currentTimeMillis()
-                    attachTaskDuration(finishWorkSegment(current, finishedAt), finishedAt).copy(
+                    val totalDurationText = current.taskStartedAtMillis?.let { start ->
+                        formatDurationText(((finishedAt - start) / 1000L).coerceAtLeast(1L))
+                    } ?: "a few seconds"
+                    runtimeRecoveryStartedAtMillis = null
+                    val segmentFinishedState = finishWorkSegment(current, finishedAt)
+                    val stateWithResponse = ensureCompletionMessage(segmentFinishedState, totalDurationText)
+                    attachTaskDuration(stateWithResponse, finishedAt).copy(
                         isRunning = false,
                         activeSessionId = null,
-                        activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully")) +
+                        activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully in $totalDurationText")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
                         taskFinishedAtMillis = finishedAt,
                         currentTaskRequest = null,
@@ -3715,6 +3729,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 is RuntimeEvent.SessionFailed -> {
                     val finishedAt = System.currentTimeMillis()
+                    runtimeRecoveryStartedAtMillis = null
                     attachTaskDuration(
                         finishWorkSegment(
                             appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
@@ -3754,6 +3769,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         persistMessages(includeLiveProcess = true)
     }
 
+    private fun ensureCompletionMessage(state: AppUiState, totalDurationText: String): AppUiState {
+        val lastUserIndex = state.messages.indexOfLast { it.fromUser }
+        val hasResponseForLastUser = state.messages.indices.any {
+            it > lastUserIndex && !state.messages[it].fromUser && state.messages[it].text.isNotBlank()
+        }
+        return if (!hasResponseForLastUser) {
+            state.copy(
+                messages = state.messages + ChatMessage(
+                    fromUser = false,
+                    text = "Task completed successfully in $totalDurationText.",
+                ),
+            )
+        } else {
+            state
+        }
+    }
+
     private fun recoverTransientRuntimeFailure(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
         val request = activeRuntimeRequest ?: return false
@@ -3761,15 +3793,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!request.runtime.supportsSessionRecovery) return false
         if (!RuntimeFailureClassifier.isTransientNetworkFailure(event.reason)) return false
 
-        if (runtimeRecoveryAttempt >= runtimeRetryPolicy.maxAutomaticRetries) {
-            _state.update { it.copy(
-                activeSessionId = null,
-                runtimeRecoveryStatus = "Waiting for network",
-                runtimeRecoveryCanResume = true,
-                liveProcess = it.liveProcess + ActivityItem("Connection interrupted", "Automatic retries are exhausted. The task is preserved and can be resumed."),
-                activity = listOf(ActivityItem("Waiting for network", "The task is preserved. Resume when connectivity is available.")) + it.activity,
-            ) }
+        val now = System.currentTimeMillis()
+        val recoveryStartedAt = runtimeRecoveryStartedAtMillis ?: now.also { runtimeRecoveryStartedAtMillis = it }
+        val elapsedMillis = (now - recoveryStartedAt).coerceAtLeast(0L)
+        val maxDurationMillis = runtimeRetryPolicy.maxTotalRetryDurationMillis
+
+        if (elapsedMillis >= maxDurationMillis || runtimeRecoveryAttempt >= runtimeRetryPolicy.maxAutomaticRetries) {
+            val friendlyError = "Network connection could not be restored after 3 minutes of retries. Your task and changes are preserved. Please check your internet connection and tap Resume."
+            runtimeRecoveryJob?.cancel()
+            runtimeRecoveryJob = null
+            runtimeRecoveryStartedAtMillis = null
+            runtimeRecoveryAttempt = 0
+            val finishedAt = System.currentTimeMillis()
+            _state.update { state ->
+                attachTaskDuration(
+                    finishWorkSegment(
+                        appendWorkItem(state, ActivityItem("Task stopped", friendlyError)),
+                        finishedAt,
+                    ),
+                    finishedAt,
+                ).copy(
+                    isRunning = false,
+                    activeSessionId = null,
+                    runtimeRecoveryStatus = "Connection lost (3m timeout)",
+                    runtimeRecoveryCanResume = true,
+                    activity = listOf(ActivityItem("Task stopped", friendlyError)) + state.activity,
+                    taskFinishedAtMillis = finishedAt,
+                    currentTaskRequest = null,
+                )
+            }
             persistMessages(includeLiveProcess = true)
+            NotificationCoordinator.postResult(
+                getApplication<Application>(),
+                "Task paused · Network error",
+                friendlyError,
+                true,
+            )
+            runCatching {
+                val intent = Intent(getApplication<Application>(), RuntimeExecutionService::class.java).apply {
+                    action = RuntimeExecutionService.ACTION_CANCELLED
+                }
+                getApplication<Application>().startService(intent)
+            }
             return true
         }
 
@@ -3777,28 +3842,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runtimeRecoveryAttempt += 1
         val attempt = runtimeRecoveryAttempt
         val retryDelay = runtimeRetryPolicy.delayMillis(attempt, kotlin.random.Random.nextDouble())
+            .coerceAtMost((maxDurationMillis - elapsedMillis).coerceAtLeast(1_000L))
+        val remainingSeconds = (((maxDurationMillis - elapsedMillis) / 1000L).coerceAtLeast(1L))
+        val statusText = "Reconnecting… (${remainingSeconds}s remaining)"
+
         _state.update { it.copy(
             activeSessionId = null,
-            runtimeRecoveryStatus = "Retrying connection…",
+            runtimeRecoveryStatus = statusText,
             runtimeRecoveryAttempt = attempt,
             runtimeRecoveryCanResume = false,
             liveProcess = it.liveProcess + ActivityItem(
                 "Connection interrupted",
-                "Retrying connection (attempt " + attempt + "/" + runtimeRetryPolicy.maxAutomaticRetries + ")…",
+                "Network disturbance detected. Reconnecting… (${remainingSeconds}s remaining, attempt $attempt)",
             ),
         ) }
         persistMessages(includeLiveProcess = true)
+
+        runCatching {
+            val progressIntent = Intent(getApplication<Application>(), RuntimeExecutionService::class.java).apply {
+                action = RuntimeExecutionService.ACTION_PROGRESS
+                putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, request.project.slug)
+                putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Reconnecting network… (${remainingSeconds}s remaining)")
+            }
+            getApplication<Application>().startService(progressIntent)
+        }
+
         runtimeRecoveryJob = viewModelScope.launch {
             delay(retryDelay)
             if (!_state.value.isRunning || activeRuntimeRequest !== request) return@launch
+            val updatedElapsed = System.currentTimeMillis() - recoveryStartedAt
+            val currentRemaining = (((maxDurationMillis - updatedElapsed) / 1000L).coerceAtLeast(1L))
             _state.update { it.copy(
-                runtimeRecoveryStatus = "Reconnecting…",
-                liveProcess = it.liveProcess + ActivityItem("Reconnecting", "Resuming the provider session after a transient network failure."),
+                runtimeRecoveryStatus = "Reconnecting… (${currentRemaining}s remaining)",
+                liveProcess = it.liveProcess + ActivityItem("Reconnecting", "Attempting to re-establish connection…"),
             ) }
             runCatching {
                 request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider)
             }.onFailure { error ->
-                onRuntimeEvent(RuntimeEvent.SessionFailed(event.sessionId, RuntimeFailureClassifier.normalizeThrowable(error)))
+                val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
+                onRuntimeEvent(RuntimeEvent.SessionFailed(event.sessionId, failureReason))
             }
         }
         return true
@@ -3806,15 +3888,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resumeInterruptedTask() {
         val request = activeRuntimeRequest ?: return
-        if (!_state.value.isRunning || !_state.value.runtimeRecoveryCanResume) return
+        if (!_state.value.runtimeRecoveryCanResume) return
         runtimeRecoveryJob?.cancel()
         runtimeRecoveryAttempt = 0
-        _state.update { it.copy(runtimeRecoveryStatus = "Reconnecting…", runtimeRecoveryCanResume = false, liveProcess = it.liveProcess + ActivityItem("Resuming task", "Reconnecting to the preserved provider session.")) }
+        runtimeRecoveryStartedAtMillis = null
+        _state.update { it.copy(
+            isRunning = true,
+            runtimeRecoveryStatus = "Reconnecting…",
+            runtimeRecoveryCanResume = false,
+            liveProcess = it.liveProcess + ActivityItem("Resuming task", "Reconnecting to the preserved provider session."),
+        ) }
         runtimeRecoveryJob = viewModelScope.launch {
             runCatching {
                 request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider)
             }.onFailure { error ->
-                _state.update { state -> state.copy(runtimeRecoveryStatus = "Waiting for network", runtimeRecoveryCanResume = true, liveProcess = state.liveProcess + ActivityItem("Resume failed", RuntimeFailureClassifier.normalizeThrowable(error))) }
+                val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
+                _state.update { state ->
+                    state.copy(
+                        runtimeRecoveryStatus = "Waiting for network",
+                        runtimeRecoveryCanResume = true,
+                        liveProcess = state.liveProcess + ActivityItem("Resume failed", failureReason),
+                    )
+                }
             }
         }
     }

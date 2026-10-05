@@ -11,6 +11,9 @@ class RuntimeResilienceTest {
         assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("HTTP 503 Service Unavailable"))
         assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("SocketTimeoutException: timeout"))
         assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("DNS resolution failed"))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("read tcp 2409:40d4::48208->2001:4860::443: read: software caused connection abort"))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("stream error: stream ID 1; INTERNAL_ERROR"))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("context deadline exceeded"))
     }
 
     @Test fun permanentProviderErrorsAreNotRetryable() {
@@ -18,6 +21,26 @@ class RuntimeResilienceTest {
         assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("HTTP 429 quota exceeded"))
         assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("invalid model"))
         assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("Stopped by user"))
+    }
+
+    @Test fun friendlyNetworkErrorMessageHidesRawSocketErrors() {
+        val raw = "agent executor error: generating and executing: request failed: Post \"https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse\": read tcp [2409:40d4:2016:27ce:289f:391a:2ff6:c540]:48208->[2001:4860:4847:400::]:443: read: software caused connection abort"
+        val friendly = RuntimeFailureClassifier.friendlyNetworkErrorMessage(raw)
+        assertFalse(friendly.contains("2409:40d4"))
+        assertFalse(friendly.contains("daily-cloudcode"))
+        assertTrue(friendly.contains("cellular/Wi-Fi disturbance") || friendly.contains("Network connection was interrupted"))
+    }
+
+    @Test fun retryPolicyHas3MinuteLimit() {
+        val policy = RuntimeRetryPolicy()
+        assertEquals(180_000L, policy.maxTotalRetryDurationMillis)
+        assertEquals(15, policy.maxAutomaticRetries)
+    }
+
+    @Test fun durationFormattingWorks() {
+        assertEquals("45s", formatDurationText(45L))
+        assertEquals("2m 42s", formatDurationText(162L))
+        assertEquals("1h 15m", formatDurationText(4500L))
     }
 
     @Test fun retryBackoffIsBounded() {

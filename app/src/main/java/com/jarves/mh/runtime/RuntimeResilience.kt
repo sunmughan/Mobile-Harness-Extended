@@ -11,23 +11,44 @@ object RuntimeFailureClassifier {
         val value = reason.lowercase(Locale.ROOT)
         if (value.isBlank() || isPermanentProviderFailure(value) || value.contains("stopped by user")) return false
         return listOf(
-            "network error", "network unavailable", "offline", "connection reset",
-            "connection refused", "connection closed", "connection aborted",
-            "connection timed out", "connect timed out", "socket timeout", "sockettimeoutexception",
-            "socketexception", "unknownhostexception", "connectexception", "dns",
+            "network error", "network unavailable", "network is unreachable", "network connection",
+            "offline", "connection reset", "connection refused", "connection closed",
+            "connection abort", "connection aborted", "software caused connection abort",
+            "connection timed out", "connect timed out", "connection interrupted",
+            "connection lost", "read tcp", "write tcp", "broken pipe",
+            "socket timeout", "sockettimeoutexception", "socketexception",
+            "unknownhostexception", "connectexception", "dns", "dns resolution failed",
             "temporary failure", "temporarily unavailable", "service unavailable",
             "bad gateway", "gateway timeout", "http 408", "http 425", "http 502",
-            "http 503", "http 504", "http 522", "http 524", "eof", "broken pipe",
-            "stream closed", "stream reset", "unexpected end of", "transport error",
+            "http 503", "http 504", "http 522", "http 524", "eof", "unexpected eof",
+            "stream closed", "stream reset", "stream error", "http2: stream error",
+            "streamgeneratecontent", "unexpected end of", "transport error",
+            "client.timeout", "context deadline exceeded", "handshake timeout", "tls handshake",
         ).any(value::contains)
     }
 
     private fun isPermanentProviderFailure(value: String): Boolean =
         listOf(
-            "authentication", "unauthorized", "forbidden", "http 401", "http 403",
-            "api key", "invalid api", "invalid model", "unknown model", "quota",
+            "authentication required", "authentication failed", "unauthorized", "forbidden",
+            "http 401", "http 403", "invalid api", "invalid model", "unknown model", "quota",
             "out of credits", "rate limit", "http 429", "user not found", "not signed in",
         ).any(value::contains)
+
+    fun friendlyNetworkErrorMessage(raw: String): String {
+        val value = raw.lowercase(Locale.ROOT)
+        return when {
+            value.contains("connection abort") || value.contains("connection reset") || value.contains("read tcp") ->
+                "Network connection was interrupted by cellular/Wi-Fi disturbance. The connection dropped midway."
+            value.contains("timeout") || value.contains("timed out") || value.contains("deadline") ->
+                "Network request timed out while waiting for a response from the server."
+            value.contains("dns") || value.contains("unknownhost") ->
+                "Unable to resolve host. Please check your internet connection."
+            value.contains("unreachable") || value.contains("no route") || value.contains("offline") ->
+                "Network is unreachable. Please verify your internet connection."
+            else ->
+                "Network connection error occurred while communicating with the service."
+        }
+    }
 
     fun normalizeThrowable(error: Throwable): String = when (error) {
         is UnknownHostException -> "Network unavailable: DNS lookup failed."
@@ -39,16 +60,18 @@ object RuntimeFailureClassifier {
 }
 
 data class RuntimeRetryPolicy(
-    val maxAutomaticRetries: Int = 5,
-    val initialBackoffMillis: Long = 1_500L,
+    val maxAutomaticRetries: Int = 15,
+    val initialBackoffMillis: Long = 2_000L,
     val maxBackoffMillis: Long = 15_000L,
     val jitterRatio: Double = 0.20,
+    val maxTotalRetryDurationMillis: Long = 180_000L,
 ) {
     init {
         require(maxAutomaticRetries >= 0)
         require(initialBackoffMillis > 0)
         require(maxBackoffMillis >= initialBackoffMillis)
         require(jitterRatio in 0.0..0.5)
+        require(maxTotalRetryDurationMillis >= initialBackoffMillis)
     }
 
     fun delayMillis(attempt: Int, jitter: Double): Long {
@@ -59,3 +82,10 @@ data class RuntimeRetryPolicy(
         return (bounded * factor).toLong().coerceAtLeast(250L)
     }
 }
+
+fun formatDurationText(totalSeconds: Long): String = when {
+    totalSeconds >= 3_600 -> "${totalSeconds / 3_600}h ${(totalSeconds % 3_600) / 60}m"
+    totalSeconds >= 60 -> "${totalSeconds / 60}m ${totalSeconds % 60}s"
+    else -> "${totalSeconds}s"
+}
+

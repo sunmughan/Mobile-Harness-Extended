@@ -265,7 +265,7 @@ class ClaudeRuntimeBridge(
             emitFailureOnce(sessionId, message)
             if (userStopRequested) {
                 cancelForegroundRuntime()
-            } else {
+            } else if (!RuntimeFailureClassifier.isTransientNetworkFailure(message)) {
                 finishForegroundRuntime(
                     completed = false,
                     projectName = projectSlug,
@@ -595,7 +595,7 @@ class ClaudeRuntimeBridge(
             eventBus.emit(RuntimeEvent.SessionFailed(sessionId, reason))
             if (userStopRequested) {
                 cancelForegroundRuntime()
-            } else {
+            } else if (!RuntimeFailureClassifier.isTransientNetworkFailure(reason)) {
                 finishForegroundRuntime(
                     completed = false,
                     projectName = activeProjectSlug ?: "your project",

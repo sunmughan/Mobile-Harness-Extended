@@ -5016,19 +5016,19 @@ private fun LiveClaudeProcess(
 @Composable
 private fun WorkBlockCard(message: ChatMessage) {
     val seconds = (message.workedMillis / 1_000L).coerceAtLeast(1L)
+    val lastTitle = message.workItems.lastOrNull()?.title.orEmpty()
+    val isStopped = lastTitle.startsWith("Task stopped", ignoreCase = true)
     Column {
         ClaudeActivityDisclosure(
             items = message.workItems,
             headline = activityHeadline(message.workItems, seconds, message.workItems.isEmpty()),
         )
-        if (message.workItems.lastOrNull()?.title?.startsWith("Task stopped") == true) {
-            Text(
-                text = "Worked for ${formatDuration(seconds)}",
-                modifier = Modifier.padding(start = 29.dp, bottom = 6.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-            )
-        }
+        Text(
+            text = if (isStopped) "Task stopped · Worked for ${formatDuration(seconds)}" else "Task completed · Worked for ${formatDuration(seconds)}",
+            modifier = Modifier.padding(start = 29.dp, bottom = 6.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+        )
     }
 }
 
