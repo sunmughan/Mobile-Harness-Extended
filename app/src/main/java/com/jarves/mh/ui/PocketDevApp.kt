@@ -25,6 +25,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -116,6 +121,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -4845,6 +4851,7 @@ private fun ChatTab(
         onDispose { view.keepScreenOn = false }
     }
     var prompt by rememberSaveable { mutableStateOf("") }
+    var showWorkspaceControls by rememberSaveable { mutableStateOf(false) }
     var mentionQuery by remember { mutableStateOf<String?>(null) }
     var activeCommentTarget by remember { mutableStateOf<Triple<String, String?, String>?>(null) }
     val chatScope = rememberCoroutineScope()
@@ -4881,29 +4888,35 @@ private fun ChatTab(
         }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
-        if (scratchpadItems.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ScratchpadPill(
-                    items = scratchpadItems,
-                    isExpanded = scratchpadExpanded,
-                    onToggleExpand = onToggleScratchpad,
-                )
-            }
-            if (scratchpadExpanded) {
-                Box(
+        AnimatedVisibility(
+            visible = showWorkspaceControls && scratchpadItems.isNotEmpty(),
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Column {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 2.dp),
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ScratchpadCard(
+                    ScratchpadPill(
                         items = scratchpadItems,
-                        onCollapse = onToggleScratchpad,
+                        isExpanded = scratchpadExpanded,
+                        onToggleExpand = onToggleScratchpad,
                     )
+                }
+                if (scratchpadExpanded) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 2.dp),
+                    ) {
+                        ScratchpadCard(
+                            items = scratchpadItems,
+                            onCollapse = onToggleScratchpad,
+                        )
+                    }
                 }
             }
         }
@@ -5023,11 +5036,17 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                ModeSelectorBar(
-                    currentMode = executionMode,
-                    onModeSelected = onSelectExecutionMode,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
+                AnimatedVisibility(
+                    visible = showWorkspaceControls,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    ModeSelectorBar(
+                        currentMode = executionMode,
+                        onModeSelected = onSelectExecutionMode,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier
@@ -5108,7 +5127,7 @@ private fun ChatTab(
                     ) {
                         IconButton(
                             onClick = onAttach,
-                            enabled = !isRunning && pendingAttachments.size < 5,
+                            enabled = pendingAttachments.size < 5,
                             modifier = Modifier
                                 .size(40.dp)
                                 .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically),
@@ -5119,6 +5138,36 @@ private fun ChatTab(
                                 modifier = Modifier.size(20.dp),
                                 tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+
+                        IconButton(
+                            onClick = { showWorkspaceControls = !showWorkspaceControls },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically),
+                        ) {
+                            val rotation by animateFloatAsState(
+                                targetValue = if (showWorkspaceControls) 180f else 0f,
+                                label = "workspace_controls_rotation",
+                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .graphicsLayer { rotationZ = rotation },
+                                    tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .align(Alignment.TopEnd)
+                                            .background(PocketOrange, CircleShape),
+                                    )
+                                }
+                            }
                         }
 
                         BasicTextField(
@@ -5148,6 +5197,8 @@ private fun ChatTab(
                                             text = "${executionMode.title} with ${agentKind.title}…",
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 15.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
                                     innerTextField()
