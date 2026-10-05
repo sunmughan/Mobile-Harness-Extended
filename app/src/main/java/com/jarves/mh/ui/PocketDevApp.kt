@@ -5440,10 +5440,9 @@ private fun MessageBubble(
             Column(Modifier.padding(top = 12.dp)) {
                 SelectionContainer {
                     if (message.fromUser) {
-                        Text(
-                            text = message.text,
+                        MarkdownText(
+                            markdown = message.text,
                             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     } else {

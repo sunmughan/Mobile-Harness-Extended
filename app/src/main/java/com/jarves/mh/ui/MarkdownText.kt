@@ -1,5 +1,8 @@
 package com.jarves.mh.ui
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,13 +41,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,7 +60,7 @@ import com.jarves.mh.ui.theme.PocketOrange
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private sealed interface MarkdownBlock {
+sealed interface MarkdownBlock {
     data class Header(val level: Int, val text: String) : MarkdownBlock
     data class CodeBlock(val language: String, val code: String) : MarkdownBlock
     data class BulletItem(val depth: Int, val text: String) : MarkdownBlock
@@ -59,6 +68,7 @@ private sealed interface MarkdownBlock {
     data class BlockQuote(val text: String) : MarkdownBlock
     object HorizontalRule : MarkdownBlock
     data class Paragraph(val text: String) : MarkdownBlock
+    data class Table(val headers: List<String>, val rows: List<List<String>>) : MarkdownBlock
 }
 
 @Composable
@@ -67,42 +77,63 @@ fun MarkdownText(
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
     onRunCode: ((String) -> Unit)? = null,
+    onOpenUri: ((String) -> Unit)? = null,
 ) {
+    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    val effectiveOpenUri = onOpenUri ?: remember(uriHandler, context) {
+        { rawUrl: String ->
+            val finalUrl = normalizeMarkdownUrl(rawUrl)
+            try {
+                uriHandler.openUri(finalUrl)
+            } catch (_: Throwable) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+    }
+
     val blocks = remember(markdown) { parseMarkdown(markdown) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEach { block ->
             when (block) {
-                is MarkdownBlock.Header -> HeaderBlock(block)
+                is MarkdownBlock.Header -> HeaderBlock(block, effectiveOpenUri)
                 is MarkdownBlock.CodeBlock -> CodeSnippetBlock(block, onRunCode)
-                is MarkdownBlock.BulletItem -> BulletBlock(block, color)
-                is MarkdownBlock.NumberedItem -> NumberedBlock(block, color)
-                is MarkdownBlock.BlockQuote -> QuoteBlock(block)
+                is MarkdownBlock.BulletItem -> BulletBlock(block, color, effectiveOpenUri)
+                is MarkdownBlock.NumberedItem -> NumberedBlock(block, color, effectiveOpenUri)
+                is MarkdownBlock.BlockQuote -> QuoteBlock(block, effectiveOpenUri)
                 is MarkdownBlock.HorizontalRule -> HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
                 is MarkdownBlock.Paragraph -> {
                     Text(
-                        text = formatInlineMarkdown(block.text),
+                        text = formatInlineMarkdown(block.text, effectiveOpenUri),
                         style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                         color = color,
                     )
                 }
+                is MarkdownBlock.Table -> TableBlock(block, color, effectiveOpenUri)
             }
         }
     }
 }
 
 @Composable
-private fun HeaderBlock(header: MarkdownBlock.Header) {
+private fun HeaderBlock(header: MarkdownBlock.Header, onOpenUri: ((String) -> Unit)? = null) {
     val style = when (header.level) {
         1 -> MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp)
         2 -> MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp)
         else -> MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
     }
     Text(
-        text = formatInlineMarkdown(header.text),
+        text = formatInlineMarkdown(header.text, onOpenUri),
         style = style,
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.padding(top = 4.dp),
@@ -110,7 +141,7 @@ private fun HeaderBlock(header: MarkdownBlock.Header) {
 }
 
 @Composable
-private fun BulletBlock(item: MarkdownBlock.BulletItem, color: Color) {
+private fun BulletBlock(item: MarkdownBlock.BulletItem, color: Color, onOpenUri: ((String) -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -124,7 +155,7 @@ private fun BulletBlock(item: MarkdownBlock.BulletItem, color: Color) {
                 .background(PocketOrange, CircleShape),
         )
         Text(
-            text = formatInlineMarkdown(item.text),
+            text = formatInlineMarkdown(item.text, onOpenUri),
             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
             color = color,
             modifier = Modifier.weight(1f),
@@ -133,7 +164,7 @@ private fun BulletBlock(item: MarkdownBlock.BulletItem, color: Color) {
 }
 
 @Composable
-private fun NumberedBlock(item: MarkdownBlock.NumberedItem, color: Color) {
+private fun NumberedBlock(item: MarkdownBlock.NumberedItem, color: Color, onOpenUri: ((String) -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top,
@@ -144,7 +175,7 @@ private fun NumberedBlock(item: MarkdownBlock.NumberedItem, color: Color) {
             modifier = Modifier.padding(end = 6.dp),
         )
         Text(
-            text = formatInlineMarkdown(item.text),
+            text = formatInlineMarkdown(item.text, onOpenUri),
             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
             color = color,
             modifier = Modifier.weight(1f),
@@ -153,7 +184,7 @@ private fun NumberedBlock(item: MarkdownBlock.NumberedItem, color: Color) {
 }
 
 @Composable
-private fun QuoteBlock(quote: MarkdownBlock.BlockQuote) {
+private fun QuoteBlock(quote: MarkdownBlock.BlockQuote, onOpenUri: ((String) -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -170,12 +201,93 @@ private fun QuoteBlock(quote: MarkdownBlock.BlockQuote) {
         )
         Spacer(Modifier.width(10.dp))
         Text(
-            text = formatInlineMarkdown(quote.text),
+            text = formatInlineMarkdown(quote.text, onOpenUri),
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontStyle = FontStyle.Italic,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             ),
         )
+    }
+}
+
+@Composable
+private fun TableBlock(
+    table: MarkdownBlock.Table,
+    color: Color,
+    onOpenUri: ((String) -> Unit)?,
+) {
+    val scrollState = rememberScrollState()
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .horizontalScroll(scrollState)
+                .padding(8.dp),
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        RoundedCornerShape(6.dp),
+                    )
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                table.headers.forEach { header ->
+                    Box(
+                        modifier = Modifier
+                            .widthIn(min = 90.dp, max = 220.dp)
+                            .padding(horizontal = 8.dp),
+                    ) {
+                        Text(
+                            text = formatInlineMarkdown(header, onOpenUri),
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+            // Data Rows
+            table.rows.forEachIndexed { rowIndex, row ->
+                Row(
+                    modifier = Modifier
+                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    table.headers.indices.forEach { colIndex ->
+                        val cellText = row.getOrNull(colIndex) ?: ""
+                        Box(
+                            modifier = Modifier
+                                .widthIn(min = 90.dp, max = 220.dp)
+                                .padding(horizontal = 8.dp),
+                        ) {
+                            Text(
+                                text = formatInlineMarkdown(cellText, onOpenUri),
+                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                                color = color,
+                            )
+                        }
+                    }
+                }
+                if (rowIndex < table.rows.size - 1) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                        modifier = Modifier.padding(vertical = 2.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -203,23 +315,22 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
             ) {
                 Text(
                     text = block.language.ifBlank { "code" },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF9AA0A6),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF94A3B8),
                     fontFamily = FontFamily.Monospace,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val shellLanguage = block.language.lowercase() in setOf("", "bash", "sh", "shell", "zsh", "console", "terminal")
-                    if (onRunCode != null && shellLanguage) {
+                    if (onRunCode != null) {
                         IconButton(
-                            onClick = { onRunCode(block.code.trim()) },
+                            onClick = { onRunCode(block.code) },
                             modifier = Modifier.size(28.dp),
                         ) {
                             Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = "Run in project terminal",
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Run code",
                                 tint = PocketOrange,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     }
@@ -236,13 +347,14 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
                     ) {
                         Icon(
                             imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                            contentDescription = "Copy code",
-                            tint = if (copied) PocketOrange else Color(0xFF9AA0A6),
-                            modifier = Modifier.size(16.dp),
+                            contentDescription = if (copied) "Copied" else "Copy code",
+                            tint = if (copied) Color(0xFF4ADE80) else Color(0xFF94A3B8),
+                            modifier = Modifier.size(14.dp),
                         )
                     }
                 }
             }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -262,131 +374,265 @@ private fun CodeSnippetBlock(block: MarkdownBlock.CodeBlock, onRunCode: ((String
 }
 
 @Composable
-private fun formatInlineMarkdown(text: String): AnnotatedString {
+internal fun formatInlineMarkdown(
+    text: String,
+    onOpenUri: ((String) -> Unit)? = null,
+): AnnotatedString {
     val codeBg = MaterialTheme.colorScheme.surfaceVariant
     val codeColor = PocketOrange
     val primaryColor = MaterialTheme.colorScheme.primary
 
-    return remember(text, codeBg, codeColor, primaryColor) {
-        buildAnnotatedString {
-            var i = 0
-            val len = text.length
+    return remember(text, codeBg, codeColor, primaryColor, onOpenUri) {
+        buildMarkdownAnnotatedString(
+            text = text,
+            primaryColor = primaryColor,
+            codeColor = codeColor,
+            codeBg = codeBg,
+            onOpenUri = onOpenUri,
+        )
+    }
+}
 
-            while (i < len) {
-                when {
-                    // Inline Code: `code`
-                    text[i] == '`' -> {
-                        val end = text.indexOf('`', i + 1)
-                        if (end != -1) {
-                            withStyle(
-                                SpanStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    background = codeBg,
-                                    color = codeColor,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                            ) {
-                                append(" ${text.substring(i + 1, end)} ")
-                            }
-                            i = end + 1
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Bold & Italic: ***text***
-                    text.startsWith("***", i) -> {
-                        val end = text.indexOf("***", i + 3)
-                        if (end != -1) {
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) {
-                                append(text.substring(i + 3, end))
-                            }
-                            i = end + 3
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Bold: **text** or __text__
-                    text.startsWith("**", i) -> {
-                        val end = text.indexOf("**", i + 2)
-                        if (end != -1) {
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                append(text.substring(i + 2, end))
-                            }
-                            i = end + 2
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    text.startsWith("__", i) -> {
-                        val end = text.indexOf("__", i + 2)
-                        if (end != -1) {
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                append(text.substring(i + 2, end))
-                            }
-                            i = end + 2
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Italic: *text* (avoiding single bullet at start)
-                    text[i] == '*' -> {
-                        val end = text.indexOf('*', i + 1)
-                        if (end != -1 && end > i + 1) {
-                            withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                                append(text.substring(i + 1, end))
-                            }
-                            i = end + 1
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Strikethrough: ~~text~~
-                    text.startsWith("~~", i) -> {
-                        val end = text.indexOf("~~", i + 2)
-                        if (end != -1) {
-                            withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-                                append(text.substring(i + 2, end))
-                            }
-                            i = end + 2
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Link: [label](url)
-                    text[i] == '[' -> {
-                        val closeBracket = text.indexOf(']', i + 1)
-                        val openParen = if (closeBracket != -1) text.indexOf('(', closeBracket) else -1
-                        val closeParen = if (openParen == closeBracket + 1) text.indexOf(')', openParen) else -1
+internal fun buildMarkdownAnnotatedString(
+    text: String,
+    primaryColor: Color,
+    codeColor: Color,
+    codeBg: Color,
+    onOpenUri: ((String) -> Unit)? = null,
+): AnnotatedString {
+    val linkStyles = TextLinkStyles(
+        style = SpanStyle(
+            color = primaryColor,
+            textDecoration = TextDecoration.Underline,
+            fontWeight = FontWeight.Medium,
+        ),
+        focusedStyle = SpanStyle(
+            color = primaryColor,
+            textDecoration = TextDecoration.Underline,
+            fontWeight = FontWeight.Bold,
+        ),
+        hoveredStyle = SpanStyle(
+            color = primaryColor,
+            textDecoration = TextDecoration.Underline,
+            fontWeight = FontWeight.Bold,
+        ),
+        pressedStyle = SpanStyle(
+            color = codeColor,
+            textDecoration = TextDecoration.Underline,
+            fontWeight = FontWeight.Bold,
+        ),
+    )
 
-                        if (closeBracket != -1 && openParen == closeBracket + 1 && closeParen != -1) {
-                            val label = text.substring(i + 1, closeBracket)
-                            withStyle(SpanStyle(color = primaryColor, textDecoration = TextDecoration.Underline, fontWeight = FontWeight.Medium)) {
-                                append(label)
-                            }
-                            i = closeParen + 1
-                        } else {
-                            append(text[i])
-                            i++
+    val linkListener: ((LinkAnnotation) -> Unit)? = onOpenUri?.let { action ->
+        { annotation ->
+            val url = (annotation as? LinkAnnotation.Url)?.url
+            if (!url.isNullOrBlank()) {
+                action(url)
+            }
+        }
+    }
+
+    return buildAnnotatedString {
+        var i = 0
+        val len = text.length
+
+        while (i < len) {
+            when {
+                // Inline Code: `code`
+                text[i] == '`' -> {
+                    val end = text.indexOf('`', i + 1)
+                    if (end != -1) {
+                        withStyle(
+                            SpanStyle(
+                                fontFamily = FontFamily.Monospace,
+                                background = codeBg,
+                                color = codeColor,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                        ) {
+                            append(" ${text.substring(i + 1, end)} ")
                         }
-                    }
-                    else -> {
+                        i = end + 1
+                    } else {
                         append(text[i])
                         i++
                     }
+                }
+                // Bold & Italic: ***text***
+                text.startsWith("***", i) -> {
+                    val end = text.indexOf("***", i + 3)
+                    if (end != -1) {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) {
+                            append(text.substring(i + 3, end))
+                        }
+                        i = end + 3
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                // Bold: **text** or __text__
+                text.startsWith("**", i) -> {
+                    val end = text.indexOf("**", i + 2)
+                    if (end != -1) {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(text.substring(i + 2, end))
+                        }
+                        i = end + 2
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                text.startsWith("__", i) -> {
+                    val end = text.indexOf("__", i + 2)
+                    if (end != -1) {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(text.substring(i + 2, end))
+                        }
+                        i = end + 2
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                // Italic: *text* (avoiding single bullet at start)
+                text[i] == '*' -> {
+                    val end = text.indexOf('*', i + 1)
+                    if (end != -1 && end > i + 1) {
+                        withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                            append(text.substring(i + 1, end))
+                        }
+                        i = end + 1
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                // Strikethrough: ~~text~~
+                text.startsWith("~~", i) -> {
+                    val end = text.indexOf("~~", i + 2)
+                    if (end != -1) {
+                        withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
+                            append(text.substring(i + 2, end))
+                        }
+                        i = end + 2
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                // Markdown link: [label](url)
+                text[i] == '[' -> {
+                    val closeBracket = text.indexOf(']', i + 1)
+                    val openParen = if (closeBracket != -1) text.indexOf('(', closeBracket) else -1
+                    val closeParen = if (openParen == closeBracket + 1) text.indexOf(')', openParen) else -1
+
+                    if (closeBracket != -1 && openParen == closeBracket + 1 && closeParen != -1) {
+                        val label = text.substring(i + 1, closeBracket)
+                        val rawUrl = text.substring(openParen + 1, closeParen).trim()
+                        val finalUrl = normalizeMarkdownUrl(rawUrl)
+                        withLink(
+                            LinkAnnotation.Url(
+                                url = finalUrl,
+                                styles = linkStyles,
+                                linkInteractionListener = linkListener,
+                            ),
+                        ) {
+                            append(label)
+                        }
+                        i = closeParen + 1
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                // Autolink: <http://...> or <https://...>
+                text[i] == '<' && (text.startsWith("<http://", i, ignoreCase = true) || text.startsWith("<https://", i, ignoreCase = true)) -> {
+                    val closeAngle = text.indexOf('>', i + 1)
+                    if (closeAngle != -1) {
+                        val rawUrl = text.substring(i + 1, closeAngle).trim()
+                        val finalUrl = normalizeMarkdownUrl(rawUrl)
+                        withLink(
+                            LinkAnnotation.Url(
+                                url = finalUrl,
+                                styles = linkStyles,
+                                linkInteractionListener = linkListener,
+                            ),
+                        ) {
+                            append(rawUrl)
+                        }
+                        i = closeAngle + 1
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                // Plain HTTP / HTTPS URL
+                text.startsWith("http://", i, ignoreCase = true) || text.startsWith("https://", i, ignoreCase = true) -> {
+                    var j = i
+                    while (j < len && !text[j].isWhitespace() && text[j] !in setOf('"', '\'', '`', '<', '>', '[', ']', '(', ')', '|')) {
+                        j++
+                    }
+                    while (j > i && text[j - 1] in setOf('.', ',', ';', ':', '!', '?')) {
+                        j--
+                    }
+                    if (j > i) {
+                        val rawUrl = text.substring(i, j)
+                        val finalUrl = normalizeMarkdownUrl(rawUrl)
+                        withLink(
+                            LinkAnnotation.Url(
+                                url = finalUrl,
+                                styles = linkStyles,
+                                linkInteractionListener = linkListener,
+                            ),
+                        ) {
+                            append(rawUrl)
+                        }
+                        i = j
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                else -> {
+                    append(text[i])
+                    i++
                 }
             }
         }
     }
 }
 
-private fun parseMarkdown(raw: String): List<MarkdownBlock> {
+internal fun normalizeMarkdownUrl(raw: String): String {
+    val trimmed = raw.trim()
+    return when {
+        trimmed.startsWith("http://", ignoreCase = true) ||
+        trimmed.startsWith("https://", ignoreCase = true) ||
+        trimmed.startsWith("mailto:", ignoreCase = true) ||
+        trimmed.startsWith("tel:", ignoreCase = true) -> trimmed
+        else -> "https://$trimmed"
+    }
+}
+
+private fun isTableDelimiterLine(line: String): Boolean {
+    val trimmed = line.trim()
+    if (!trimmed.contains("|") || !trimmed.contains("-")) return false
+    return trimmed.all { it == '|' || it == '-' || it == ':' || it.isWhitespace() }
+}
+
+private fun isTableRowLine(line: String): Boolean {
+    val trimmed = line.trim()
+    return trimmed.startsWith("|") || (trimmed.contains("|") && trimmed.endsWith("|"))
+}
+
+private fun parseTableRow(line: String): List<String> {
+    val trimmed = line.trim().removePrefix("|").removeSuffix("|")
+    return trimmed.split("|").map { it.trim() }
+}
+
+internal fun parseMarkdown(raw: String): List<MarkdownBlock> {
     val lines = raw.lines()
     val blocks = mutableListOf<MarkdownBlock>()
     var inCodeBlock = false
@@ -404,7 +650,9 @@ private fun parseMarkdown(raw: String): List<MarkdownBlock> {
         }
     }
 
-    for (line in lines) {
+    var idx = 0
+    while (idx < lines.size) {
+        val line = lines[idx]
         val trimmed = line.trim()
 
         if (trimmed.startsWith("```")) {
@@ -418,16 +666,40 @@ private fun parseMarkdown(raw: String): List<MarkdownBlock> {
                 inCodeBlock = true
                 codeLang = trimmed.removePrefix("```").trim()
             }
+            idx++
             continue
         }
 
         if (inCodeBlock) {
             codeLines.add(line)
+            idx++
             continue
         }
 
         if (trimmed.isEmpty()) {
             flushParagraph()
+            idx++
+            continue
+        }
+
+        // Table check: line has row format and next line is delimiter
+        if (isTableRowLine(trimmed) && idx + 1 < lines.size && isTableDelimiterLine(lines[idx + 1])) {
+            flushParagraph()
+            val headers = parseTableRow(trimmed)
+            idx += 2 // skip header and delimiter
+
+            val tableRows = mutableListOf<List<String>>()
+            while (idx < lines.size) {
+                val nextLine = lines[idx].trim()
+                if (nextLine.isEmpty() || !nextLine.contains("|")) {
+                    break
+                }
+                tableRows.add(parseTableRow(nextLine))
+                idx++
+            }
+            if (headers.isNotEmpty()) {
+                blocks.add(MarkdownBlock.Table(headers, tableRows))
+            }
             continue
         }
 
@@ -435,6 +707,7 @@ private fun parseMarkdown(raw: String): List<MarkdownBlock> {
         if (trimmed == "---" || trimmed == "***" || trimmed == "___") {
             flushParagraph()
             blocks.add(MarkdownBlock.HorizontalRule)
+            idx++
             continue
         }
 
@@ -444,6 +717,7 @@ private fun parseMarkdown(raw: String): List<MarkdownBlock> {
             val level = trimmed.takeWhile { it == '#' }.length
             val text = trimmed.drop(level).trim()
             blocks.add(MarkdownBlock.Header(level, text))
+            idx++
             continue
         }
 
@@ -452,6 +726,7 @@ private fun parseMarkdown(raw: String): List<MarkdownBlock> {
             flushParagraph()
             val text = trimmed.removePrefix(">").trim()
             blocks.add(MarkdownBlock.BlockQuote(text))
+            idx++
             continue
         }
 
@@ -461,6 +736,7 @@ private fun parseMarkdown(raw: String): List<MarkdownBlock> {
             val indent = line.takeWhile { it.isWhitespace() }.length / 2
             val text = trimmed.substring(2).trim()
             blocks.add(MarkdownBlock.BulletItem(indent, text))
+            idx++
             continue
         }
 
@@ -471,11 +747,13 @@ private fun parseMarkdown(raw: String): List<MarkdownBlock> {
             val num = orderedMatch.groupValues[1]
             val text = orderedMatch.groupValues[2]
             blocks.add(MarkdownBlock.NumberedItem(num, text))
+            idx++
             continue
         }
 
         // Normal paragraph text
         currentParagraphLines.add(line)
+        idx++
     }
 
     if (inCodeBlock) {
