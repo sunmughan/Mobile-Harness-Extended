@@ -218,8 +218,10 @@ jobs:
           previous_badging="$($AAPT2 dump badging "$PREVIOUS")"
           echo "$previous_badging" | grep -q "versionCode='20'"
           echo "$previous_badging" | grep -q "versionName='1.0.19'"
-          echo "$current_badging" | grep -q "versionCode='21'"
-          echo "$current_badging" | grep -q "versionName='1.0.20'"
+          VERSION_NAME=$(awk -F'"' '/versionName = "/ {print $2; exit}' app/build.gradle.kts)
+          VERSION_CODE=$(awk -F'= ' '/versionCode = / {print $2; exit}' app/build.gradle.kts)
+          echo "$current_badging" | grep -q "versionCode='$VERSION_CODE'"
+          echo "$current_badging" | grep -q "versionName='$VERSION_NAME'"
           echo "$current_badging" | grep -q "package: name='com.jarves.mh'"
           echo "$previous_badging" | grep -q "package: name='com.jarves.mh'"
           echo "PASS: same package + same signing certificate + strictly increasing versionCode."
