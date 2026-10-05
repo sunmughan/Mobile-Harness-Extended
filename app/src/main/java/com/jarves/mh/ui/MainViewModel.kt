@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.documentfile.provider.DocumentFile
 import com.jarves.mh.BuildConfig
 import com.jarves.mh.AppCrashLogger
 import com.jarves.mh.data.ApiKeyVault
@@ -1237,6 +1238,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pingApi()
             checkForAppUpdate()
             autoUpdateToolsAndSkills()
+            preferences.lastActiveProjectId?.let { lastId ->
+                _state.value.projects.firstOrNull { it.id == lastId }?.let { lastProject ->
+                    openProject(lastProject)
+                }
+            }
         } else {
             showStartupError(result.exceptionOrNull() ?: IllegalStateException("Claude Code initialization failed"))
         }
@@ -2011,13 +2017,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        preferences.lastActiveProjectId = project.id
         configureBridgeRoots(project.id, project.rootPath)
         val terminal = loadProjectTerminal(project)
         val suggestedRoot = if (project.rootPath.isBlank()) detectNestedProjectRoot(project) else null
         val chats = preferences.loadProjectChats(project.id).ifEmpty {
             listOf(ProjectChat(title = "Main chat")).also { preferences.saveProjectChats(project.id, it) }
         }
-        val activeChat = chats.first()
+        val lastChatId = preferences.getLastActiveChatId(project.id)
+        val activeChat = chats.firstOrNull { it.id == lastChatId } ?: chats.first()
+        preferences.setLastActiveChatId(project.id, activeChat.id)
         val saved = preferences.loadMessages(project.id, activeChat.id)
         val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
         val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
@@ -2064,6 +2073,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeProject() {
+        preferences.lastActiveProjectId = null
         val active = _state.value.activeProject
         persistMessages()
         if (_state.value.isRunning || _state.value.projectTerminalRunning) {
@@ -2384,6 +2394,98 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             destination.deleteRecursively()
             throw error
         }
+    }
+
+    fun importFolderProject(uri: Uri) {
+        if (_state.value.projectImporting || _state.value.isRunning || _state.value.projectTerminalRunning) return
+        _state.update { it.copy(projectImporting = true, projectImportMessage = "Importing folder from device…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { copyFolderToWorkspace(uri) } }
+            result.onSuccess { project ->
+                val firstChat = ProjectChat(title = "New chat")
+                preferences.saveProjectChats(project.id, listOf(firstChat))
+                _state.update { current ->
+                    current.copy(
+                        projects = listOf(project) + current.projects,
+                        projectImporting = false,
+                        projectImportMessage = null,
+                        toastMessage = "${project.name} imported from device storage",
+                    )
+                }
+                preferences.saveProjects(_state.value.projects)
+                openProject(project)
+            }.onFailure { error ->
+                _state.update {
+                    it.copy(
+                        projectImporting = false,
+                        projectImportMessage = null,
+                        toastMessage = "Folder import failed: ${error.message?.take(180) ?: "Unknown error"}",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun copyFolderToWorkspace(treeUri: Uri): Project {
+        val app = getApplication<Application>()
+        runCatching {
+            app.contentResolver.takePersistableUriPermission(
+                treeUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+        val documentFile = DocumentFile.fromTreeUri(app, treeUri)
+            ?: error("Cannot access the selected device folder")
+        val rawName = documentFile.name
+        val folderName = if (rawName.isNullOrBlank()) "Device Project" else rawName.trim()
+        val identity = generateQuickChatIdentity(_state.value.projects.mapTo(mutableSetOf()) { it.slug })
+        val projectId = UUID.randomUUID().toString()
+        val destination = File(app.filesDir, "workspaces/$projectId").apply { mkdirs() }
+
+        var copiedCount = 0
+        val maxFiles = 3000
+
+        fun copyTree(doc: DocumentFile, targetDir: File) {
+            targetDir.mkdirs()
+            val files = doc.listFiles()
+            for (f in files) {
+                val name = f.name ?: continue
+                if (name in setOf(".git", ".gradle", "build", "node_modules", ".idea", ".DS_Store", "__pycache__", ".next")) {
+                    continue
+                }
+                val destFile = File(targetDir, name)
+                if (f.isDirectory) {
+                    copyTree(f, destFile)
+                } else if (f.isFile) {
+                    if (copiedCount++ > maxFiles) break
+                    app.contentResolver.openInputStream(f.uri)?.use { inStream ->
+                        destFile.outputStream().use { outStream ->
+                            inStream.copyTo(outStream)
+                        }
+                    }
+                }
+            }
+        }
+
+        copyTree(documentFile, destination)
+
+        val preliminary = Project(
+            id = projectId,
+            name = folderName,
+            description = "Imported from device storage",
+            language = "General",
+            slug = identity.slug,
+            kind = ProjectKind.PROJECT,
+        )
+        val nestedRoot = detectNestedProjectRoot(preliminary)
+        val projectRoot = nestedRoot?.let { File(destination, it) } ?: destination
+        val metadata = detectImportedProjectMetadata(projectRoot)
+
+        return preliminary.copy(
+            description = metadata.first.ifBlank { "Local device repository" },
+            language = metadata.second.ifBlank { "General" },
+            rootPath = nestedRoot.orEmpty(),
+        )
     }
 
     private fun detectImportedProjectMetadata(root: File): Pair<String, String> {
@@ -3070,6 +3172,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val chat = ProjectChat()
         val chats = listOf(chat) + _state.value.projectChats
         preferences.saveProjectChats(project.id, chats)
+        preferences.setLastActiveChatId(project.id, chat.id)
         _state.update {
             it.copy(
                 projectChats = chats,
@@ -3097,6 +3200,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
         val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
         val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
+        preferences.setLastActiveChatId(project.id, chat.id)
         _state.update {
             it.copy(
                 activeChatId = chat.id,
@@ -3110,6 +3214,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pendingApproval = null,
                 pendingAttachments = emptyList(),
             )
+        }
+    }
+
+    fun renameChat(chatId: String, newTitle: String) {
+        val project = _state.value.activeProject ?: return
+        val trimmed = newTitle.trim()
+        if (trimmed.isBlank()) return
+        preferences.renameProjectChat(project.id, chatId, trimmed)
+        _state.update { current ->
+            val updatedChats = current.projectChats.map {
+                if (it.id == chatId) it.copy(title = trimmed) else it
+            }
+            current.copy(projectChats = updatedChats)
+        }
+    }
+
+    fun deleteChat(chatId: String) {
+        val project = _state.value.activeProject ?: return
+        if (_state.value.isRunning || _state.value.projectChats.size <= 1) return
+        preferences.deleteProjectChat(project.id, chatId)
+        val remainingChats = preferences.loadProjectChats(project.id)
+        if (_state.value.activeChatId == chatId) {
+            val nextChat = remainingChats.firstOrNull() ?: return
+            val saved = preferences.loadMessages(project.id, nextChat.id)
+            val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
+            val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
+            val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
+            preferences.setLastActiveChatId(project.id, nextChat.id)
+            _state.update {
+                it.copy(
+                    projectChats = remainingChats,
+                    activeChatId = nextChat.id,
+                    messages = msgs,
+                    activeRoadmap = loadedRoadmap,
+                    scratchpadItems = loadedScratchpad,
+                )
+            }
+        } else {
+            _state.update { it.copy(projectChats = remainingChats) }
         }
     }
 

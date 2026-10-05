@@ -456,6 +456,37 @@ class AppPreferences(private val context: Context) {
         File(chatsDir, "$projectId.json").delete()
     }
 
+    var lastActiveProjectId: String?
+        get() = preferences.getString("last_active_project_id", null)?.takeIf { it.isNotBlank() }
+        set(value) { preferences.edit().putString("last_active_project_id", value).apply() }
+
+    fun getLastActiveChatId(projectId: String): String? {
+        return preferences.getString("last_active_chat_id_$projectId", null)?.takeIf { it.isNotBlank() }
+    }
+
+    fun setLastActiveChatId(projectId: String, chatId: String?) {
+        preferences.edit().putString("last_active_chat_id_$projectId", chatId).apply()
+    }
+
+    fun renameProjectChat(projectId: String, chatId: String, newTitle: String) {
+        val currentChats = loadProjectChats(projectId).map {
+            if (it.id == chatId) it.copy(title = newTitle, updatedAtMillis = System.currentTimeMillis())
+            else it
+        }
+        saveProjectChats(projectId, currentChats)
+    }
+
+    fun deleteProjectChat(projectId: String, chatId: String) {
+        val projectDir = File(chatsDir, projectId)
+        File(projectDir, "$chatId.json").delete()
+        File(projectDir, ".$chatId.json.tmp").delete()
+        val currentChats = loadProjectChats(projectId).filterNot { it.id == chatId }
+        saveProjectChats(projectId, currentChats)
+        if (getLastActiveChatId(projectId) == chatId) {
+            setLastActiveChatId(projectId, currentChats.firstOrNull()?.id)
+        }
+    }
+
     private fun loadLegacyMessages(file: File): List<ChatMessage> {
         if (!file.exists()) return emptyList()
         return runCatching {

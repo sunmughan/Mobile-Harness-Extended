@@ -477,7 +477,11 @@ fun SettingsScreen(
                     expanded = expanded == SettingsSection.CONTRIBUTORS,
                     onClick = { toggle(SettingsSection.CONTRIBUTORS) },
                 ) {
-                    ContributorCard()
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CONTRIBUTORS.forEach { contributor ->
+                            ContributorCard(contributor)
+                        }
+                    }
                 }
             }
 
@@ -1226,16 +1230,64 @@ private fun DebugUpdateChannelSection(
             )
         }
     }
-}@Composable
-private fun ContributorCard() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var avatar by remember { mutableStateOf<Bitmap?>(null) }
+}
+private data class ContributorLink(val label: String, val url: String)
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+private data class ContributorInfo(
+    val name: String,
+    val role: String,
+    val handle: String,
+    val avatarUrl: String,
+    val initials: String,
+    val links: List<ContributorLink>,
+)
+
+private val CONTRIBUTORS = listOf(
+    ContributorInfo(
+        name = "Sunmughan Swamy",
+        role = "Founder · Technical Architect · Software Engineer",
+        handle = "@sunmughan",
+        avatarUrl = "https://github.com/sunmughan.png?size=256",
+        initials = "SS",
+        links = listOf(
+            ContributorLink("GitHub", "https://github.com/sunmughan"),
+            ContributorLink("Instagram", "https://instagram.com/sunmughan"),
+            ContributorLink("Facebook", "https://www.facebook.com/sunmughan"),
+        ),
+    ),
+    ContributorInfo(
+        name = "Valerio",
+        role = "Hi, I'm Valerio, but everyone calls me Massi!",
+        handle = "@0xMassi",
+        avatarUrl = "https://github.com/0xMassi.png?size=256",
+        initials = "VM",
+        links = listOf(
+            ContributorLink("GitHub", "https://github.com/0xMassi"),
+            ContributorLink("LinkedIn", "https://www.linkedin.com/in/valerio-massimiani/"),
+        ),
+    ),
+    ContributorInfo(
+        name = "Tech Jarves",
+        role = "I break, tweak, and rebuild Android & Linux systems.",
+        handle = "@techjarves",
+        avatarUrl = "https://github.com/techjarves.png?size=256",
+        initials = "TJ",
+        links = listOf(
+            ContributorLink("GitHub", "https://github.com/techjarves"),
+            ContributorLink("Telegram", "https://t.me/jarvesusaram"),
+            ContributorLink("YouTube", "https://youtube.com/techjarves"),
+        ),
+    ),
+)
+
+@Composable
+private fun ContributorCard(info: ContributorInfo) {
+    var avatar by remember(info.avatarUrl) { mutableStateOf<Bitmap?>(null) }
+
+    androidx.compose.runtime.LaunchedEffect(info.avatarUrl) {
         avatar = withContext(Dispatchers.IO) {
             runCatching {
-                val connection = URL("https://github.com/sunmughan.png?size=256").openConnection() as HttpURLConnection
+                val connection = URL(info.avatarUrl).openConnection() as HttpURLConnection
                 connection.connectTimeout = 8_000
                 connection.readTimeout = 12_000
                 connection.instanceFollowRedirects = true
@@ -1260,24 +1312,24 @@ private fun ContributorCard() {
                     avatar?.let {
                         Image(
                             bitmap = it.asImageBitmap(),
-                            contentDescription = "Sunmughan Swamy",
+                            contentDescription = info.name,
                             modifier = Modifier.fillMaxSize(),
                         )
                     } ?: Box(contentAlignment = Alignment.Center) {
-                        Text("SS", fontWeight = FontWeight.Bold, color = PocketOrange)
+                        Text(info.initials, fontWeight = FontWeight.Bold, color = PocketOrange)
                     }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Sunmughan Swamy", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("Founder · Technical Architect · Software Engineer", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("@sunmughan", fontSize = 11.sp, color = PocketOrange, fontFamily = FontFamily.Monospace)
+                    Text(info.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(info.role, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(info.handle, fontSize = 11.sp, color = PocketOrange, fontFamily = FontFamily.Monospace)
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ContributorLinkButton("GitHub", "https://github.com/sunmughan", Modifier.weight(1f))
-                ContributorLinkButton("Instagram", "https://instagram.com/sunmughan", Modifier.weight(1f))
-                ContributorLinkButton("Facebook", "https://www.facebook.com/sunmughan", Modifier.weight(1f))
+                info.links.forEach { link ->
+                    ContributorLinkButton(link.label, link.url, Modifier.weight(1f))
+                }
             }
         }
     }

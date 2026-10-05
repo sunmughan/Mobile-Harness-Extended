@@ -357,6 +357,8 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onResumeTask = viewModel::resumeInterruptedTask,
             onCreateChat = viewModel::createChat,
             onSwitchChat = viewModel::switchChat,
+            onRenameChat = viewModel::renameChat,
+            onDeleteChat = viewModel::deleteChat,
             onTerminalRun = viewModel::requestProjectTerminalCommand,
             onTerminalInput = viewModel::sendProjectTerminalInput,
             onTerminalInterrupt = viewModel::interruptProjectTerminalCommand,
@@ -2175,6 +2177,7 @@ private fun RootScreenHost(
                     onCreate = viewModel::createProject,
                     onCreateQuickProject = viewModel::createQuickProject,
                     onImportZip = viewModel::importZipProject,
+                    onImportFolder = viewModel::importFolderProject,
                     onCloneGit = viewModel::clonePublicGitRepository,
                     onStartGitHubLogin = viewModel::startGitHubLogin,
                     onGenerateNewGitHubCode = viewModel::generateNewGitHubCode,
@@ -3182,6 +3185,7 @@ private fun ProjectsScreen(
     onCreate: (String) -> Unit,
     onCreateQuickProject: () -> Unit,
     onImportZip: (Uri) -> Unit,
+    onImportFolder: (Uri) -> Unit = {},
     onCloneGit: (String) -> Unit,
     onStartGitHubLogin: () -> Unit,
     onGenerateNewGitHubCode: () -> Unit,
@@ -3210,6 +3214,9 @@ private fun ProjectsScreen(
     }
     val importZipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onImportZip(uri)
+    }
+    val importFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) onImportFolder(uri)
     }
     LaunchedEffect(state.appUpdate?.versionCode) {
         if (state.appUpdate != null) showUpdateDialog = true
@@ -3364,10 +3371,18 @@ private fun ProjectsScreen(
                                     .padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    ImportSourceButton(
+                                        icon = Icons.Default.Folder,
+                                        title = if (state.projectImporting) "Importing…" else "Folder",
+                                        enabled = !state.projectImporting && !state.gitCloneRunning,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { importFolderLauncher.launch(null) },
+                                        loading = state.projectImporting,
+                                    )
                                     ImportSourceButton(
                                         icon = Icons.Default.Download,
-                                        title = if (state.projectImporting) "Importing…" else "ZIP file",
+                                        title = if (state.projectImporting) "Importing…" else "ZIP",
                                         enabled = !state.projectImporting && !state.gitCloneRunning,
                                         modifier = Modifier.weight(1f),
                                         onClick = { importZipLauncher.launch("*/*") },
@@ -3988,6 +4003,8 @@ private fun WorkspaceScreen(
     onResumeTask: () -> Unit,
     onCreateChat: () -> Unit,
     onSwitchChat: (String) -> Unit,
+    onRenameChat: (String, String) -> Unit = { _, _ -> },
+    onDeleteChat: (String) -> Unit = {},
     onTerminalRun: (String) -> Unit,
     onTerminalInput: (String) -> Unit,
     onTerminalInterrupt: () -> Unit,
@@ -4113,6 +4130,8 @@ private fun WorkspaceScreen(
                 showChats = false
                 selectedTab = WorkspaceTab.CHAT
             },
+            onRename = onRenameChat,
+            onDelete = onDeleteChat,
         )
     }
     if (showCommandPalette) {
@@ -4466,8 +4485,14 @@ private fun ChatSwitcherDialog(
     onDismiss: () -> Unit,
     onCreate: () -> Unit,
     onSwitch: (String) -> Unit,
+    onRename: (String, String) -> Unit = { _, _ -> },
+    onDelete: (String) -> Unit = {},
     allowCreate: Boolean = true,
 ) {
+    var renamingChatId by rememberSaveable { mutableStateOf<String?>(null) }
+    var renameTitle by rememberSaveable { mutableStateOf("") }
+    var deletingChatId by rememberSaveable { mutableStateOf<String?>(null) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Project chats") },
@@ -4490,7 +4515,7 @@ private fun ChatSwitcherDialog(
                             shape = RoundedCornerShape(12.dp),
                             color = if (chat.id == activeChatId) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         ) {
-                            Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
@@ -4501,7 +4526,35 @@ private fun ChatSwitcherDialog(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                if (chat.id == activeChatId) Icon(Icons.Default.Check, "Current", tint = PocketGreen)
+                                if (allowCreate && switchingEnabled) {
+                                    IconButton(
+                                        onClick = {
+                                            renamingChatId = chat.id
+                                            renameTitle = chat.title
+                                        },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Rename chat", modifier = Modifier.size(16.dp))
+                                    }
+                                    if (chats.size > 1) {
+                                        IconButton(
+                                            onClick = {
+                                                deletingChatId = chat.id
+                                            },
+                                            modifier = Modifier.size(32.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete chat",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                                if (chat.id == activeChatId) {
+                                    Icon(Icons.Default.Check, "Current", tint = PocketGreen, modifier = Modifier.size(18.dp))
+                                }
                             }
                         }
                     }
@@ -4510,6 +4563,61 @@ private fun ChatSwitcherDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
+
+    if (renamingChatId != null) {
+        AlertDialog(
+            onDismissRequest = { renamingChatId = null },
+            title = { Text("Rename chat") },
+            text = {
+                OutlinedTextField(
+                    value = renameTitle,
+                    onValueChange = { renameTitle = it },
+                    label = { Text("Chat title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        renamingChatId?.let { id -> onRename(id, renameTitle) }
+                        renamingChatId = null
+                    },
+                    enabled = renameTitle.isNotBlank(),
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renamingChatId = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    if (deletingChatId != null) {
+        AlertDialog(
+            onDismissRequest = { deletingChatId = null },
+            title = { Text("Delete this chat?") },
+            text = { Text("All messages and roadmap progress in this conversation will be permanently deleted.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deletingChatId?.let { id -> onDelete(id) }
+                        deletingChatId = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingChatId = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -4983,16 +5091,19 @@ private fun ChatTab(
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
+                    var isMultiLine by remember { mutableStateOf(false) }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 6.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.Bottom,
+                        verticalAlignment = if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically,
                     ) {
                         IconButton(
                             onClick = onAttach,
                             enabled = !isRunning && pendingAttachments.size < 5,
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier
+                                .size(40.dp)
+                                .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AttachFile,
@@ -5007,6 +5118,9 @@ private fun ChatTab(
                             onValueChange = {
                                 prompt = it
                                 updateMentionQuery(it)
+                            },
+                            onTextLayout = { textLayoutResult ->
+                                isMultiLine = textLayoutResult.lineCount > 1
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -5039,6 +5153,7 @@ private fun ChatTab(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
+                                    .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically)
                                     .background(
                                         color = MaterialTheme.colorScheme.error,
                                         shape = CircleShape,
@@ -5057,6 +5172,7 @@ private fun ChatTab(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
+                                    .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically)
                                     .background(
                                         color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                                         shape = CircleShape,
@@ -5068,6 +5184,7 @@ private fun ChatTab(
                                                 onSend(prompt)
                                                 prompt = ""
                                                 mentionQuery = null
+                                                isMultiLine = false
                                             }
                                         },
                                     ),
