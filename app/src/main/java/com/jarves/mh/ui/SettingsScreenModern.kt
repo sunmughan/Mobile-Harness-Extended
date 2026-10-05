@@ -141,6 +141,7 @@ fun SettingsScreen(
     onActivateApiKey: (ProviderKind, String) -> List<ApiKeyInfo>,
     onRemoveApiKey: (ProviderKind, String) -> List<ApiKeyInfo>,
     onInstallDevStack: (DevStack) -> Unit = {},
+    onUpdateDevStack: (DevStack) -> Unit = {},
     onRemoveDevStack: (DevStack) -> Unit = {},
     onRefreshInstalledAgents: () -> Unit = {},
     onStartAntigravityLogin: () -> Unit = {},
@@ -279,10 +280,20 @@ fun SettingsScreen(
                                 removing -> Text("Removing…", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 installing -> Text("${(state.devStackProgress * 100).toInt()}%", color = PocketOrange, fontWeight = FontWeight.Bold)
                                 installed && stack == DevStack.WEB -> Text("Included", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                installed -> TextButton(
-                                    onClick = { stackPendingRemoval = stack },
-                                    enabled = state.devStackInstalling == null,
-                                ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                                installed -> {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (stack != DevStack.WEB) {
+                                            TextButton(
+                                                onClick = { onUpdateDevStack(stack) },
+                                                enabled = state.devStackInstalling == null,
+                                            ) { Text("Update", color = PocketOrange) }
+                                        }
+                                        TextButton(
+                                            onClick = { stackPendingRemoval = stack },
+                                            enabled = state.devStackInstalling == null,
+                                        ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                                    }
+                                }
                                 else -> OutlinedButton(onClick = { onInstallDevStack(stack) }, enabled = state.devStackInstalling == null) { Text("Add") }
                             }
                         }
