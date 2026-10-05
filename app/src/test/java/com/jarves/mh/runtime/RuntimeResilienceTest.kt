@@ -21,6 +21,10 @@ class RuntimeResilienceTest {
         assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("HTTP 429 quota exceeded"))
         assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("invalid model"))
         assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("Stopped by user"))
+        assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("oneoff task completed"))
+        assertFalse(RuntimeFailureClassifier.isTransientNetworkFailure("Configured DNS settings in router"))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("unexpected eof while reading response"))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("dns lookup failed for host"))
     }
 
     @Test fun friendlyNetworkErrorMessageHidesRawSocketErrors() {

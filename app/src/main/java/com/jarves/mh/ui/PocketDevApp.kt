@@ -2214,6 +2214,8 @@ private fun RootScreenHost(
                     onRemove = viewModel::removeSkill,
                     onCheckUpdates = viewModel::checkSkillUpdates,
                     onUpdate = viewModel::updateSkill,
+                    autoUpdateEnabled = state.autoUpdateToolsAndSkills,
+                    onToggleAutoUpdate = viewModel::toggleAutoUpdateToolsAndSkills,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
@@ -2243,6 +2245,8 @@ private fun RootScreenHost(
                     initialDebugUpdateManifestUrl = viewModel.debugUpdateManifestUrl(),
                     onSetDebugUpdateManifestUrl = viewModel::setDebugUpdateManifestUrl,
                     onClearDebugUpdateManifestUrl = viewModel::clearDebugUpdateManifestUrl,
+                    onToggleAutoUpdateToolsAndSkills = viewModel::toggleAutoUpdateToolsAndSkills,
+                    onUpdateAllToolsAndSkills = { viewModel.autoUpdateToolsAndSkills(force = true) },
                 )
             }
         }

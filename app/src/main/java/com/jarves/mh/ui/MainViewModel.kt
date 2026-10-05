@@ -229,6 +229,9 @@ data class AppUiState(
     val suggestedProjectRoot: String? = null,
     val selectedDevStacks: Set<DevStack> = emptySet(),
     val installedDevStacks: Set<DevStack> = emptySet(),
+    val autoUpdateToolsAndSkills: Boolean = true,
+    val autoUpdatingToolsOrSkills: Boolean = false,
+    val toolsAutoUpdateMessage: String? = null,
     val devStackInstalling: DevStack? = null,
     val devStackRemoving: Boolean = false,
     val devStackMessage: String? = null,
@@ -367,6 +370,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
             githubLogin = preferences.githubLogin.takeIf(String::isNotBlank),
             skills = skillManager.installed(),
+            autoUpdateToolsAndSkills = preferences.autoUpdateToolsAndSkills,
             selectedDevStacks = preferences.selectedDevStacks.mapNotNull { name ->
                 runCatching { DevStack.valueOf(name) }.getOrNull()
             }.toSet() + DevStack.WEB,
@@ -1219,6 +1223,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             pingApi()
             checkForAppUpdate()
+            autoUpdateToolsAndSkills()
         } else {
             showStartupError(result.exceptionOrNull() ?: IllegalStateException("Claude Code initialization failed"))
         }
@@ -1335,6 +1340,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(onboardingComplete = true, provider = saved, startupStage = StartupStage.READY) }
         refreshActiveApiKey(profile.kind)
         pingApi()
+        autoUpdateToolsAndSkills()
     }
 
     fun finishAntigravityOnboarding() {
@@ -1343,6 +1349,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         preferences.onboardingComplete = true
         _state.update { it.copy(onboardingComplete = true, startupStage = StartupStage.READY) }
+        autoUpdateToolsAndSkills()
     }
 
     /** Lets first-run users escape a provider/login failure without losing saved credentials. */
@@ -4095,6 +4102,87 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(projectChats = chats)
         }
         preferences.saveProjectChats(project.id, _state.value.projectChats)
+    }
+
+    fun toggleAutoUpdateToolsAndSkills(enabled: Boolean) {
+        preferences.autoUpdateToolsAndSkills = enabled
+        _state.update { it.copy(autoUpdateToolsAndSkills = enabled) }
+        if (enabled) {
+            autoUpdateToolsAndSkills(force = true)
+        }
+    }
+
+    fun autoUpdateToolsAndSkills(force: Boolean = false) {
+        if (!preferences.autoUpdateToolsAndSkills) return
+        val current = _state.value
+        if (current.isRunning || current.projectTerminalRunning || current.devStackInstalling != null || current.agentUpdating != null || current.autoUpdatingToolsOrSkills) return
+        val now = System.currentTimeMillis()
+        if (!force && (now - preferences.lastToolsAutoUpdateCheckMillis < 4L * 60L * 60L * 1000L)) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(autoUpdatingToolsOrSkills = true, toolsAutoUpdateMessage = "Checking for tool and skill updates…") }
+            val updatedItems = mutableListOf<String>()
+            withContext(Dispatchers.IO) {
+                // 1. Universal Skills auto-update
+                runCatching {
+                    val updates = skillManager.checkUpdates()
+                    if (updates.isNotEmpty()) {
+                        updates.forEach { updateInfo ->
+                            val skill = skillManager.installed().firstOrNull { it.name == updateInfo.name }
+                            if (skill != null) {
+                                runCatching {
+                                    skillManager.update(skill)
+                                    updatedItems.add("Skill ${skill.name}")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Agents / Coding CLI Tools auto-update
+                runCatching {
+                    val agentUpdates = installer.checkAgentUpdates()
+                    agentUpdates.forEach { (kind, updateInfo) ->
+                        if (!_state.value.isRunning && _state.value.agentUpdating == null) {
+                            runCatching {
+                                installer.updateAgent(kind, updateInfo.latestVersion) {}
+                                updatedItems.add("${kind.title} ${updateInfo.latestVersion}")
+                            }
+                        }
+                    }
+                }
+
+                // 3. Installed Development Toolchains auto-update
+                runCatching {
+                    val installed = installer.installedStacks().filter { it != DevStack.WEB }
+                    installed.forEach { stack ->
+                        if (!_state.value.isRunning && _state.value.devStackInstalling == null) {
+                            runCatching {
+                                installer.updateStack(stack) {}
+                                updatedItems.add(stack.label)
+                            }
+                        }
+                    }
+                }
+            }
+
+            preferences.lastToolsAutoUpdateCheckMillis = System.currentTimeMillis()
+            val message = if (updatedItems.isEmpty()) {
+                "Tools, toolchains, and skills are up to date"
+            } else {
+                "Updated: ${updatedItems.joinToString(", ")}"
+            }
+            _state.update {
+                it.copy(
+                    autoUpdatingToolsOrSkills = false,
+                    toolsAutoUpdateMessage = message,
+                    skills = skillManager.installed(),
+                    skillUpdates = emptySet(),
+                    installedDevStacks = installer.installedStacks(),
+                    installedAgentVersions = installer.installedAgentVersions(),
+                )
+            }
+        }
     }
 
     companion object {

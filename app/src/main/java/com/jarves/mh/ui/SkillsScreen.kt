@@ -36,6 +36,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,7 +66,8 @@ fun SkillsScreen(
     onRemove: (String) -> Unit,
     onCheckUpdates: () -> Unit = {},
     onUpdate: (String) -> Unit = {},
-
+    autoUpdateEnabled: Boolean = true,
+    onToggleAutoUpdate: (Boolean) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var githubUrl by rememberSaveable { mutableStateOf("") }
@@ -152,6 +155,20 @@ fun SkillsScreen(
                             }
                         }
                         message?.let { Text(it, fontSize = 12.sp) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Auto-update skills", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text("Automatically keep GitHub skills up to date", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = autoUpdateEnabled,
+                                onCheckedChange = onToggleAutoUpdate,
+                            )
+                        }
                         OutlinedButton(
                             onClick = onCheckUpdates,
                             enabled = !busy,

@@ -134,6 +134,14 @@ class AppPreferences(private val context: Context) {
             preferences.edit().putString("selected_dev_stacks", arr.toString()).apply()
         }
 
+    var autoUpdateToolsAndSkills: Boolean
+        get() = preferences.getBoolean("auto_update_tools_and_skills", true)
+        set(value) { preferences.edit().putBoolean("auto_update_tools_and_skills", value).apply() }
+
+    var lastToolsAutoUpdateCheckMillis: Long
+        get() = preferences.getLong("last_tools_auto_update_check_millis", 0L)
+        set(value) { preferences.edit().putLong("last_tools_auto_update_check_millis", value).apply() }
+
 
     fun saveProvider(profile: ProviderProfile, agent: AgentKind? = null) {
         val editor = preferences.edit()

@@ -66,6 +66,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -153,6 +154,8 @@ fun SettingsScreen(
     initialDebugUpdateManifestUrl: String = "",
     onSetDebugUpdateManifestUrl: (String) -> Unit = {},
     onClearDebugUpdateManifestUrl: () -> Unit = {},
+    onToggleAutoUpdateToolsAndSkills: (Boolean) -> Unit = {},
+    onUpdateAllToolsAndSkills: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var expanded by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
@@ -267,6 +270,35 @@ fun SettingsScreen(
                 ) {
                     Text("Node.js, npm, Git, and Claude Code are included.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Auto-update tools & skills", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(
+                                state.toolsAutoUpdateMessage ?: "Automatically keep installed toolchains, tools, and skills up to date",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = state.autoUpdateToolsAndSkills,
+                            onCheckedChange = onToggleAutoUpdateToolsAndSkills,
+                            enabled = !state.autoUpdatingToolsOrSkills,
+                        )
+                    }
+                    if (state.autoUpdatingToolsOrSkills) {
+                        Spacer(Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = PocketOrange,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(Modifier.height(6.dp))
                     DevStack.entries.forEachIndexed { index, stack ->
                         val installed = stack in state.installedDevStacks
                         val installing = state.devStackInstalling == stack

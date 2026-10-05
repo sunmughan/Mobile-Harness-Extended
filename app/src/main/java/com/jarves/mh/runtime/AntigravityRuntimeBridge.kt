@@ -314,6 +314,7 @@ class AntigravityRuntimeBridge(
             val pending = StringBuilder()
             var resultSeen = false
             var assistantTextSeen = false
+            var lastDiagnostic = ""
             suspend fun handleLine(line: String) {
                 when (val event = AntigravityEventParser.parse(line)) {
                     is AntigravityParsedEvent.Initialized -> saveConversationId(projectId, event.conversationId)
@@ -339,7 +340,11 @@ class AntigravityRuntimeBridge(
                             resultSeen = true
                         } else throw AntigravitySessionException(friendlyError(event.error ?: event.status))
                     }
-                    null -> Unit
+                    null -> {
+                        if (line.isNotBlank() && !line.startsWith("{")) {
+                            lastDiagnostic = line.take(500)
+                        }
+                    }
                 }
             }
             while (process.isAlive || native.outputFile.length() > offset) {
@@ -364,10 +369,17 @@ class AntigravityRuntimeBridge(
                     newline = pending.indexOf("\n")
                 }
             }
-            pending.toString().trim().takeIf(String::isNotEmpty)?.let { handleLine(it) }
+            pending.toString().trim().takeIf(String::isNotEmpty)?.let {
+                handleLine(it)
+                pending.setLength(0)
+            }
             val exit = process.waitFor()
-            check(exit == 0 && resultSeen) {
-                friendlyError(pending.toString().takeLast(1_000).ifBlank { "Antigravity exited with code $exit" })
+            if (userStopRequested) {
+                throw AntigravitySessionException("Stopped by user")
+            }
+            if (exit != 0 && !resultSeen) {
+                val failureDetail = lastDiagnostic.ifBlank { "Antigravity exited with code $exit" }
+                throw AntigravitySessionException(friendlyError(failureDetail))
             }
             val paths = checkpoints.changedFiles(workspace, before)
             checkpoints.saveChangedPaths(projectId, paths)
