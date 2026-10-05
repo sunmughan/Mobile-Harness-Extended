@@ -916,10 +916,11 @@ class RuntimeInstaller(private val context: Context) {
                 check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
                     "PHP updates require the online APK because PHP packages are not bundled offline"
                 }
+                preparePhpRepository(runtime.proot, onProgress)
                 aptInstall(
                     runtime.proot,
-                    listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
-                    "Updating PHP and common extensions",
+                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip"),
+                    "Updating PHP 8.4 and common extensions",
                     0.2f,
                     onProgress,
                 )
@@ -958,7 +959,7 @@ class RuntimeInstaller(private val context: Context) {
             DevStack.PHP -> {
                 aptRemove(
                     runtime.proot,
-                    listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip"),
+                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip"),
                     0.45f,
                     onProgress,
                 )
@@ -1086,7 +1087,7 @@ class RuntimeInstaller(private val context: Context) {
                 }
                 aptInstall(
                     proot,
-                    listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
+                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip"),
                     "Installing PHP and common extensions",
                     from,
                     onProgress,
@@ -1406,6 +1407,10 @@ class RuntimeInstaller(private val context: Context) {
 
     fun isStackInstalled(stack: DevStack): Boolean {
         if (readDevStackState()[stack.name] != true) return false
+        if (stack == DevStack.PHP) {
+            return guestExecutableFile("/usr/bin/php8.4") != null &&
+                File(rootfs, "usr/local/bin/composer").isFile
+        }
         if (stack != DevStack.ANDROID) return true
         return File(rootfs, "root/.pocket-android-tools-version").readTextOrNull() == ANDROID_TOOLS_VERSION &&
             File(rootfs, "root/android-sdk/platforms/android-36/android.jar").isFile &&
