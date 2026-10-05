@@ -34,20 +34,24 @@ val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bun
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 
 val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets") {
-    // Keep Antigravity's proven embedded runtime. This is intentionally shared
-    // by both variants so Google sign-in does not depend on a runtime download.
-    from(runtimeBundleDir.file("pocketdev-agy-arm64-2026.09.1.tar.zst"))
+    // The release workflow resolves the newest verified runtime assets before every build.
+    from(runtimeBundleDir) {
+        include("pocketdev-agy-arm64-*.tar.zst")
+    }
     into(generatedRuntimeAssets.map { it.dir("shared/runtime") })
 }
 
 val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAssets") {
-    from(
-        runtimeBundleDir.file("pocketdev-core-arm64-2026.09.5.tar.zst"),
-        runtimeBundleDir.file("pocketdev-claude-arm64-2026.09.1.tar.zst"),
-        runtimeBundleDir.file("pocketdev-python-arm64-2026.09.2.tar.zst"),
-        runtimeBundleDir.file("pocketdev-android-arm64-2026.09.1.tar.zst"),
-        runtimeBundleDir.file("pocketdev-dsh-arm64-2026.09.1.tar.zst"),
-    )
+    from(runtimeBundleDir) {
+        include(
+            "manifest.json",
+            "pocketdev-core-arm64-*.tar.zst",
+            "pocketdev-claude-arm64-*.tar.zst",
+            "pocketdev-python-arm64-*.tar.zst",
+            "pocketdev-android-arm64-*.tar.zst",
+            "pocketdev-dsh-arm64-*.tar.zst",
+        )
+    }
     into(generatedRuntimeAssets.map { it.dir("offline/runtime") })
 }
 
