@@ -12,7 +12,9 @@ object RuntimeFailureClassifier {
         if (value.isBlank() || isPermanentProviderFailure(value) || value.contains("stopped by user")) return false
         return listOf(
             "network error", "network unavailable", "network is unreachable", "network connection",
-            "offline", "connection reset", "connection refused", "connection closed",
+            "network issue", "issue connecting", "connecting to the server", "failed to connect",
+            "could not connect", "unable to connect", "connection failed", "network problem",
+            "failed to reach", "offline", "connection reset", "connection refused", "connection closed",
             "connection abort", "connection aborted", "software caused connection abort",
             "connection timed out", "connect timed out", "connection interrupted",
             "connection lost", "read tcp", "write tcp", "broken pipe",
@@ -24,6 +26,10 @@ object RuntimeFailureClassifier {
             "stream closed", "stream reset", "stream error", "http2: stream error",
             "streamgeneratecontent", "unexpected end of", "transport error",
             "client.timeout", "context deadline exceeded", "handshake timeout", "tls handshake",
+            "fetch failed", "econnrefused", "econnreset", "etimedout",
+            "enotfound", "ehostunreach", "enetunreach", "err_network_changed",
+            "err_internet_disconnected", "err_connection_reset",
+            "err_connection_timed_out", "err_connection_refused",
         ).any(value::contains)
     }
 
@@ -45,6 +51,8 @@ object RuntimeFailureClassifier {
                 "Unable to resolve host. Please check your internet connection."
             value.contains("unreachable") || value.contains("no route") || value.contains("offline") ->
                 "Network is unreachable. Please verify your internet connection."
+            value.contains("connecting to the server") || value.contains("issue connecting") || value.contains("network issue") ->
+                "There was a network issue connecting to the server. Please check your internet connection."
             else ->
                 "Network connection error occurred while communicating with the service."
         }

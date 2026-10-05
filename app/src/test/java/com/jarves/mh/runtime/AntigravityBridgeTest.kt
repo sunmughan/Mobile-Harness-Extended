@@ -37,6 +37,17 @@ class AntigravityBridgeTest {
     }
 
     @Test
+    fun `parses error result event`() {
+        val parsed = AntigravityEventParser.parse(
+            """{"event":"result","result":{"status":"ERROR","error":"There was a network issue connecting to the server, please try again."}}""",
+        )
+        assertTrue(parsed is AntigravityParsedEvent.Result)
+        val result = parsed as AntigravityParsedEvent.Result
+        assertEquals("ERROR", result.status)
+        assertEquals("There was a network issue connecting to the server, please try again.", result.error)
+    }
+
+    @Test
     fun `shows the command from official tool info`() {
         val parsed = AntigravityEventParser.parse(
             """{"event":"step_update","step_update":{"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"python3 hello.py"}}}}""",

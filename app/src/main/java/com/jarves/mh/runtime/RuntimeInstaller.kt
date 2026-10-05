@@ -915,8 +915,24 @@ class RuntimeInstaller(private val context: Context) {
         check(isStackInstalled(stack)) { stack.label + " is not installed" }
         val runtime = installedRuntime()
         when (stack) {
-            DevStack.PYTHON -> installEnvironmentStack("python", latestRuntimeBundle("python")?.version ?: ENV_PYTHON_VERSION, onProgress)
-            DevStack.ANDROID -> installEnvironmentStack("android", latestRuntimeBundle("android")?.version ?: ENV_ANDROID_VERSION, onProgress)
+            DevStack.PYTHON -> {
+                val targetVersion = latestRuntimeBundle("python")?.version ?: ENV_PYTHON_VERSION
+                val currentVer = File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.trim()
+                if (currentVer != null && currentVer == targetVersion) {
+                    onProgress(RuntimeInstallProgress("Python tools are up to date ($targetVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
+                } else {
+                    installEnvironmentStack("python", targetVersion, onProgress)
+                }
+            }
+            DevStack.ANDROID -> {
+                val targetVersion = latestRuntimeBundle("android")?.version ?: ENV_ANDROID_VERSION
+                val currentVer = File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.trim()
+                if (currentVer != null && currentVer == targetVersion) {
+                    onProgress(RuntimeInstallProgress("Android tools are up to date ($targetVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
+                } else {
+                    installEnvironmentStack("android", targetVersion, onProgress)
+                }
+            }
             DevStack.CPP -> {
                 check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
                     "C/C++ updates require the online APK because APT packages are not bundled offline"
@@ -932,22 +948,42 @@ class RuntimeInstaller(private val context: Context) {
                 onProgress(RuntimeInstallProgress("C/C++ tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.PHP -> {
-                runCatching { preparePhpRepository(runtime.proot, onProgress) }
-                val hasPpa = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").isFile
+                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    "PHP updates require the online APK because APT packages are not bundled offline"
+                }
+                runCatching { preparePhpRepository(runtime.proot, onProgress) }.onFailure {
+                    File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
+                }
+                val ppaFile = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list")
+                val hasPpa = ppaFile.isFile
                 val packages = if (hasPpa) {
                     listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip")
                 } else {
                     listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip")
                 }
-                aptInstall(
-                    runtime.proot,
-                    packages,
-                    "Updating PHP and common extensions",
-                    0.2f,
-                    onProgress,
-                )
+                val installResult = runCatching {
+                    aptInstall(
+                        runtime.proot,
+                        packages,
+                        "Updating PHP and common extensions",
+                        0.2f,
+                        onProgress,
+                    )
+                }
+                if (installResult.isFailure && hasPpa) {
+                    ppaFile.delete()
+                    aptInstall(
+                        runtime.proot,
+                        listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
+                        "Updating PHP (Ubuntu repository)",
+                        0.2f,
+                        onProgress,
+                    )
+                } else if (installResult.isFailure) {
+                    throw installResult.exceptionOrNull() ?: IllegalStateException("Could not update PHP")
+                }
                 runCatching { installComposer(runtime.proot, 0.75f, onProgress, force = true) }
-                verifyGuest(runtime.proot, "php --version || php8.4 --version", "PHP tools could not be verified")
+                verifyGuest(runtime.proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
                 onProgress(RuntimeInstallProgress("PHP tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.WEB -> error("Web tools are part of the core runtime")
@@ -1105,22 +1141,42 @@ class RuntimeInstaller(private val context: Context) {
                 )
             }
             DevStack.PHP -> {
-                runCatching { preparePhpRepository(proot, onProgress) }
-                val hasPpa = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").isFile
+                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    "PHP tools are not bundled in this offline APK; use the online APK to install PHP and Composer"
+                }
+                runCatching { preparePhpRepository(proot, onProgress) }.onFailure {
+                    File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
+                }
+                val ppaFile = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list")
+                val hasPpa = ppaFile.isFile
                 val packages = if (hasPpa) {
                     listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip")
                 } else {
                     listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip")
                 }
-                aptInstall(
-                    proot,
-                    packages,
-                    "Installing PHP and common extensions",
-                    from,
-                    onProgress,
-                )
+                val installResult = runCatching {
+                    aptInstall(
+                        proot,
+                        packages,
+                        "Installing PHP and common extensions",
+                        from,
+                        onProgress,
+                    )
+                }
+                if (installResult.isFailure && hasPpa) {
+                    ppaFile.delete()
+                    aptInstall(
+                        proot,
+                        listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip"),
+                        "Installing PHP (Ubuntu repository)",
+                        from,
+                        onProgress,
+                    )
+                } else if (installResult.isFailure) {
+                    throw installResult.exceptionOrNull() ?: IllegalStateException("Could not install PHP")
+                }
                 runCatching { installComposer(proot, from, onProgress) }
-                verifyGuest(proot, "php --version || php8.4 --version", "PHP tools could not be verified")
+                verifyGuest(proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
             }
         }
         if (!verified) return
@@ -1142,10 +1198,11 @@ class RuntimeInstaller(private val context: Context) {
             "apt-get -o DPkg::Lock::Timeout=120 update && " +
             "apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends software-properties-common ca-certificates gnupg curl && " +
             "mkdir -p /etc/apt/trusted.gpg.d && " +
-            "(curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x14AA40EC0831756756D7F66C4F4EA0AAE5267A6C' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ondrej-php.gpg 2>/dev/null || " +
+            "(curl -fsSL --connect-timeout 15 'https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x14AA40EC0831756756D7F66C4F4EA0AAE5267A6C' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ondrej-php.gpg 2>/dev/null || " +
             "add-apt-repository -y ppa:ondrej/php 2>/dev/null || true); " +
+            "if [ -f /etc/apt/trusted.gpg.d/ondrej-php.gpg ]; then " +
             "echo 'deb http://ppa.launchpad.net/ondrej/php/ubuntu focal main' > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list && " +
-            "apt-get -o DPkg::Lock::Timeout=120 update"
+            "apt-get -o DPkg::Lock::Timeout=120 update; fi"
         runGuestCommand(
             proot = proot,
             command = command,

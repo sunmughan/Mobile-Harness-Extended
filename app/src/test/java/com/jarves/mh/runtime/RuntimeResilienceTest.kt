@@ -14,6 +14,9 @@ class RuntimeResilienceTest {
         assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("read tcp 2409:40d4::48208->2001:4860::443: read: software caused connection abort"))
         assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("stream error: stream ID 1; INTERNAL_ERROR"))
         assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("context deadline exceeded"))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("There was a network issue connecting to the server, please try again."))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("fetch failed"))
+        assertTrue(RuntimeFailureClassifier.isTransientNetworkFailure("connect ECONNREFUSED 127.0.0.1:8080"))
     }
 
     @Test fun permanentProviderErrorsAreNotRetryable() {
@@ -33,6 +36,9 @@ class RuntimeResilienceTest {
         assertFalse(friendly.contains("2409:40d4"))
         assertFalse(friendly.contains("daily-cloudcode"))
         assertTrue(friendly.contains("cellular/Wi-Fi disturbance") || friendly.contains("Network connection was interrupted"))
+
+        val serverIssueFriendly = RuntimeFailureClassifier.friendlyNetworkErrorMessage("There was a network issue connecting to the server, please try again.")
+        assertTrue(serverIssueFriendly.contains("network issue connecting to the server", ignoreCase = true) || serverIssueFriendly.contains("internet connection", ignoreCase = true))
     }
 
     @Test fun retryPolicyHas3MinuteLimit() {

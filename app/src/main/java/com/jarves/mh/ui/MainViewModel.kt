@@ -54,6 +54,7 @@ import com.jarves.mh.runtime.AntigravityAuthStatus
 import com.jarves.mh.runtime.AntigravityRuntimeBridge
 import com.jarves.mh.runtime.NativeSpawnProcess
 import com.jarves.mh.runtime.RuntimeInstallProgress
+import com.jarves.mh.runtime.RuntimeInstallEvent
 import com.jarves.mh.runtime.RuntimeInstaller
 import com.jarves.mh.runtime.RuntimeSetupController
 import com.jarves.mh.runtime.RuntimeSetupService
@@ -3762,8 +3763,12 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
             (event.reason.contains("sign-in", true) || event.reason.contains("authentication", true))) {
             antigravityAuthController.invalidateSession(event.reason)
         }
-        if (event is RuntimeEvent.SessionFailed && retryWithNextApiKey(event)) return
-        if (event is RuntimeEvent.SessionFailed && recoverTransientRuntimeFailure(event)) return
+        val lastUserIdx = _state.value.messages.indexOfLast { it.fromUser }
+        val hasResponseAlready = _state.value.messages.indices.any {
+            it > lastUserIdx && !_state.value.messages[it].fromUser && _state.value.messages[it].text.isNotBlank()
+        }
+        if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && retryWithNextApiKey(event)) return
+        if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && recoverTransientRuntimeFailure(event)) return
         _state.update { current ->
             if (!current.isRunning) {
                 current
@@ -3964,32 +3969,70 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     )
                 }
                 is RuntimeEvent.SessionFailed -> {
-                    val finishedAt = System.currentTimeMillis()
-                    runtimeRecoveryStartedAtMillis = null
-                    val scratchpad = deriveScratchpadItems(current.activeRoadmap, emptyList(), false)
-                    attachTaskDuration(
-                        finishWorkSegment(
-                            appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
+                    val lastUserIndex = current.messages.indexOfLast { it.fromUser }
+                    val hasResponseForLastUser = current.messages.indices.any {
+                        it > lastUserIndex && !current.messages[it].fromUser && current.messages[it].text.isNotBlank()
+                    }
+                    if (hasResponseForLastUser && !event.reason.contains("Stopped by user", ignoreCase = true)) {
+                        // The assistant already completed and delivered its response for the current user turn.
+                        // Trailing exit code or socket teardown must not fail a completed task or append "Task stopped".
+                        val finishedAt = System.currentTimeMillis()
+                        val totalDurationText = current.taskStartedAtMillis?.let { start ->
+                            formatDurationText(((finishedAt - start) / 1000L).coerceAtLeast(1L))
+                        } ?: "a few seconds"
+                        runtimeRecoveryStartedAtMillis = null
+                        val segmentFinishedState = finishWorkSegment(current, finishedAt)
+                        val messagesWithRoadmap = segmentFinishedState.messages.map { msg ->
+                            if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank()) {
+                                val parsed = RoadmapParser.parseFromText(msg.text, segmentFinishedState.executionMode)
+                                if (parsed != null) msg.copy(roadmap = parsed) else msg
+                            } else {
+                                msg
+                            }
+                        }
+                        val latestRoadmap = messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
+                        val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
+                        attachTaskDuration(segmentFinishedState.copy(messages = messagesWithRoadmap), finishedAt).copy(
+                            isRunning = false,
+                            activeSessionId = null,
+                            activeRoadmap = latestRoadmap,
+                            scratchpadItems = scratchpad,
+                            activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully in $totalDurationText")) +
+                                current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
+                            taskFinishedAtMillis = finishedAt,
+                            currentTaskRequest = null,
+                            runtimeRecoveryStatus = null,
+                            runtimeRecoveryAttempt = 0,
+                            runtimeRecoveryCanResume = false,
+                        )
+                    } else {
+                        val finishedAt = System.currentTimeMillis()
+                        runtimeRecoveryStartedAtMillis = null
+                        val scratchpad = deriveScratchpadItems(current.activeRoadmap, emptyList(), false)
+                        attachTaskDuration(
+                            finishWorkSegment(
+                                appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
+                                finishedAt,
+                            ),
                             finishedAt,
-                        ),
-                        finishedAt,
-                    ).copy(
-                        isRunning = false,
-                        activeSessionId = null,
-                        pendingApproval = null,
-                        scratchpadItems = scratchpad,
-                        toastMessage = event.reason.takeIf { reason ->
-                            reason.contains("user not found", true) ||
-                                reason.contains("API key", true) ||
-                                reason.contains("authentication", true)
-                        },
-                        activity = listOf(ActivityItem("Task stopped", event.reason)) + current.activity,
-                        taskFinishedAtMillis = finishedAt,
-                        currentTaskRequest = null,
-                        runtimeRecoveryStatus = null,
-                        runtimeRecoveryAttempt = 0,
-                        runtimeRecoveryCanResume = false,
-                    )
+                        ).copy(
+                            isRunning = false,
+                            activeSessionId = null,
+                            pendingApproval = null,
+                            scratchpadItems = scratchpad,
+                            toastMessage = event.reason.takeIf { reason ->
+                                reason.contains("user not found", true) ||
+                                    reason.contains("API key", true) ||
+                                    reason.contains("authentication", true)
+                            },
+                            activity = listOf(ActivityItem("Task stopped", event.reason)) + current.activity,
+                            taskFinishedAtMillis = finishedAt,
+                            currentTaskRequest = null,
+                            runtimeRecoveryStatus = null,
+                            runtimeRecoveryAttempt = 0,
+                            runtimeRecoveryCanResume = false,
+                        )
+                    }
                 }
             }
         }
@@ -3997,7 +4040,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
             activeRuntimeRequest = null
             failedApiKeyIds.clear()
         }
-        if (event is RuntimeEvent.FilesChanged || event is RuntimeEvent.SessionCompleted) {
+        if (event is RuntimeEvent.FilesChanged || event is RuntimeEvent.SessionCompleted ||
+            (event is RuntimeEvent.SessionFailed && hasResponseAlready)) {
             _state.value.activeProject?.id?.let { touchProject(it) }
             refreshProjectFiles()
         }
@@ -4385,8 +4429,17 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     installed.forEach { stack ->
                         if (!_state.value.isRunning && _state.value.devStackInstalling == null) {
                             runCatching {
-                                installer.updateStack(stack) {}
-                                updatedItems.add(stack.label)
+                                var didUpdate = false
+                                installer.updateStack(stack) { progress ->
+                                    if (progress.event == RuntimeInstallEvent.COMPLETED &&
+                                        !progress.message.contains("already up to date", ignoreCase = true) &&
+                                        !progress.message.contains("tools are up to date", ignoreCase = true)) {
+                                        didUpdate = true
+                                    }
+                                }
+                                if (didUpdate) {
+                                    updatedItems.add(stack.label)
+                                }
                             }
                         }
                     }

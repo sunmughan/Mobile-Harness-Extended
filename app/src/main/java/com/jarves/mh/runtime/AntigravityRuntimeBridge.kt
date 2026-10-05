@@ -272,6 +272,7 @@ class AntigravityRuntimeBridge(
         activeSessionId = sessionId
         userStopRequested = false
         foregroundResultPosted = false
+        var assistantTextSeen = false
         finished.remove(sessionId)
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
         if (!installer.isAgentInstalled(com.jarves.mh.model.AgentKind.ANTIGRAVITY)) {
@@ -313,7 +314,6 @@ class AntigravityRuntimeBridge(
             var offset = 0L
             val pending = StringBuilder()
             var resultSeen = false
-            var assistantTextSeen = false
             var lastDiagnostic = ""
             suspend fun handleLine(line: String) {
                 when (val event = AntigravityEventParser.parse(line)) {
@@ -337,6 +337,10 @@ class AntigravityRuntimeBridge(
                                 assistantTextSeen = true
                                 eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, event.response))
                             }
+                            resultSeen = true
+                        } else if (assistantTextSeen) {
+                            // Assistant already produced complete text output; trailing errors during cleanup
+                            // should not fail the session.
                             resultSeen = true
                         } else throw AntigravitySessionException(friendlyError(event.error ?: event.status))
                     }
@@ -378,8 +382,12 @@ class AntigravityRuntimeBridge(
                 throw AntigravitySessionException("Stopped by user")
             }
             if (exit != 0 && !resultSeen) {
-                val failureDetail = lastDiagnostic.ifBlank { "Antigravity exited with code $exit" }
-                throw AntigravitySessionException(friendlyError(failureDetail))
+                if (assistantTextSeen) {
+                    resultSeen = true
+                } else {
+                    val failureDetail = lastDiagnostic.ifBlank { "Antigravity exited with code $exit" }
+                    throw AntigravitySessionException(friendlyError(failureDetail))
+                }
             }
             val paths = checkpoints.changedFiles(workspace, before)
             checkpoints.saveChangedPaths(projectId, paths)
@@ -391,16 +399,23 @@ class AntigravityRuntimeBridge(
             emitCompleted(sessionId)
             finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
         }.onFailure {
-            val rawError = it.message.orEmpty()
-            val isTransient = RuntimeFailureClassifier.isTransientNetworkFailure(rawError)
-            val message = if (userStopRequested) "Stopped by user"
-                else if (isTransient) RuntimeFailureClassifier.friendlyNetworkErrorMessage(rawError)
-                else friendlyError(rawError)
-            emitFailure(sessionId, message)
-            if (userStopRequested) {
-                cancelForegroundRuntime()
-            } else if (!isTransient) {
-                finishForegroundRuntime(false, projectSlug, message)
+            if (assistantTextSeen && !userStopRequested) {
+                val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
+                val durationText = formatDurationText(durationSeconds)
+                emitCompleted(sessionId)
+                finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
+            } else {
+                val rawError = it.message.orEmpty()
+                val isTransient = RuntimeFailureClassifier.isTransientNetworkFailure(rawError)
+                val message = if (userStopRequested) "Stopped by user"
+                    else if (isTransient) RuntimeFailureClassifier.friendlyNetworkErrorMessage(rawError)
+                    else friendlyError(rawError)
+                emitFailure(sessionId, message)
+                if (userStopRequested) {
+                    cancelForegroundRuntime()
+                } else if (!isTransient) {
+                    finishForegroundRuntime(false, projectSlug, message)
+                }
             }
         }
         activeProcess = null

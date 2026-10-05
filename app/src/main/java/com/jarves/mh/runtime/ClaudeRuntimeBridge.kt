@@ -247,7 +247,7 @@ class ClaudeRuntimeBridge(
                 } else if (!File(checkpointDir(projectId), "changes.json").isFile) {
                     acceptLastChanges(projectId)
                 }
-                if (exit == 0) {
+                if (exit == 0 || (streamedText.isNotBlank() && !userStopRequested)) {
                     emitCompletedOnce(sessionId)
                     finishForegroundRuntime(
                         completed = true,
@@ -261,16 +261,25 @@ class ClaudeRuntimeBridge(
             }
         }.onFailure { error ->
             Log.e("ClaudeBridge", "Session failed", error)
-            val message = friendlyError(error)
-            emitFailureOnce(sessionId, message)
-            if (userStopRequested) {
-                cancelForegroundRuntime()
-            } else if (!RuntimeFailureClassifier.isTransientNetworkFailure(message)) {
+            if (streamedText.isNotBlank() && !userStopRequested) {
+                emitCompletedOnce(sessionId)
                 finishForegroundRuntime(
-                    completed = false,
+                    completed = true,
                     projectName = projectSlug,
-                    detail = message,
+                    detail = "Claude Code finished the task in $projectSlug.",
                 )
+            } else {
+                val message = friendlyError(error)
+                emitFailureOnce(sessionId, message)
+                if (userStopRequested) {
+                    cancelForegroundRuntime()
+                } else if (!RuntimeFailureClassifier.isTransientNetworkFailure(message)) {
+                    finishForegroundRuntime(
+                        completed = false,
+                        projectName = projectSlug,
+                        detail = message,
+                    )
+                }
             }
         }
         formatGateway?.close()
