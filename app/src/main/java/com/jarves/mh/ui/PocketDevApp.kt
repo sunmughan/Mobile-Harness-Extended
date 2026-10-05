@@ -2231,6 +2231,7 @@ private fun RootScreenHost(
                     onActivateApiKey = viewModel::activateApiKey,
                     onRemoveApiKey = viewModel::removeApiKey,
                     onInstallDevStack = viewModel::installDevStack,
+                    onUpdateDevStack = viewModel::updateDevStack,
                     onRemoveDevStack = viewModel::removeDevStack,
                     onRefreshInstalledAgents = viewModel::refreshInstalledAgents,
                     onStartAntigravityLogin = viewModel::startAntigravityLogin,
