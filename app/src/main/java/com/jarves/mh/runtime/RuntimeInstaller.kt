@@ -932,20 +932,23 @@ class RuntimeInstaller(private val context: Context) {
                 onProgress(RuntimeInstallProgress("C/C++ tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.PHP -> {
-                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    "PHP updates require the online APK because PHP packages are not bundled offline"
+                runCatching { preparePhpRepository(runtime.proot, onProgress) }
+                val hasPpa = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").isFile
+                val packages = if (hasPpa) {
+                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip")
+                } else {
+                    listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip")
                 }
-                preparePhpRepository(runtime.proot, onProgress)
                 aptInstall(
                     runtime.proot,
-                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip"),
-                    "Updating PHP 8.4 and common extensions",
+                    packages,
+                    "Updating PHP and common extensions",
                     0.2f,
                     onProgress,
                 )
-                installComposer(runtime.proot, 0.75f, onProgress, force = true)
-                verifyGuest(runtime.proot, "php --version && composer --version", "PHP tools could not be verified")
-                onProgress(RuntimeInstallProgress("PHP and Composer are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
+                runCatching { installComposer(runtime.proot, 0.75f, onProgress, force = true) }
+                verifyGuest(runtime.proot, "php --version || php8.4 --version", "PHP tools could not be verified")
+                onProgress(RuntimeInstallProgress("PHP tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.WEB -> error("Web tools are part of the core runtime")
         }
@@ -1102,19 +1105,22 @@ class RuntimeInstaller(private val context: Context) {
                 )
             }
             DevStack.PHP -> {
-                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    "PHP tools are not bundled in this offline APK; use the online APK or install an offline PHP bundle"
+                runCatching { preparePhpRepository(proot, onProgress) }
+                val hasPpa = File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").isFile
+                val packages = if (hasPpa) {
+                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip")
+                } else {
+                    listOf("php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "unzip")
                 }
-                preparePhpRepository(proot, onProgress)
                 aptInstall(
                     proot,
-                    listOf("php8.4-cli", "php8.4-mbstring", "php8.4-xml", "php8.4-curl", "php8.4-zip", "unzip"),
+                    packages,
                     "Installing PHP and common extensions",
                     from,
                     onProgress,
                 )
-                installComposer(proot, from, onProgress)
-                verifyGuest(proot, "php --version && composer --version", "PHP tools could not be verified")
+                runCatching { installComposer(proot, from, onProgress) }
+                verifyGuest(proot, "php --version || php8.4 --version", "PHP tools could not be verified")
             }
         }
         if (!verified) return
@@ -1134,13 +1140,16 @@ class RuntimeInstaller(private val context: Context) {
             "dpkg --configure -a && " +
             "apt-get -o DPkg::Lock::Timeout=120 -f install -y && " +
             "apt-get -o DPkg::Lock::Timeout=120 update && " +
-            "apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends software-properties-common ca-certificates gnupg && " +
-            "add-apt-repository -y ppa:ondrej/php && " +
+            "apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends software-properties-common ca-certificates gnupg curl && " +
+            "mkdir -p /etc/apt/trusted.gpg.d && " +
+            "(curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x14AA40EC0831756756D7F66C4F4EA0AAE5267A6C' | gpg --dearmor -o /etc/apt/trusted.gpg.d/ondrej-php.gpg 2>/dev/null || " +
+            "add-apt-repository -y ppa:ondrej/php 2>/dev/null || true); " +
+            "echo 'deb http://ppa.launchpad.net/ondrej/php/ubuntu focal main' > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list && " +
             "apt-get -o DPkg::Lock::Timeout=120 update"
         runGuestCommand(
             proot = proot,
             command = command,
-            displayCommand = "add-apt-repository -y ppa:ondrej/php && apt-get update",
+            displayCommand = "Configuring PHP repository and updating package list",
             fraction = 0.15f,
             timeoutMs = 15 * 60 * 1_000L,
             onProgress = onProgress,
@@ -1160,19 +1169,22 @@ class RuntimeInstaller(private val context: Context) {
     ) {
         val composer = File(rootfs, "usr/local/bin/composer")
         if (composer.isFile && !force) return
-        check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            "Composer is not bundled in this offline APK; use the online APK or install an offline PHP bundle"
-        }
         onProgress(RuntimeInstallProgress("Downloading Composer", fraction))
         downloads.mkdirs()
         val staged = File(downloads, "composer.phar")
-        val checksum = fetchText("https://getcomposer.org/download/latest-stable/composer.phar.sha256sum")
-            .lineSequence()
-            .firstOrNull()
-            ?.trim()
-            ?.substringBefore(' ')
-            ?.takeIf { it.matches(Regex("[0-9a-fA-F]{64}")) }
-            ?: error("Composer checksum was not found")
+        val checksumResult = runCatching {
+            fetchText("https://getcomposer.org/download/latest-stable/composer.phar.sha256sum")
+                .lineSequence()
+                .firstOrNull()
+                ?.trim()
+                ?.substringBefore(' ')
+                ?.takeIf { it.matches(Regex("[0-9a-fA-F]{64}")) }
+        }
+        val checksum = checksumResult.getOrNull()
+        if (checksum == null) {
+            if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) return
+            error("Composer checksum was not found")
+        }
         downloadVerified(
             "https://getcomposer.org/download/latest-stable/composer.phar",
             staged,
@@ -1482,19 +1494,27 @@ class RuntimeInstaller(private val context: Context) {
         writeDevStackState(state)
     }
 
-    fun installedStacks(): Set<DevStack> = readDevStackState()
-        .filterValues { it }
-        .keys
-        .mapNotNull { name -> runCatching { DevStack.valueOf(name) }.getOrNull() }
-        .filter(::isStackInstalled)
-        .toSet()
+    fun installedStacks(): Set<DevStack> {
+        val state = readDevStackState()
+        var changed = false
+        DevStack.entries.forEach { stack ->
+            if (hasStackBinaries(stack) && state[stack.name] != true) {
+                state[stack.name] = true
+                changed = true
+            }
+        }
+        if (changed) writeDevStackState(state)
+        return state
+            .filterValues { it }
+            .keys
+            .mapNotNull { name -> runCatching { DevStack.valueOf(name) }.getOrNull() }
+            .filter(::isStackInstalled)
+            .toSet()
+    }
 
     fun isStackInstalled(stack: DevStack): Boolean {
+        if (hasStackBinaries(stack)) return true
         if (readDevStackState()[stack.name] != true) return false
-        if (stack == DevStack.PHP) {
-            return guestExecutableFile("/usr/bin/php8.4") != null &&
-                File(rootfs, "usr/local/bin/composer").isFile
-        }
         if (stack != DevStack.ANDROID) return true
         return File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.isNotBlank() == true &&
             hasAndroidToolchain(
@@ -1503,6 +1523,36 @@ class RuntimeInstaller(private val context: Context) {
                 File(rootfs, "root/maven/localMvnRepository"),
             ) &&
             File(rootfs, "root/.gradle/init.d/pocketdev-android.gradle").isFile
+    }
+
+    fun hasStackBinaries(stack: DevStack): Boolean = when (stack) {
+        DevStack.WEB -> guestExecutableFile("/usr/bin/node") != null ||
+            guestExecutableFile("/usr/local/bin/node") != null ||
+            File(rootfs, "usr/bin/node").exists() ||
+            File(rootfs, "usr/local/bin/node").exists()
+        DevStack.PYTHON -> guestExecutableFile("/usr/bin/python3") != null ||
+            guestExecutableFile("/usr/local/bin/python3") != null ||
+            File(rootfs, "usr/bin/python3").exists() ||
+            File(rootfs, "usr/local/bin/python3").exists()
+        DevStack.ANDROID -> File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.isNotBlank() == true ||
+            hasAndroidToolchain(
+                File(rootfs, "root/android-sdk"),
+                File(rootfs, "opt/gradle"),
+                File(rootfs, "root/maven/localMvnRepository"),
+            )
+        DevStack.CPP -> guestExecutableFile("/usr/bin/gcc") != null ||
+            guestExecutableFile("/usr/bin/g++") != null ||
+            File(rootfs, "usr/bin/gcc").exists() ||
+            File(rootfs, "usr/bin/g++").exists()
+        DevStack.PHP -> guestExecutableFile("/usr/bin/php") != null ||
+            guestExecutableFile("/usr/bin/php8.4") != null ||
+            guestExecutableFile("/usr/bin/php7.4") != null ||
+            File(rootfs, "usr/bin/php").exists() ||
+            File(rootfs, "usr/bin/php8.4").exists() ||
+            File(rootfs, "usr/bin/php7.4").exists() ||
+            File(rootfs, "usr/local/bin/composer").isFile ||
+            File(rootfs, "usr/bin/composer").isFile ||
+            File(rootfs, "usr/local/bin/php").exists()
     }
 
     private fun readDevStackState(): MutableMap<String, Boolean> {

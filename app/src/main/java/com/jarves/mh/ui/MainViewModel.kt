@@ -1728,7 +1728,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     devStackBytesPerSecond = null,
                     devStackMessage = result.fold(
                         onSuccess = { "${stack.label} tools are ready" },
-                        onFailure = { _ -> result.exceptionOrNull()?.message?.take(200) ?: "Could not install ${stack.label}" },
+                        onFailure = { error -> error.message?.take(200) ?: "Could not install ${stack.label}" },
+                    ),
+                    toastMessage = result.fold(
+                        onSuccess = { "${stack.label} tools are ready" },
+                        onFailure = { error -> error.message?.take(200) ?: "Could not install ${stack.label}" },
                     ),
                 )
             }
