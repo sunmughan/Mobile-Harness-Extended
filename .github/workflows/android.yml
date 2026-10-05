@@ -242,6 +242,27 @@ jobs:
           set -euxo pipefail
           find app/build/outputs/apk -type f -name '*.apk' -printf '%p %s bytes\\n' | sort
 
+      - name: Prepare emulator verification script
+        shell: bash
+        run: |
+          cat << 'EOF' > run-emulator-verification.sh
+          set -euxo pipefail
+          PREVIOUS_APK="/tmp/mobile-harness-previous.apk"
+          if [ -f "$RUNNER_TEMP/mobile-harness-previous.apk" ]; then
+            cp "$RUNNER_TEMP/mobile-harness-previous.apk" "$PREVIOUS_APK"
+          else
+            gh release download v1.0.19 -p "app-online-release.apk" -O "$PREVIOUS_APK" -R "$GITHUB_REPOSITORY"
+          fi
+          echo "Previous release:"
+          "$ANDROID_HOME/platform-tools/adb" install "$PREVIOUS_APK"
+          "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.jarves.mh | grep -E 'versionCode=|versionName=' || true
+          echo "Current release update:"
+          "$ANDROID_HOME/platform-tools/adb" install -r app/build/outputs/apk/online/release/app-online-release.apk
+          "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.jarves.mh | grep -E 'versionCode=|versionName=' || true
+          echo "PASS: previous release installed and current release updated in place."
+          EOF
+          chmod +x run-emulator-verification.sh
+
       - name: Verify in-place update on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
@@ -254,21 +275,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
           emulator-boot-timeout: 900
           disable-animations: true
-          script: |
-            set -euxo pipefail
-            PREVIOUS_APK="/tmp/mobile-harness-previous.apk"
-            if [ -f "$RUNNER_TEMP/mobile-harness-previous.apk" ]; then
-              cp "$RUNNER_TEMP/mobile-harness-previous.apk" "$PREVIOUS_APK"
-            else
-              gh release download v1.0.19 -p "app-online-release.apk" -O "$PREVIOUS_APK" -R "$GITHUB_REPOSITORY"
-            fi
-            echo "Previous release:"
-            "$ANDROID_HOME/platform-tools/adb" install "$PREVIOUS_APK"
-            "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.jarves.mh | grep -E 'versionCode=|versionName=' || true
-            echo "Current release update:"
-            "$ANDROID_HOME/platform-tools/adb" install -r app/build/outputs/apk/online/release/app-online-release.apk
-            "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.jarves.mh | grep -E 'versionCode=|versionName=' || true
-            echo "PASS: previous release installed and current release updated in place."
+          script: bash ./run-emulator-verification.sh
       
       - name: Upload emulator launch logs
         if: always()
