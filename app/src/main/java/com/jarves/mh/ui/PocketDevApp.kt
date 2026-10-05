@@ -188,6 +188,13 @@ import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
 import com.jarves.mh.model.ChatAttachment
+import com.jarves.mh.model.ExecutionMode
+import com.jarves.mh.model.ActiveRoadmap
+import com.jarves.mh.model.RoadmapStep
+import com.jarves.mh.model.RoadmapComment
+import com.jarves.mh.model.ScratchpadItem
+import com.jarves.mh.model.StepStatus
+import com.jarves.mh.model.TaskStatus
 import com.jarves.mh.model.DevStack
 import com.jarves.mh.model.DEEPSEEK_HARNESS_PROVIDERS
 import com.jarves.mh.model.DSH_PROTOCOL_PROVIDERS
@@ -366,6 +373,10 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onRemoveAttachment = viewModel::removePendingAttachment,
             onOpenAttachment = viewModel::openChatAttachment,
             onBuildAndRunAndroid = viewModel::buildAndRunAndroidApp,
+            onSelectExecutionMode = viewModel::setExecutionMode,
+            onToggleScratchpad = viewModel::toggleScratchpadExpanded,
+            onAddRoadmapComment = viewModel::addRoadmapComment,
+            onApproveAndBuildRoadmap = viewModel::approveAndBuildRoadmap,
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -3993,6 +4004,10 @@ private fun WorkspaceScreen(
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
     onBuildAndRunAndroid: () -> Unit,
+    onSelectExecutionMode: (ExecutionMode) -> Unit = {},
+    onToggleScratchpad: () -> Unit = {},
+    onAddRoadmapComment: (roadmapId: String, text: String, stepId: String?) -> Unit = { _, _, _ -> },
+    onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4279,13 +4294,13 @@ private fun WorkspaceScreen(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (selectedTab) {
                 WorkspaceTab.CHAT -> ChatTab(
-                    state.messages,
-                    state.pendingApproval,
-                    state.liveProcess,
-                    state.isRunning,
-                    onSend,
-                    onStop,
-                    onApproval,
+                    messages = state.messages,
+                    approval = state.pendingApproval,
+                    liveProcess = state.liveProcess,
+                    isRunning = state.isRunning,
+                    onSend = onSend,
+                    onStop = onStop,
+                    onApproval = onApproval,
                     listState = chatListState,
                     taskStartedAtMillis = state.workSegmentStartedAtMillis ?: state.taskStartedAtMillis,
                     taskFinishedAtMillis = state.taskFinishedAtMillis,
@@ -4303,6 +4318,13 @@ private fun WorkspaceScreen(
                         onTerminalOpened()
                         onTerminalPrepare(command)
                     },
+                    executionMode = state.executionMode,
+                    onSelectExecutionMode = onSelectExecutionMode,
+                    scratchpadItems = state.scratchpadItems,
+                    scratchpadExpanded = state.scratchpadExpanded,
+                    onToggleScratchpad = onToggleScratchpad,
+                    onAddRoadmapComment = onAddRoadmapComment,
+                    onApproveAndBuildRoadmap = onApproveAndBuildRoadmap,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -4691,6 +4713,13 @@ private fun ChatTab(
     readOnly: Boolean = false,
     readOnlyBlocked: Boolean = false,
     onContinueHere: () -> Unit = {},
+    executionMode: ExecutionMode = ExecutionMode.UNIFIED,
+    onSelectExecutionMode: (ExecutionMode) -> Unit = {},
+    scratchpadItems: List<ScratchpadItem> = emptyList(),
+    scratchpadExpanded: Boolean = false,
+    onToggleScratchpad: () -> Unit = {},
+    onAddRoadmapComment: (roadmapId: String, text: String, stepId: String?) -> Unit = { _, _, _ -> },
+    onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
 ) {
     val view = LocalView.current
     // Keep the screen on while the selected agent is working in this chat. Released automatically
@@ -4701,7 +4730,19 @@ private fun ChatTab(
     }
     var prompt by rememberSaveable { mutableStateOf("") }
     var mentionQuery by remember { mutableStateOf<String?>(null) }
+    var activeCommentTarget by remember { mutableStateOf<Triple<String, String?, String>?>(null) }
     val chatScope = rememberCoroutineScope()
+
+    activeCommentTarget?.let { (roadmapId, stepId, stepTitle) ->
+        AddRoadmapCommentDialog(
+            stepTitle = stepTitle.takeIf(String::isNotBlank),
+            onDismiss = { activeCommentTarget = null },
+            onSubmit = { commentText ->
+                onAddRoadmapComment(roadmapId, commentText, stepId)
+                activeCommentTarget = null
+            },
+        )
+    }
 
     val mentionCandidates = remember(workspaceFiles, mentionQuery) {
         val query = mentionQuery?.trim()?.lowercase() ?: return@remember emptyList<WorkspaceEntry>()
@@ -4724,6 +4765,32 @@ private fun ChatTab(
         }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
+        if (scratchpadItems.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ScratchpadPill(
+                    items = scratchpadItems,
+                    isExpanded = scratchpadExpanded,
+                    onToggleExpand = onToggleScratchpad,
+                )
+            }
+            if (scratchpadExpanded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 2.dp),
+                ) {
+                    ScratchpadCard(
+                        items = scratchpadItems,
+                        onCollapse = onToggleScratchpad,
+                    )
+                }
+            }
+        }
         Box(Modifier.weight(1f)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -4735,7 +4802,22 @@ private fun ChatTab(
                     if (message.workItems.isNotEmpty()) {
                         WorkBlockCard(message)
                     } else {
-                        MessageBubble(message, onRunInTerminal, onOpenAttachment)
+                        MessageBubble(
+                            message = message,
+                            onRunInTerminal = onRunInTerminal,
+                            onOpenAttachment = onOpenAttachment,
+                            onAddRoadmapComment = { stepId ->
+                                val stepTitle = message.roadmap?.steps?.firstOrNull { it.id == stepId }?.title ?: ""
+                                message.roadmap?.let { r ->
+                                    activeCommentTarget = Triple(r.id, stepId, stepTitle)
+                                }
+                            },
+                            onApproveAndBuildRoadmap = {
+                                message.roadmap?.let { r ->
+                                    onApproveAndBuildRoadmap(r, null)
+                                }
+                            },
+                        )
                     }
                 }
                 if (liveProcess.isNotEmpty() || thinkingActive) {
@@ -4823,8 +4905,13 @@ private fun ChatTab(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
+                ModeSelectorBar(
+                    currentMode = executionMode,
+                    onModeSelected = onSelectExecutionMode,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier
@@ -4936,7 +5023,7 @@ private fun ChatTab(
                                 Box(contentAlignment = Alignment.CenterStart) {
                                     if (prompt.isEmpty()) {
                                         Text(
-                                            text = "Message ${agentKind.title}…",
+                                            text = "${executionMode.title} with ${agentKind.title}…",
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 15.sp,
                                         )
@@ -5337,7 +5424,13 @@ private fun formatDuration(totalSeconds: Long): String = when {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, onRunInTerminal: (String) -> Unit, onOpenAttachment: (ChatAttachment) -> Unit) {
+private fun MessageBubble(
+    message: ChatMessage,
+    onRunInTerminal: (String) -> Unit,
+    onOpenAttachment: (ChatAttachment) -> Unit,
+    onAddRoadmapComment: (stepId: String?) -> Unit = {},
+    onApproveAndBuildRoadmap: () -> Unit = {},
+) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         Surface(
             color = if (message.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
@@ -5361,6 +5454,14 @@ private fun MessageBubble(message: ChatMessage, onRunInTerminal: (String) -> Uni
                             onRunCode = onRunInTerminal,
                         )
                     }
+                }
+                if (!message.fromUser && message.roadmap != null) {
+                    RoadmapCard(
+                        roadmap = message.roadmap,
+                        onAddComment = onAddRoadmapComment,
+                        onApproveAndBuild = onApproveAndBuildRoadmap,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
                 }
                 if (!message.fromUser && message.workedMillis > 0L) {
                     Text(

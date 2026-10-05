@@ -316,6 +316,81 @@ sealed interface RuntimeEvent {
     data class SessionFailed(override val sessionId: String, val reason: String) : RuntimeEvent
 }
 
+enum class ExecutionMode(
+    val title: String,
+    val description: String,
+) {
+    PLAN(
+        "Plan",
+        "Formulate a detailed architectural plan without making changes",
+    ),
+    BUILD(
+        "Build",
+        "Directly understand the task and implement changes end-to-end",
+    ),
+    UNIFIED(
+        "Unified",
+        "Plan first with an interactive roadmap for approval before building",
+    ),
+    ;
+
+    companion object {
+        fun fromStored(value: String?): ExecutionMode = entries.firstOrNull {
+            it.name.equals(value, ignoreCase = true)
+        } ?: UNIFIED
+    }
+}
+
+enum class StepStatus {
+    PENDING,
+    IN_PROGRESS,
+    COMPLETED,
+    SKIPPED
+}
+
+data class RoadmapComment(
+    val id: String = UUID.randomUUID().toString(),
+    val author: String = "User",
+    val text: String,
+    val timestampMillis: Long = System.currentTimeMillis(),
+    val stepId: String? = null,
+)
+
+data class RoadmapStep(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val description: String = "",
+    val filesAffected: List<String> = emptyList(),
+    val status: StepStatus = StepStatus.PENDING,
+)
+
+data class ActiveRoadmap(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val summary: String,
+    val steps: List<RoadmapStep> = emptyList(),
+    val comments: List<RoadmapComment> = emptyList(),
+    val rawMarkdown: String = "",
+    val isApproved: Boolean = false,
+    val mode: ExecutionMode = ExecutionMode.UNIFIED,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+)
+
+enum class TaskStatus {
+    RUNNING,
+    FINISHED,
+    PENDING,
+    FAILED
+}
+
+data class ScratchpadItem(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val status: TaskStatus = TaskStatus.PENDING,
+    val detail: String = "",
+    val durationSeconds: Long? = null,
+)
+
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val fromUser: Boolean,
@@ -324,6 +399,7 @@ data class ChatMessage(
     val attachments: List<ChatAttachment> = emptyList(),
     val workItems: List<ActivityItem> = emptyList(),
     val workedMillis: Long = 0L,
+    val roadmap: ActiveRoadmap? = null,
 )
 
 data class ChatAttachment(

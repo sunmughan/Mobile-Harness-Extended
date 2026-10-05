@@ -9,6 +9,11 @@ import com.jarves.mh.model.ProjectKind
 import com.jarves.mh.model.ProjectChat
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
+import com.jarves.mh.model.ExecutionMode
+import com.jarves.mh.model.ActiveRoadmap
+import com.jarves.mh.model.RoadmapStep
+import com.jarves.mh.model.RoadmapComment
+import com.jarves.mh.model.StepStatus
 import com.jarves.mh.model.defaultDshApiForProvider
 import com.jarves.mh.model.projectSlug
 import com.jarves.mh.model.providersForAgent
@@ -141,6 +146,10 @@ class AppPreferences(private val context: Context) {
     var lastToolsAutoUpdateCheckMillis: Long
         get() = preferences.getLong("last_tools_auto_update_check_millis", 0L)
         set(value) { preferences.edit().putLong("last_tools_auto_update_check_millis", value).apply() }
+
+    var executionMode: String
+        get() = preferences.getString("execution_mode", ExecutionMode.UNIFIED.name) ?: ExecutionMode.UNIFIED.name
+        set(value) { preferences.edit().putString("execution_mode", value).apply() }
 
 
     fun saveProvider(profile: ProviderProfile, agent: AgentKind? = null) {
@@ -392,6 +401,39 @@ class AppPreferences(private val context: Context) {
                         })
                     }
                 })
+                m.roadmap?.let { r ->
+                    put("roadmap", JSONObject().apply {
+                        put("id", r.id)
+                        put("title", r.title)
+                        put("summary", r.summary)
+                        put("rawMarkdown", r.rawMarkdown)
+                        put("isApproved", r.isApproved)
+                        put("mode", r.mode.name)
+                        put("createdAtMillis", r.createdAtMillis)
+                        put("steps", JSONArray().apply {
+                            r.steps.forEach { s ->
+                                put(JSONObject().apply {
+                                    put("id", s.id)
+                                    put("title", s.title)
+                                    put("description", s.description)
+                                    put("status", s.status.name)
+                                    put("filesAffected", JSONArray(s.filesAffected))
+                                })
+                            }
+                        })
+                        put("comments", JSONArray().apply {
+                            r.comments.forEach { c ->
+                                put(JSONObject().apply {
+                                    put("id", c.id)
+                                    put("author", c.author)
+                                    put("text", c.text)
+                                    put("timestampMillis", c.timestampMillis)
+                                    c.stepId?.let { put("stepId", it) }
+                                })
+                            }
+                        })
+                    })
+                }
             })
         }
         val projectDir = File(chatsDir, projectId).also { it.mkdirs() }
@@ -456,6 +498,47 @@ class AppPreferences(private val context: Context) {
                             }.getOrNull()
                         }
                     }.orEmpty(),
+                    roadmap = obj.optJSONObject("roadmap")?.let { r ->
+                        ActiveRoadmap(
+                            id = r.optString("id", java.util.UUID.randomUUID().toString()),
+                            title = r.optString("title", "Implementation Roadmap"),
+                            summary = r.optString("summary", ""),
+                            rawMarkdown = r.optString("rawMarkdown", ""),
+                            isApproved = r.optBoolean("isApproved", false),
+                            mode = runCatching { ExecutionMode.valueOf(r.optString("mode", ExecutionMode.UNIFIED.name)) }.getOrDefault(ExecutionMode.UNIFIED),
+                            createdAtMillis = r.optLong("createdAtMillis", System.currentTimeMillis()),
+                            steps = r.optJSONArray("steps")?.let { stepsArr ->
+                                (0 until stepsArr.length()).mapNotNull { sIdx ->
+                                    runCatching {
+                                        val sObj = stepsArr.getJSONObject(sIdx)
+                                        RoadmapStep(
+                                            id = sObj.optString("id", java.util.UUID.randomUUID().toString()),
+                                            title = sObj.getString("title"),
+                                            description = sObj.optString("description", ""),
+                                            status = runCatching { StepStatus.valueOf(sObj.optString("status", StepStatus.PENDING.name)) }.getOrDefault(StepStatus.PENDING),
+                                            filesAffected = sObj.optJSONArray("filesAffected")?.let { fArr ->
+                                                (0 until fArr.length()).map { fArr.getString(it) }
+                                            } ?: emptyList(),
+                                        )
+                                    }.getOrNull()
+                                }
+                            } ?: emptyList(),
+                            comments = r.optJSONArray("comments")?.let { commentsArr ->
+                                (0 until commentsArr.length()).mapNotNull { cIdx ->
+                                    runCatching {
+                                        val cObj = commentsArr.getJSONObject(cIdx)
+                                        RoadmapComment(
+                                            id = cObj.optString("id", java.util.UUID.randomUUID().toString()),
+                                            author = cObj.optString("author", "User"),
+                                            text = cObj.getString("text"),
+                                            timestampMillis = cObj.optLong("timestampMillis", System.currentTimeMillis()),
+                                            stepId = cObj.optString("stepId").takeIf(String::isNotBlank),
+                                        )
+                                    }.getOrNull()
+                                }
+                            } ?: emptyList(),
+                        )
+                    },
                 )
             }
         }.getOrDefault(emptyList())

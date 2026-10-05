@@ -21,6 +21,13 @@ import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
 import com.jarves.mh.model.ChatAttachment
+import com.jarves.mh.model.ExecutionMode
+import com.jarves.mh.model.ActiveRoadmap
+import com.jarves.mh.model.RoadmapComment
+import com.jarves.mh.model.RoadmapStep
+import com.jarves.mh.model.ScratchpadItem
+import com.jarves.mh.model.StepStatus
+import com.jarves.mh.model.TaskStatus
 import com.jarves.mh.model.DevStack
 import com.jarves.mh.model.Project
 import com.jarves.mh.model.ProjectKind
@@ -267,6 +274,10 @@ data class AppUiState(
     val appUpdateDownloadedBytes: Long = 0L,
     val appUpdateTotalBytes: Long = -1L,
     val appUpdateError: String? = null,
+    val executionMode: ExecutionMode = ExecutionMode.UNIFIED,
+    val activeRoadmap: ActiveRoadmap? = null,
+    val scratchpadItems: List<ScratchpadItem> = emptyList(),
+    val scratchpadExpanded: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -374,6 +385,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             selectedDevStacks = preferences.selectedDevStacks.mapNotNull { name ->
                 runCatching { DevStack.valueOf(name) }.getOrNull()
             }.toSet() + DevStack.WEB,
+            executionMode = ExecutionMode.fromStored(preferences.executionMode),
         ),
     )
 
@@ -2007,6 +2019,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val activeChat = chats.first()
         val saved = preferences.loadMessages(project.id, activeChat.id)
         val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
+        val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
+        val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
         _state.update {
             it.copy(
                 activeProject = project,
@@ -2018,6 +2032,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 projectChats = chats,
                 activeChatId = activeChat.id,
                 messages = msgs,
+                activeRoadmap = loadedRoadmap,
+                scratchpadItems = loadedScratchpad,
                 liveProcess = emptyList(),
                 liveThinking = false,
                 taskStartedAtMillis = null,
@@ -2913,6 +2929,139 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setExecutionMode(mode: ExecutionMode) {
+        preferences.executionMode = mode.name
+        _state.update { it.copy(executionMode = mode) }
+    }
+
+    fun toggleScratchpadExpanded() {
+        _state.update { it.copy(scratchpadExpanded = !it.scratchpadExpanded) }
+    }
+
+    fun addRoadmapComment(roadmapId: String, text: String, stepId: String? = null) {
+        if (text.isBlank()) return
+        val comment = RoadmapComment(
+            id = UUID.randomUUID().toString(),
+            author = "User",
+            text = text.trim(),
+            timestampMillis = System.currentTimeMillis(),
+            stepId = stepId,
+        )
+        _state.update { current ->
+            val updatedMessages = current.messages.map { msg ->
+                if (msg.roadmap?.id == roadmapId) {
+                    msg.copy(roadmap = msg.roadmap.copy(comments = msg.roadmap.comments + comment))
+                } else {
+                    msg
+                }
+            }
+            val updatedActive = if (current.activeRoadmap?.id == roadmapId) {
+                current.activeRoadmap.copy(comments = current.activeRoadmap.comments + comment)
+            } else {
+                current.activeRoadmap
+            }
+            current.copy(
+                messages = updatedMessages,
+                activeRoadmap = updatedActive,
+            )
+        }
+        persistMessages()
+    }
+
+    fun approveAndBuildRoadmap(roadmap: ActiveRoadmap, additionalInstructions: String? = null) {
+        val approved = roadmap.copy(isApproved = true)
+        _state.update { current ->
+            val updatedMessages = current.messages.map { msg ->
+                if (msg.roadmap?.id == roadmap.id) {
+                    msg.copy(roadmap = approved)
+                } else {
+                    msg
+                }
+            }
+            current.copy(
+                messages = updatedMessages,
+                activeRoadmap = approved,
+            )
+        }
+        persistMessages()
+
+        val prompt = buildString {
+            appendLine("<execution_mode name=\"UNIFIED_BUILD\">")
+            appendLine("The user has APPROVED the roadmap and requested to begin building.")
+            appendLine("Roadmap Title: ${roadmap.title}")
+            if (roadmap.summary.isNotBlank()) {
+                appendLine("Summary: ${roadmap.summary}")
+            }
+            appendLine("Approved Steps to execute:")
+            roadmap.steps.forEachIndexed { idx, step ->
+                appendLine("${idx + 1}. [ ] ${step.title}")
+                if (step.description.isNotBlank()) {
+                    appendLine("   Details: ${step.description}")
+                }
+                if (step.filesAffected.isNotEmpty()) {
+                    appendLine("   Files: ${step.filesAffected.joinToString(", ")}")
+                }
+            }
+            val allComments = roadmap.comments + (additionalInstructions?.takeIf(String::isNotBlank)?.let {
+                listOf(RoadmapComment(text = it))
+            } ?: emptyList())
+            if (allComments.isNotEmpty()) {
+                appendLine()
+                appendLine("User Guidance & Instructions to strictly follow:")
+                allComments.forEach { c ->
+                    appendLine("- [${c.author}]: ${c.text}")
+                }
+            }
+            appendLine()
+            appendLine("Start building now end-to-end. Implement code changes, build, verify, and complete all steps.")
+            appendLine("</execution_mode>")
+        }
+
+        sendPrompt(prompt)
+    }
+
+    private fun deriveScratchpadItems(
+        roadmap: ActiveRoadmap?,
+        liveProcess: List<ActivityItem>,
+        isRunning: Boolean,
+    ): List<ScratchpadItem> {
+        val items = mutableListOf<ScratchpadItem>()
+        if (roadmap != null && roadmap.steps.isNotEmpty()) {
+            roadmap.steps.forEach { step ->
+                val status = when (step.status) {
+                    StepStatus.COMPLETED -> TaskStatus.FINISHED
+                    StepStatus.IN_PROGRESS -> TaskStatus.RUNNING
+                    StepStatus.SKIPPED -> TaskStatus.FINISHED
+                    StepStatus.PENDING -> TaskStatus.PENDING
+                }
+                items.add(
+                    ScratchpadItem(
+                        id = step.id,
+                        title = step.title,
+                        status = status,
+                        detail = step.description,
+                    )
+                )
+            }
+        }
+        liveProcess.forEach { proc ->
+            if (proc.title.isNotBlank() && proc.title != "Think") {
+                val status = if (proc.isComplete) TaskStatus.FINISHED else TaskStatus.RUNNING
+                if (items.none { it.title.equals(proc.title, ignoreCase = true) }) {
+                    items.add(
+                        ScratchpadItem(
+                            id = UUID.randomUUID().toString(),
+                            title = proc.title,
+                            status = status,
+                            detail = proc.detail,
+                        )
+                    )
+                }
+            }
+        }
+        return items
+    }
+
     fun createChat() {
         val project = _state.value.activeProject ?: return
         if (_state.value.isRunning) return
@@ -2925,6 +3074,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 projectChats = chats,
                 activeChatId = chat.id,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
+                activeRoadmap = null,
+                scratchpadItems = emptyList(),
                 liveProcess = emptyList(),
                 liveThinking = false,
                 taskStartedAtMillis = null,
@@ -2942,10 +3093,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val chat = current.projectChats.firstOrNull { it.id == chatId } ?: return
         persistMessages()
         val saved = preferences.loadMessages(project.id, chat.id)
+        val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
+        val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
+        val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
         _state.update {
             it.copy(
                 activeChatId = chat.id,
-                messages = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) },
+                messages = msgs,
+                activeRoadmap = loadedRoadmap,
+                scratchpadItems = loadedScratchpad,
                 liveProcess = emptyList(),
                 liveThinking = false,
                 taskStartedAtMillis = null,
@@ -3288,14 +3444,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
         val mentionedPaths = resolveMentionedWorkspacePaths(prompt, project)
         updateActiveChatTitle(requestText)
+        val mode = _state.value.executionMode
+        val modeInstruction = when {
+            requestText.contains("<execution_mode") -> ""
+            mode == ExecutionMode.PLAN -> """
+<execution_mode name="PLAN">
+You are running in PLAN mode.
+Your objective: Formulate a comprehensive, architectural implementation plan and roadmap for the user's request.
+CRITICAL CONSTRAINTS FOR PLAN MODE:
+- DO NOT perform any file edits, modifications, creations, deletions, or write operations.
+- DO NOT execute commands that modify system state, files, or environment. Only read-only exploration commands (ls, cat, git status, etc.) or read-only tools are allowed.
+- Output your plan structured with a clear summary, architecture decisions, and an interactive roadmap under the header '### Implementation Roadmap'.
+- In the roadmap, format each task as a checklist item:
+1. [ ] Step title
+   - Description / Details
+   - Files affected: `path/to/file`
+2. [ ] Next step
+</execution_mode>
+""".trimIndent()
+            mode == ExecutionMode.BUILD -> """
+<execution_mode name="BUILD">
+You are running in BUILD mode.
+Your objective: Directly understand the user request, plan internally, and immediately begin implementing all required changes end-to-end.
+- Read relevant files, edit code, execute build/test commands, verify changes, and report progress.
+- Once finished, summarize what was accomplished with full verification details.
+</execution_mode>
+""".trimIndent()
+            mode == ExecutionMode.UNIFIED -> """
+<execution_mode name="UNIFIED">
+You are running in UNIFIED mode (Phase 1: Roadmap & Planning).
+Your objective: Analyze the request and workspace, formulate the plan, and provide an interactive roadmap for user review and approval before any implementation begins.
+CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
+- Do NOT make any modifications to code or files yet.
+- Inspect the codebase to understand requirements.
+- Present a clear explanation followed by '### Implementation Roadmap'.
+- List the steps as numbered checklist items:
+1. [ ] Step title
+   - Description: Brief explanation of what will be done
+   - Files: `path/to/file`
+- Conclude by asking the user to review the roadmap, add any comments/adjustments, or click 'Approve & Build' to proceed.
+</execution_mode>
+""".trimIndent()
+            else -> ""
+        }
         _state.update {
             val startedAt = System.currentTimeMillis()
+            val thinkItem = ActivityItem("Think", requestPlanningSummary(requestText, it.agentKind), false)
+            val initialScratchpad = deriveScratchpadItems(it.activeRoadmap, listOf(thinkItem), true)
             it.copy(
                 messages = it.messages + ChatMessage(fromUser = true, text = prompt.trim(), attachments = attachments),
                 pendingAttachments = emptyList(),
                 isRunning = true,
                 activity = listOf(ActivityItem("Understanding your request", "Preparing a safe plan", false)) + it.activity,
-                liveProcess = listOf(ActivityItem("Think", requestPlanningSummary(requestText, it.agentKind), false)),
+                liveProcess = listOf(thinkItem),
+                scratchpadItems = initialScratchpad,
                 liveThinking = true,
                 activeThinkingBlockId = null,
                 taskStartedAtMillis = startedAt,
@@ -3309,6 +3511,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val history = state.value.messages // includes all messages up to now
         val runtimePrompt = buildString {
             appendLine(requestText)
+            if (modeInstruction.isNotBlank()) {
+                appendLine()
+                appendLine(modeInstruction)
+            }
             if (mentionedPaths.isNotEmpty()) {
                 appendLine()
                 appendLine("<mentioned_files>")
@@ -3643,10 +3849,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 is RuntimeEvent.ToolStarted -> {
+                    val process = current.liveProcess.map { item ->
+                        if (!item.isComplete) item.copy(isComplete = true) else item
+                    }
+                    val toolItem = ActivityItem("Running ${event.toolName}", event.detail, false, isCommand = event.toolName == "Bash")
+                    val updatedProcess = process + toolItem
+                    val scratchpad = deriveScratchpadItems(current.activeRoadmap, updatedProcess, true)
                     val planned = current.copy(
-                        liveProcess = current.liveProcess.map { item ->
-                            if (!item.isComplete) item.copy(isComplete = true) else item
-                        },
+                        liveProcess = process,
+                        scratchpadItems = scratchpad,
                         liveThinking = false,
                         activeThinkingBlockId = null,
                         activity = listOf(
@@ -3655,7 +3866,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     appendWorkItem(
                         planned,
-                        ActivityItem("Running ${event.toolName}", event.detail, false, isCommand = event.toolName == "Bash"),
+                        toolItem,
                     )
                 }
                 is RuntimeEvent.RuntimeLog -> appendWorkItem(
@@ -3693,9 +3904,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             isCommand = event.toolName == "Bash",
                         )
                     }
+                    val scratchpad = deriveScratchpadItems(current.activeRoadmap, process, true)
                     current.copy(
                         activity = listOf(ActivityItem(event.summary, event.toolName)) + current.activity,
                         liveProcess = process,
+                        scratchpadItems = scratchpad,
                         liveThinking = false,
                         workSegmentStartedAtMillis = current.workSegmentStartedAtMillis ?: System.currentTimeMillis(),
                     )
@@ -3726,9 +3939,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     runtimeRecoveryStartedAtMillis = null
                     val segmentFinishedState = finishWorkSegment(current, finishedAt)
                     val stateWithResponse = ensureCompletionMessage(segmentFinishedState, totalDurationText)
-                    attachTaskDuration(stateWithResponse, finishedAt).copy(
+                    val messagesWithRoadmap = stateWithResponse.messages.map { msg ->
+                        if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank()) {
+                            val parsed = RoadmapParser.parseFromText(msg.text, stateWithResponse.executionMode)
+                            if (parsed != null) msg.copy(roadmap = parsed) else msg
+                        } else {
+                            msg
+                        }
+                    }
+                    val latestRoadmap = messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
+                    val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
+                    attachTaskDuration(stateWithResponse.copy(messages = messagesWithRoadmap), finishedAt).copy(
                         isRunning = false,
                         activeSessionId = null,
+                        activeRoadmap = latestRoadmap,
+                        scratchpadItems = scratchpad,
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully in $totalDurationText")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
                         taskFinishedAtMillis = finishedAt,
@@ -3741,6 +3966,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is RuntimeEvent.SessionFailed -> {
                     val finishedAt = System.currentTimeMillis()
                     runtimeRecoveryStartedAtMillis = null
+                    val scratchpad = deriveScratchpadItems(current.activeRoadmap, emptyList(), false)
                     attachTaskDuration(
                         finishWorkSegment(
                             appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
@@ -3751,6 +3977,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isRunning = false,
                         activeSessionId = null,
                         pendingApproval = null,
+                        scratchpadItems = scratchpad,
                         toastMessage = event.reason.takeIf { reason ->
                             reason.contains("user not found", true) ||
                                 reason.contains("API key", true) ||
