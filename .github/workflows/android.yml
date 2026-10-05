@@ -20,6 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift /usr/local/share/boost
+          sudo docker system prune -af --volumes || true
+          echo "=== Disk space after cleanup ==="
+          df -h
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
