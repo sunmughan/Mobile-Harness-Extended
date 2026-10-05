@@ -599,6 +599,7 @@ class DshRuntimeBridge(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
                     .setAction(RuntimeExecutionService.ACTION_PROGRESS)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, activeProjectSlug)
+                    .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "DSH")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, text),
             )
         }
@@ -617,7 +618,9 @@ class DshRuntimeBridge(
             context,
             android.content.Intent(context, RuntimeExecutionService::class.java)
                 .setAction(RuntimeExecutionService.ACTION_START)
-                .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName),
+                .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
+                .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "DSH")
+                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "DSH is working in $projectName"),
         )
     }
 
@@ -632,6 +635,7 @@ class DshRuntimeBridge(
                         else RuntimeExecutionService.ACTION_FAILED,
                     )
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
+                    .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "DSH")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
             )
         }.onFailure { error ->

@@ -321,7 +321,13 @@ class AntigravityRuntimeBridge(
                         assistantTextSeen = true
                         eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, event.value))
                     }
-                    is AntigravityParsedEvent.ToolStarted -> eventBus.emit(RuntimeEvent.ToolStarted(sessionId, event.name, event.detail))
+                    is AntigravityParsedEvent.ToolStarted -> {
+                        eventBus.emit(RuntimeEvent.ToolStarted(sessionId, event.name, event.detail))
+                        pushForegroundProgress(
+                            projectSlug,
+                            "Running ${event.name} · ${event.detail.replace(Regex("\\s+"), " ").trim().take(80).ifBlank { event.name }}",
+                        )
+                    }
                     is AntigravityParsedEvent.ToolCompleted -> eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, event.name, event.detail))
                     is AntigravityParsedEvent.Result -> {
                         event.conversationId?.let { saveConversationId(projectId, it) }
@@ -471,8 +477,22 @@ class AntigravityRuntimeBridge(
             context,
             android.content.Intent(context, RuntimeExecutionService::class.java)
                 .setAction(RuntimeExecutionService.ACTION_START)
-                .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName),
+                .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
+                .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
+                .putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Antigravity CLI is working in $projectName"),
         )
+    }
+
+    private fun pushForegroundProgress(projectName: String, detail: String) {
+        runCatching {
+            context.startService(
+                android.content.Intent(context, RuntimeExecutionService::class.java)
+                    .setAction(RuntimeExecutionService.ACTION_PROGRESS)
+                    .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
+                    .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
+                    .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
+            )
+        }
     }
 
     private fun finishForegroundRuntime(completed: Boolean, projectName: String, detail: String) {
@@ -483,6 +503,7 @@ class AntigravityRuntimeBridge(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
                     .setAction(if (completed) RuntimeExecutionService.ACTION_COMPLETE else RuntimeExecutionService.ACTION_FAILED)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
+                    .putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, "Antigravity CLI")
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
             )
         }.onFailure { context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java)) }

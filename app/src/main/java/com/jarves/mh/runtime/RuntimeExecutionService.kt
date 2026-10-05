@@ -17,6 +17,7 @@ class RuntimeExecutionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var projectName: String = "your project"
     private var notificationTitle: String = "Mobile Harness is working"
+    private var agentName: String = "Coding agent"
     private var canStop: Boolean = true
     private var taskRunning: Boolean = false
 
@@ -27,6 +28,7 @@ class RuntimeExecutionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.getStringExtra(EXTRA_PROJECT_NAME)?.takeIf(String::isNotBlank)?.let { projectName = it }
+        intent?.getStringExtra(EXTRA_AGENT_NAME)?.takeIf(String::isNotBlank)?.let { agentName = it }
         intent?.getStringExtra(EXTRA_TITLE)?.takeIf(String::isNotBlank)?.let { notificationTitle = it }
         if (intent?.hasExtra(EXTRA_CAN_STOP) == true) canStop = intent.getBooleanExtra(EXTRA_CAN_STOP, true)
         when (intent?.action ?: ACTION_START) {
@@ -41,7 +43,7 @@ class RuntimeExecutionService : Service() {
                 // Live step updates only matter while a task is actually running.
                 if (!taskRunning) return START_NOT_STICKY
                 val detail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
-                    ?: "Claude Code is working in $projectName"
+                    ?: "$agentName is working in $projectName"
                 getSystemService(android.app.NotificationManager::class.java).notify(
                     NotificationCoordinator.RUNNING_NOTIFICATION_ID,
                     NotificationCoordinator.running(this, notificationTitle, detail, canStop),
@@ -49,12 +51,12 @@ class RuntimeExecutionService : Service() {
             }
             ACTION_COMPLETE -> finishTask(
                 title = "Task completed",
-                detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Mobile Harness finished working in $projectName.",
+                detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "$agentName finished working in $projectName.",
                 failed = false,
             )
             ACTION_FAILED -> finishTask(
                 title = "Task needs attention",
-                detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Mobile Harness could not finish the task.",
+                detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "$agentName could not finish the task.",
                 failed = true,
             )
             ACTION_CANCELLED -> {
@@ -65,12 +67,14 @@ class RuntimeExecutionService : Service() {
             }
             else -> {
                 taskRunning = true
+                val startDetail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
+                    ?: "$agentName is working in $projectName"
                 startForeground(
                     NotificationCoordinator.RUNNING_NOTIFICATION_ID,
                     NotificationCoordinator.running(
                         context = this,
                         title = notificationTitle,
-                        detail = "Claude Code is working in $projectName",
+                        detail = startDetail,
                         canStop = canStop,
                     ),
                 )
@@ -115,6 +119,7 @@ class RuntimeExecutionService : Service() {
         const val ACTION_FAILED = "com.jarves.mh.FAIL_RUNTIME"
         const val ACTION_CANCELLED = "com.jarves.mh.CANCEL_RUNTIME"
         const val EXTRA_PROJECT_NAME = "project_name"
+        const val EXTRA_AGENT_NAME = "agent_name"
         const val EXTRA_DETAIL = "detail"
         const val EXTRA_TITLE = "title"
         const val EXTRA_CAN_STOP = "can_stop"

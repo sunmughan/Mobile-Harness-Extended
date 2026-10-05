@@ -3658,10 +3658,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is RuntimeEvent.ToolApproved -> appendWorkItem(current.copy(
                     pendingApproval = null,
                     activity = listOf(ActivityItem("Applying approved changes", "Editing project files", false)) + current.activity,
-                ), ActivityItem("Action approved", "Claude is continuing the task", false))
+                ), ActivityItem("Action approved", "${current.agentKind.title} is continuing the task", false))
                 is RuntimeEvent.ToolRejected -> appendWorkItem(current.copy(
                     pendingApproval = null,
-                ), ActivityItem("Action rejected", "Claude will continue without this action"))
+                ), ActivityItem("Action rejected", "${current.agentKind.title} will continue without this action"))
                 is RuntimeEvent.ToolCompleted -> {
                     val runningIndex = current.liveProcess.indexOfLast {
                         !it.isComplete && it.title == "Running ${event.toolName}"
@@ -3862,7 +3862,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val progressIntent = Intent(getApplication<Application>(), RuntimeExecutionService::class.java).apply {
                 action = RuntimeExecutionService.ACTION_PROGRESS
                 putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, request.project.slug)
-                putExtra(RuntimeExecutionService.EXTRA_DETAIL, "Reconnecting network… (${remainingSeconds}s remaining)")
+                putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, current.agentKind.title)
+                putExtra(RuntimeExecutionService.EXTRA_DETAIL, "${current.agentKind.title} reconnecting network… (${remainingSeconds}s remaining)")
             }
             getApplication<Application>().startService(progressIntent)
         }
