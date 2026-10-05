@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
@@ -156,6 +157,7 @@ fun SettingsScreen(
     onClearDebugUpdateManifestUrl: () -> Unit = {},
     onToggleAutoUpdateToolsAndSkills: (Boolean) -> Unit = {},
     onUpdateAllToolsAndSkills: () -> Unit = {},
+    onOpenPrivacyPolicy: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var expanded by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
@@ -503,13 +505,7 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PRIVACY_POLICY_URL)),
-                                )
-                            }
-                        }
+                        .clickable { onOpenPrivacyPolicy() }
                         .padding(vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -529,8 +525,8 @@ fun SettingsScreen(
                         )
                     }
                     Icon(
-                        Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = "Open privacy policy",
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "View privacy policy",
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

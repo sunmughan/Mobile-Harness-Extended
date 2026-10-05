@@ -2131,15 +2131,21 @@ private fun RootScreenHost(
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
+    var showPrivacyPolicy by rememberSaveable { mutableStateOf(false) }
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val terminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
     val isTerminalRunning by viewModel.isTerminalRunning.collectAsStateWithLifecycle()
     val terminalLiveOutput by viewModel.terminalLiveOutput.collectAsStateWithLifecycle()
     val terminalCurrentCommand by viewModel.terminalCurrentCommand.collectAsStateWithLifecycle()
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
+    if (showPrivacyPolicy) {
+        PrivacyPolicyScreen(
+            onBack = { showPrivacyPolicy = false },
+        )
+    } else {
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
             if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 RootScreen.entries.forEach { tab ->
                     NavigationBarItem(
@@ -2261,6 +2267,7 @@ private fun RootScreenHost(
                     onClearDebugUpdateManifestUrl = viewModel::clearDebugUpdateManifestUrl,
                     onToggleAutoUpdateToolsAndSkills = viewModel::toggleAutoUpdateToolsAndSkills,
                     onUpdateAllToolsAndSkills = { viewModel.autoUpdateToolsAndSkills(force = true) },
+                    onOpenPrivacyPolicy = { showPrivacyPolicy = true },
                 )
             }
         }
@@ -2285,6 +2292,7 @@ private fun RootScreenHost(
                 compactHeader = true,
             )
         }
+    }
     }
 }
 
