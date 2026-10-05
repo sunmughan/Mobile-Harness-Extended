@@ -653,6 +653,24 @@ class RuntimeInstaller(private val context: Context) {
         // Offline APKs already contain the verified Python/Android bundles. Do not
         // hit GitHub just to resolve an asset that is guaranteed to be embedded.
         if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            val manifestBundle = runCatching {
+                val manifest = context.assets.open("runtime/manifest.json").bufferedReader().use { JSONObject(it.readText()) }
+                val item = manifest.optJSONObject("bundles")?.optJSONObject(id) ?: manifest.optJSONObject(id)
+                if (item == null) null else RuntimeBundle(
+                    label = when (id) {
+                        "core" -> "Core"
+                        "python" -> "Python"
+                        "android" -> "Android"
+                        else -> id
+                    },
+                    fileName = item.getString("file"),
+                    sha256 = item.getString("sha256"),
+                    compressedBytes = item.optLong("sizeBytes", 0L),
+                )
+            }.getOrNull()
+            if (manifestBundle != null) {
+                return if (expectedVersion == null || manifestBundle.version == expectedVersion) manifestBundle else null
+            }
             val bundled = when (id) {
                 "python" -> PYTHON_BUNDLE
                 "android" -> ANDROID_BUNDLE
@@ -1151,11 +1169,9 @@ class RuntimeInstaller(private val context: Context) {
         val androidHome = File(rootfs, "root/android-sdk")
         val gradleHome = File(rootfs, "opt/gradle")
         val localMaven = File(rootfs, "root/maven/localMvnRepository")
-        if (marker.readTextOrNull() != ANDROID_TOOLS_VERSION ||
-            !File(androidHome, "platforms/android-36/android.jar").isFile ||
-            !File(androidHome, "build-tools/35.0.0/aapt2").isFile ||
-            !File(gradleHome, "gradle-8.14.3/bin/gradle").isFile ||
-            !localMaven.isDirectory) {
+        val expectedBundleVersion = bundleOverride?.version ?: ANDROID_TOOLS_VERSION
+        if (marker.readTextOrNull() != expectedBundleVersion ||
+            !hasAndroidToolchain(androidHome, gradleHome, localMaven)) {
             installRuntimeOverlay(
                 bundleOverride ?: ANDROID_BUNDLE,
                 "Installing the Android development tools",
@@ -1165,7 +1181,7 @@ class RuntimeInstaller(private val context: Context) {
             )
             makeAndroidToolsExecutable(androidHome, gradleHome)
             marker.parentFile?.mkdirs()
-            marker.writeText(ANDROID_TOOLS_VERSION)
+            marker.writeText(expectedBundleVersion)
         }
         // Keep this outside the download/install branch so app updates repair
         // existing Android toolchains without downloading the bundles again.
@@ -1325,16 +1341,55 @@ class RuntimeInstaller(private val context: Context) {
         }
     }
 
-    private fun makeAndroidToolsExecutable(androidHome: File, gradleHome: File) {
-        val buildTools = File(androidHome, "build-tools/35.0.0")
-        listOf("aapt", "aapt2", "aidl", "apksigner", "d8", "dexdump", "split-select", "zipalign")
-            .map { File(buildTools, it) }
-            .plus(File(gradleHome, "gradle-8.14.3/bin/gradle"))
-            .filter(File::isFile)
-            .forEach { Os.chmod(it.absolutePath, 0b111101101) }
+    private fun versionParts(value: String): List<Int> =
+        Regex("\\d+").findAll(value).map { it.value.toIntOrNull() ?: 0 }.toList()
+
+    private fun latestVersionedDirectory(parent: File, prefix: String, required: (File) -> Boolean): File? =
+        parent.listFiles { file -> file.isDirectory && file.name.startsWith(prefix) }
+            .orEmpty()
+            .filter(required)
+            .maxWithOrNull(Comparator { left, right ->
+                val l = versionParts(left.name.removePrefix(prefix))
+                val r = versionParts(right.name.removePrefix(prefix))
+                repeat(maxOf(l.size, r.size)) { index ->
+                    val c = (l.getOrElse(index) { 0 }).compareTo(r.getOrElse(index) { 0 })
+                    if (c != 0) return@Comparator c
+                }
+                left.name.compareTo(right.name)
+            })
+
+    private fun latestBuildToolsDir(androidHome: File): File? =
+        latestVersionedDirectory(File(androidHome, "build-tools"), "", { File(it, "aapt2").isFile })
+
+    private fun latestGradleDir(gradleHome: File): File? =
+        latestVersionedDirectory(gradleHome, "gradle-", { File(it, "bin/gradle").isFile })
+
+    private fun hasAndroidToolchain(
+        androidHome: File,
+        gradleHome: File,
+        localMaven: File,
+    ): Boolean {
+        val platformReady = File(androidHome, "platforms").listFiles { file ->
+            file.isDirectory && file.name.startsWith("android-") && File(file, "android.jar").isFile
+        }.orEmpty().isNotEmpty()
+        return platformReady &&
+            latestBuildToolsDir(androidHome) != null &&
+            latestGradleDir(gradleHome) != null &&
+            localMaven.isDirectory &&
+            localMaven.list().orEmpty().isNotEmpty()
     }
 
-    private fun writeAndroidGradleInitScript(runtimeRootfs: File) {
+    private fun makeAndroidToolsExecutable(androidHome: File, gradleHome: File) {
+        val buildTools = latestBuildToolsDir(androidHome)
+        val gradleDir = latestGradleDir(gradleHome)
+        val tools = buildTools?.let {
+            listOf("aapt", "aapt2", "aidl", "apksigner", "d8", "dexdump", "split-select", "zipalign")
+                .map { command -> File(it, command) }
+        }.orEmpty() + listOfNotNull(gradleDir?.let { File(it, "bin/gradle") })
+        tools.filter(File::isFile).forEach { Os.chmod(it.absolutePath, 0b111101101) }
+    }
+
+    private fun writeAndroidGradleInitScript(runtimeRootfs: File, aapt2GuestPath: String) {
         val script = File(runtimeRootfs, "root/.gradle/init.d/pocketdev-android.gradle")
         script.parentFile?.mkdirs()
         script.writeText(
@@ -1356,7 +1411,7 @@ class RuntimeInstaller(private val context: Context) {
             gradle.beforeProject { project ->
                 project.extensions.extraProperties.set(
                     'android.aapt2FromMavenOverride',
-                    '/root/android-sdk/build-tools/35.0.0/aapt2'
+                    '$aapt2GuestPath',
                 )
                 project.buildscript.repositories {
                     maven { url = pocketMaven }
@@ -1368,15 +1423,18 @@ class RuntimeInstaller(private val context: Context) {
 
     @Synchronized
     private fun writeAndroidGradleConfiguration(runtimeRootfs: File) {
-        val aapt2 = File(runtimeRootfs, ANDROID_AAPT2_HOST_PATH)
+        val androidHome = File(runtimeRootfs, "root/android-sdk")
+        val buildTools = latestBuildToolsDir(androidHome) ?: return
+        val aapt2 = File(buildTools, "aapt2")
         if (!aapt2.isFile) return
+        val aapt2GuestPath = "/root/android-sdk/build-tools/" + buildTools.name + "/aapt2"
 
-        writeAndroidGradleInitScript(runtimeRootfs)
+        writeAndroidGradleInitScript(runtimeRootfs, aapt2GuestPath)
         val gradleDir = File(runtimeRootfs, "root/.gradle").apply { mkdirs() }
         val properties = File(gradleDir, "gradle.properties")
         val propertyPattern = Regex("^\\s*${Regex.escape(ANDROID_AAPT2_PROPERTY)}\\s*[:=].*$")
         val existingLines = properties.readTextOrNull()?.lineSequence()?.toList().orEmpty()
-        val expectedLine = "$ANDROID_AAPT2_PROPERTY=$ANDROID_AAPT2_GUEST_PATH"
+        val expectedLine = "$ANDROID_AAPT2_PROPERTY=$aapt2GuestPath"
         val updatedLines = existingLines.filterNot { propertyPattern.matches(it) } + expectedLine
         if (existingLines == updatedLines) return
 
@@ -1412,11 +1470,12 @@ class RuntimeInstaller(private val context: Context) {
                 File(rootfs, "usr/local/bin/composer").isFile
         }
         if (stack != DevStack.ANDROID) return true
-        return File(rootfs, "root/.pocket-android-tools-version").readTextOrNull() == ANDROID_TOOLS_VERSION &&
-            File(rootfs, "root/android-sdk/platforms/android-36/android.jar").isFile &&
-            File(rootfs, "root/android-sdk/build-tools/35.0.0/aapt2").isFile &&
-            File(rootfs, "opt/gradle/gradle-8.14.3/bin/gradle").isFile &&
-            File(rootfs, "root/maven/localMvnRepository").let { it.isDirectory && !it.list().isNullOrEmpty() } &&
+        return File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.isNotBlank() == true &&
+            hasAndroidToolchain(
+                File(rootfs, "root/android-sdk"),
+                File(rootfs, "opt/gradle"),
+                File(rootfs, "root/maven/localMvnRepository"),
+            ) &&
             File(rootfs, "root/.gradle/init.d/pocketdev-android.gradle").isFile
     }
 
