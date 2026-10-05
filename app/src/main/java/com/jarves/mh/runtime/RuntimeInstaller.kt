@@ -372,8 +372,8 @@ class RuntimeInstaller(private val context: Context) {
             )
         }
         coreToolsMarker.readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { put("core", it.removePrefix("core-bundle-")) }
-        File(rootfs, "opt/pocket-android-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("android", ENV_ANDROID_VERSION) }
-        if (isStackInstalled(DevStack.PYTHON)) put("python", ENV_PYTHON_VERSION)
+        File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("android", it) }
+        File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("python", it) }
     }
 
     suspend fun latestEnvironmentVersions(): Map<String, String> = buildMap {
@@ -403,6 +403,7 @@ class RuntimeInstaller(private val context: Context) {
             DevStack.PYTHON -> {
                 installRuntimeOverlay(bundle, "Installing Python $expectedVersion", 0.05f, 0.95f, onProgress)
                 verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
+                File(rootfs, ".pocket-python-tools-version").writeText(expectedVersion)
             }
             DevStack.ANDROID -> installAndroidToolchain(runtime.proot, 0.05f, 0.95f, onProgress, bundle)
             else -> error("Unsupported environment stack: $id")
@@ -1078,6 +1079,7 @@ class RuntimeInstaller(private val context: Context) {
                         ),
                     )
                 }
+                if (verified) File(rootfs, ".pocket-python-tools-version").writeText(PYTHON_BUNDLE.version)
             }
             DevStack.ANDROID -> {
                 installAndroidToolchain(proot, from, to, onProgress)
@@ -1873,15 +1875,23 @@ class RuntimeInstaller(private val context: Context) {
             argv = args,
             environment = buildMap {
                 put("HOME", "/root")
-                val androidReady = File(rootfs, "root/.pocket-android-tools-version").readTextOrNull() == ANDROID_TOOLS_VERSION
+                val androidHome = File(rootfs, "root/android-sdk")
+                val gradleHome = File(rootfs, "opt/gradle")
+                val localMaven = File(rootfs, "root/maven/localMvnRepository")
+                val buildTools = latestBuildToolsDir(androidHome)
+                val gradleDir = latestGradleDir(gradleHome)
+                val androidReady = File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.isNotBlank() == true &&
+                    hasAndroidToolchain(androidHome, gradleHome, localMaven) &&
+                    buildTools != null && gradleDir != null
                 val basePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 if (androidReady) {
+                    val aapt2Path = "/root/android-sdk/build-tools/" + buildTools.name + "/aapt2"
                     put("ANDROID_HOME", "/root/android-sdk")
                     put("ANDROID_SDK_ROOT", "/root/android-sdk")
-                    put("GRADLE_HOME", "/opt/gradle/gradle-8.14.3")
+                    put("GRADLE_HOME", "/opt/gradle/" + gradleDir.name)
                     put("GRADLE_USER_HOME", "/root/.gradle")
-                    put("ORG_GRADLE_PROJECT_android.aapt2FromMavenOverride", "/root/android-sdk/build-tools/35.0.0/aapt2")
-                    put("PATH", "/opt/gradle/gradle-8.14.3/bin:/root/android-sdk/build-tools/35.0.0:/root/android-sdk/cmdline-tools/latest/bin:$basePath")
+                    put("ORG_GRADLE_PROJECT_android.aapt2FromMavenOverride", aapt2Path)
+                    put("PATH", "/opt/gradle/" + gradleDir.name + "/bin:/root/android-sdk/build-tools/" + buildTools.name + ":/root/android-sdk/cmdline-tools/latest/bin:$basePath")
                 } else {
                     put("PATH", basePath)
                 }
