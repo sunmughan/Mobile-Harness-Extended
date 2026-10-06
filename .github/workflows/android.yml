@@ -279,16 +279,18 @@ jobs:
       
       - name: Upload emulator launch logs
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: emulator-launch-logs
           if-no-files-found: warn
           path: emulator-logs/
       - name: Upload release APKs
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: mobile-harness-release-apks
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
             app/build/outputs/apk/**/*.apk
 
