@@ -321,6 +321,7 @@ fun SettingsScreen(
                                             DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
                                             DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
                                             DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
+                                            DevStack.BROWSER -> installedEnvVersions["browser"]?.let { "v$it" } ?: "v1.0"
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(4.dp),

@@ -269,6 +269,11 @@ enum class DevStack(
         "Websites and apps with PHP — classic sites and Laravel projects.",
         "php-cli, common extensions, and Composer",
     ),
+    BROWSER(
+        "Browser Automation (Chromium & Puppeteer)",
+        "Automated browser control, live preview inspection, and web interaction.",
+        "chromium-browser, puppeteer-core, and pocket-browser CLI",
+    ),
 }
 
 data class ToolRequest(

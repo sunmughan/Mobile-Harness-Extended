@@ -390,6 +390,10 @@ class RuntimeInstaller(private val context: Context) {
         val cppVer = File(rootfs, ".pocket-cpp-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
             ?: if (isStackInstalled(DevStack.CPP)) "10.2" else null
         cppVer?.let { put("cpp", it) }
+
+        val browserVer = File(rootfs, ".pocket-browser-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (isStackInstalled(DevStack.BROWSER)) "1.0" else null
+        browserVer?.let { put("browser", it) }
     }
 
     suspend fun latestEnvironmentVersions(): Map<String, String> = buildMap {
@@ -426,6 +430,12 @@ class RuntimeInstaller(private val context: Context) {
 
         // C/C++ GCC & build tools upstream
         put("cpp", "10.2")
+
+        // Chromium & Puppeteer upstream
+        runCatching {
+            val pkg = JSONObject(fetchText("https://registry.npmjs.org/puppeteer-core/latest"))
+            pkg.getString("version")
+        }.getOrNull()?.let { put("browser", it) } ?: put("browser", "1.0")
     }
 
     suspend fun installEnvironmentStack(
@@ -1099,6 +1109,26 @@ class RuntimeInstaller(private val context: Context) {
                 File(rootfs, ".pocket-php-tools-version").writeText(phpVer)
                 onProgress(RuntimeInstallProgress("PHP and Composer updated to latest ($phpVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
+            DevStack.BROWSER -> {
+                onProgress(RuntimeInstallProgress("Updating Chromium and Puppeteer tools", 0.1f))
+                aptInstall(
+                    runtime.proot,
+                    listOf("chromium-browser", "fonts-liberation", "fonts-noto-color-emoji"),
+                    "Updating Chromium browser packages",
+                    0.2f,
+                    onProgress,
+                )
+                onProgress(RuntimeInstallProgress("Updating Puppeteer automation core via npm", 0.6f))
+                runCatching {
+                    runGuest(runtime.proot, "npm install -g puppeteer-core@latest", 180_000L)
+                }
+                installPocketBrowserScript()
+                val puppetVer = runCatching {
+                    runGuest(runtime.proot, "node -e 'try { console.log(require(require(\"child_process\").execSync(\"npm root -g\").toString().trim() + \"/puppeteer-core/package.json\").version); } catch { console.log(\"latest\"); }'")
+                }.getOrNull()?.trim() ?: "latest"
+                File(rootfs, ".pocket-browser-tools-version").writeText(puppetVer)
+                onProgress(RuntimeInstallProgress("Browser automation tools updated (v$puppetVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
+            }
             DevStack.WEB -> error("Web tools are part of the core runtime")
         }
     }
@@ -1137,6 +1167,17 @@ class RuntimeInstaller(private val context: Context) {
                 removePath(File(rootfs, "usr/local/bin/composer"))
                 removePath(File(rootfs, "root/.cache/composer"))
                 removePath(File(rootfs, "root/.composer"))
+            }
+            DevStack.BROWSER -> {
+                runCatching { runGuest(runtime.proot, "npm uninstall -g puppeteer-core || true", 60_000L) }
+                aptRemove(
+                    runtime.proot,
+                    listOf("chromium-browser", "fonts-liberation", "fonts-noto-color-emoji"),
+                    0.45f,
+                    onProgress,
+                )
+                removePath(File(rootfs, "usr/local/bin/pocket-browser"))
+                removePath(File(rootfs, ".pocket-browser-tools-version"))
             }
         }
 
@@ -1292,6 +1333,32 @@ class RuntimeInstaller(private val context: Context) {
                 runCatching { installComposer(proot, from, onProgress) }
                 verifyGuest(proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
                 if (verified) File(rootfs, ".pocket-php-tools-version").writeText("8.4")
+            }
+            DevStack.BROWSER -> {
+                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    "Browser tools are not bundled in this offline APK; use the online APK to install Chromium and Puppeteer"
+                }
+                aptInstall(
+                    proot,
+                    listOf("chromium-browser", "fonts-liberation", "fonts-noto-color-emoji"),
+                    "Installing Chromium browser and fonts",
+                    from,
+                    onProgress,
+                )
+                onProgress(RuntimeInstallProgress("Installing Puppeteer automation core", (from + to) / 2f))
+                runCatching {
+                    runGuest(proot, "npm install -g puppeteer-core", 180_000L)
+                }
+                installPocketBrowserScript()
+                verifyGuest(
+                    proot,
+                    "chromium-browser --version || chromium --version || test -f /usr/local/bin/pocket-browser",
+                    "Chromium tools could not be verified",
+                )
+                val puppetVer = runCatching {
+                    runGuest(proot, "node -e 'try { console.log(require(require(\"child_process\").execSync(\"npm root -g\").toString().trim() + \"/puppeteer-core/package.json\").version); } catch { console.log(\"1.0\"); }'")
+                }.getOrNull()?.trim() ?: "1.0"
+                if (verified) File(rootfs, ".pocket-browser-tools-version").writeText(puppetVer)
             }
         }
         if (!verified) return
@@ -1725,6 +1792,11 @@ class RuntimeInstaller(private val context: Context) {
             File(rootfs, "usr/local/bin/composer").isFile ||
             File(rootfs, "usr/bin/composer").isFile ||
             File(rootfs, "usr/local/bin/php").exists()
+        DevStack.BROWSER -> guestExecutableFile("/usr/bin/chromium-browser") != null ||
+            guestExecutableFile("/usr/bin/chromium") != null ||
+            File(rootfs, "usr/bin/chromium-browser").exists() ||
+            File(rootfs, "usr/bin/chromium").exists() ||
+            File(rootfs, "usr/local/bin/pocket-browser").exists()
     }
 
     private fun readDevStackState(): MutableMap<String, Boolean> {
@@ -2228,6 +2300,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             target.writeText(settingsContent)
         }
         ensureWorkspaceTrust("/workspace")
+        runCatching { installPocketBrowserScript() }
     }
 
     private fun ensureWorkspaceTrust(workspacePath: String) {
@@ -2475,6 +2548,281 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+    fun installPocketBrowserScript() {
+        val target = File(rootfs, "usr/local/bin/pocket-browser")
+        target.parentFile?.mkdirs()
+        target.writeText(pocketBrowserScriptContent())
+        runCatching { Os.chmod(target.absolutePath, 0b111101101) }
+    }
+
+    private fun pocketBrowserScriptContent(): String = """#!/usr/bin/env node
+const http = require('http');
+const { spawn, execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const PORT = 9222;
+const PID_FILE = '/tmp/pocket-chromium.pid';
+
+function getPuppeteer() {
+  try {
+    return require('puppeteer-core');
+  } catch (e) {
+    try {
+      const globalRoot = execSync('npm root -g').toString().trim();
+      return require(path.join(globalRoot, 'puppeteer-core'));
+    } catch (err) {
+      console.error('Error: puppeteer-core is not installed. Run: npm install -g puppeteer-core');
+      process.exit(1);
+    }
+  }
+}
+
+function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${'$'}{port}/json/version`, (res) => {
+      resolve(res.statusCode === 200);
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(1500, () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+function findChromium() {
+  const candidates = [
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    'chromium-browser',
+    'chromium',
+    '/snap/bin/chromium'
+  ];
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return c;
+      const which = execSync(`which ${'$'}{c} 2>/dev/null`).toString().trim();
+      if (which) return which;
+    } catch (e) {}
+  }
+  return 'chromium-browser';
+}
+
+async function ensureChromium() {
+  const running = await isPortOpen(PORT);
+  if (running) return;
+
+  const bin = findChromium();
+  const args = [
+    '--headless',
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    `--remote-debugging-port=${'$'}{PORT}`,
+    '--remote-debugging-address=127.0.0.1',
+    '--window-size=1280,800',
+    '--disable-extensions',
+    'about:blank'
+  ];
+
+  const child = spawn(bin, args, {
+    detached: true,
+    stdio: 'ignore'
+  });
+  child.unref();
+
+  if (child.pid) {
+    try { fs.writeFileSync(PID_FILE, String(child.pid)); } catch (e) {}
+  }
+
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (await isPortOpen(PORT)) return;
+  }
+  throw new Error('Chromium failed to start on port ' + PORT);
+}
+
+async function getBrowserAndPage() {
+  await ensureChromium();
+  const puppeteer = getPuppeteer();
+  const browser = await puppeteer.connect({
+    browserURL: `http://127.0.0.1:${'$'}{PORT}`,
+    defaultViewport: { width: 1280, height: 800 }
+  });
+  const pages = await browser.pages();
+  const page = pages.length > 0 ? pages[0] : await browser.newPage();
+  return { browser, page };
+}
+
+async function main() {
+  const [,, cmd, ...args] = process.argv;
+
+  switch (cmd) {
+    case 'start':
+    case 'launch': {
+      await ensureChromium();
+      console.log(`Chromium running on http://127.0.0.1:${'$'}{PORT}`);
+      process.exit(0);
+      break;
+    }
+
+    case 'stop':
+    case 'close': {
+      try {
+        if (fs.existsSync(PID_FILE)) {
+          const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').trim(), 10);
+          if (pid) process.kill(pid);
+          fs.unlinkSync(PID_FILE);
+        }
+      } catch (e) {}
+      try { execSync('pkill -f "remote-debugging-port=9222" || true'); } catch (e) {}
+      console.log('Chromium stopped');
+      process.exit(0);
+      break;
+    }
+
+    case 'status': {
+      const running = await isPortOpen(PORT);
+      if (!running) {
+        console.log(JSON.stringify({ status: 'stopped', port: PORT }));
+      } else {
+        const { browser, page } = await getBrowserAndPage();
+        const url = page.url();
+        const title = await page.title();
+        console.log(JSON.stringify({ status: 'running', port: PORT, url, title }));
+        browser.disconnect();
+      }
+      process.exit(0);
+      break;
+    }
+
+    case 'open':
+    case 'goto': {
+      const url = args[0];
+      if (!url) {
+        console.error('Usage: pocket-browser open <url>');
+        process.exit(1);
+      }
+      const targetUrl = url.includes('://') ? url : 'http://' + url;
+      const { browser, page } = await getBrowserAndPage();
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const current = page.url();
+      const title = await page.title();
+      console.log(`Navigated to: ${'$'}{current} ("${'$'}{title}")`);
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'click': {
+      const selector = args[0];
+      if (!selector) {
+        console.error('Usage: pocket-browser click <selector>');
+        process.exit(1);
+      }
+      const { browser, page } = await getBrowserAndPage();
+      await page.waitForSelector(selector, { timeout: 10000 });
+      await page.click(selector);
+      console.log(`Clicked: ${'$'}{selector}`);
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'type':
+    case 'fill': {
+      const [selector, ...textParts] = args;
+      const text = textParts.join(' ');
+      if (!selector || text === undefined) {
+        console.error('Usage: pocket-browser type <selector> <text>');
+        process.exit(1);
+      }
+      const { browser, page } = await getBrowserAndPage();
+      await page.waitForSelector(selector, { timeout: 10000 });
+      await page.click(selector, { clickCount: 3 }).catch(() => {});
+      await page.type(selector, text);
+      console.log(`Typed into ${'$'}{selector}: "${'$'}{text}"`);
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'press': {
+      const key = args[0] || 'Enter';
+      const { browser, page } = await getBrowserAndPage();
+      await page.keyboard.press(key);
+      console.log(`Pressed key: ${'$'}{key}`);
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'screenshot': {
+      const outPath = args[0] || 'screenshot.png';
+      const absPath = path.resolve(process.cwd(), outPath);
+      const { browser, page } = await getBrowserAndPage();
+      await page.screenshot({ path: absPath, fullPage: false });
+      console.log(`Screenshot saved to: ${'$'}{absPath}`);
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'get-text':
+    case 'snapshot':
+    case 'content': {
+      const selector = args[0] || 'body';
+      const { browser, page } = await getBrowserAndPage();
+      const text = await page.${'$'}${'$'}eval(selector, el => el.innerText || el.textContent).catch(async () => {
+        return await page.content();
+      });
+      console.log(text ? text.trim() : '');
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'eval': {
+      const code = args.join(' ');
+      if (!code) {
+        console.error('Usage: pocket-browser eval <code>');
+        process.exit(1);
+      }
+      const { browser, page } = await getBrowserAndPage();
+      const result = await page.evaluate(code);
+      console.log(JSON.stringify(result, null, 2));
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    default:
+      console.log(`PocketBrowser CLI - Automated Chromium & Puppeteer control
+
+Commands:
+  start                     Start headless Chromium on port ${'$'}{PORT}
+  stop                      Stop Chromium process
+  status                    Show active page URL, title, and port
+  open <url>                Navigate to URL
+  click <selector>          Click element by CSS selector
+  type <selector> <text>    Type text into input element
+  press <key>               Press keyboard key (e.g. Enter, Tab)
+  screenshot [path]         Capture viewport screenshot to file
+  get-text [selector]       Extract text content from selector
+  eval <code>               Execute JavaScript expression in page
+`);
+      process.exit(0);
+  }
+}
+
+main().catch((err) => {
+  console.error('PocketBrowser error:', err.message || err);
+  process.exit(1);
+});
+""".trimIndent() + "\n"
 
     private fun File.readTextOrNull(): String? = runCatching { readText().trim() }.getOrNull()
 

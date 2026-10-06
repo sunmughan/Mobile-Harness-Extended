@@ -841,6 +841,11 @@ private fun getDevStackVisuals(stack: DevStack): DevStackVisuals = when (stack) 
         accentColor = Color(0xFF818CF8),
         tag = "php-cli + Composer",
     )
+    DevStack.BROWSER -> DevStackVisuals(
+        icon = Icons.Default.Language,
+        accentColor = Color(0xFF60A5FA),
+        tag = "Chromium + Puppeteer",
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1324,6 +1329,7 @@ private fun DevStackChoiceRow(
         DevStack.ANDROID -> "Java and Kotlin build tools"
         DevStack.CPP -> "Native apps and command-line tools"
         DevStack.PHP -> "PHP sites and Laravel projects"
+        DevStack.BROWSER -> "Chromium & Puppeteer automation"
     }
 
     Row(
@@ -5954,18 +5960,48 @@ private fun DiffLineRow(line: DiffLine) {
     )
 }
 
+private enum class PreviewMode(val label: String, val icon: ImageVector) {
+    WEB_SERVER("Web Server", Icons.Default.Language),
+    AUTOMATED_BROWSER("Automated Chromium", Icons.Default.SmartToy),
+}
+
 @Composable
 private fun PreviewTab(ready: Boolean, url: String?) {
-    var address by rememberSaveable(url) { mutableStateOf(if (ready) url.orEmpty() else "") }
-    var activeUrl by rememberSaveable(url) { mutableStateOf(if (ready) url else null) }
+    var previewMode by rememberSaveable { mutableStateOf(PreviewMode.WEB_SERVER) }
+    var address by rememberSaveable(url, previewMode) {
+        mutableStateOf(
+            if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
+                if (ready && !url.isNullOrBlank()) url else "http://127.0.0.1:9222"
+            } else {
+                if (ready) url.orEmpty() else ""
+            }
+        )
+    }
+    var activeUrl by rememberSaveable(url, previewMode) {
+        mutableStateOf(
+            if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
+                normalizeAutomatedBrowserUrl(if (ready && !url.isNullOrBlank()) url else "http://127.0.0.1:9222")
+            } else {
+                if (ready) url else null
+            }
+        )
+    }
     var addressError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
 
     val navigate = {
-        val normalized = normalizePreviewUrl(address)
+        val normalized = if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
+            normalizeAutomatedBrowserUrl(address)
+        } else {
+            normalizePreviewUrl(address)
+        }
         if (normalized == null) {
-            addressError = "Use a local URL such as localhost:3000"
+            addressError = if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
+                "Enter a valid URL or host"
+            } else {
+                "Use a local URL such as localhost:3000"
+            }
         } else {
             addressError = null
             address = normalized
@@ -5975,7 +6011,12 @@ private fun PreviewTab(ready: Boolean, url: String?) {
 
     LaunchedEffect(ready, url) {
         if (ready && !url.isNullOrBlank() && activeUrl == null) {
-            normalizePreviewUrl(url)?.let {
+            val normalized = if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
+                normalizeAutomatedBrowserUrl(url)
+            } else {
+                normalizePreviewUrl(url)
+            }
+            normalized?.let {
                 address = it
                 activeUrl = it
             }
@@ -5988,6 +6029,70 @@ private fun PreviewTab(ready: Boolean, url: String?) {
             tonalElevation = 1.dp,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                // Dual-mode switcher
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PreviewMode.entries.forEach { mode ->
+                        val selected = previewMode == mode
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                1.dp,
+                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            ),
+                            modifier = Modifier.clickable {
+                                previewMode = mode
+                                addressError = null
+                                if (mode == PreviewMode.AUTOMATED_BROWSER && (address.isBlank() || address.contains(":3000") || address.contains(":8080"))) {
+                                    address = "http://127.0.0.1:9222"
+                                    activeUrl = "http://127.0.0.1:9222"
+                                } else if (mode == PreviewMode.WEB_SERVER && address == "http://127.0.0.1:9222") {
+                                    address = if (ready && !url.isNullOrBlank()) url else ""
+                                    activeUrl = if (ready) url else null
+                                }
+                            },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                Icon(
+                                    mode.icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(13.dp),
+                                    tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    mode.label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
+                        Spacer(Modifier.weight(1f))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = PocketGreen.copy(alpha = 0.15f),
+                        ) {
+                            Text(
+                                "Port 9222 CDP",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PocketGreen,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            )
+                        }
+                    }
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = address,
@@ -5997,8 +6102,8 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        label = { Text("Preview URL") },
-                        placeholder = { Text("localhost:3000") },
+                        label = { Text(if (previewMode == PreviewMode.AUTOMATED_BROWSER) "Automated Browser URL" else "Preview URL") },
+                        placeholder = { Text(if (previewMode == PreviewMode.AUTOMATED_BROWSER) "https://... or 127.0.0.1:9222" else "localhost:3000") },
                         leadingIcon = {
                             Box(
                                 Modifier.size(8.dp).background(
@@ -6040,7 +6145,19 @@ private fun PreviewTab(ready: Boolean, url: String?) {
         }
         val targetUrl = activeUrl
         if (targetUrl == null) {
-            EmptyState(Icons.Default.PlayArrow, "Preview not running", "Enter a localhost URL above, or start a local web server in the project Terminal.")
+            if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
+                EmptyState(
+                    Icons.Default.SmartToy,
+                    "Automated Chromium Browser",
+                    "Give instructions in Chat (e.g. 'pocket-browser open https://...') or enter a URL above to inspect and control web automation live.",
+                )
+            } else {
+                EmptyState(
+                    Icons.Default.PlayArrow,
+                    "Preview not running",
+                    "Enter a localhost URL above, or start a local web server in the project Terminal.",
+                )
+            }
         } else {
             AndroidView(
                 factory = { context ->
@@ -6048,6 +6165,10 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        settings.allowFileAccess = true
+                        settings.allowContentAccess = true
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 loading = newProgress < 100
@@ -6056,7 +6177,7 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val target = request?.url ?: return true
-                                if (!target.isLoopbackPreviewUrl()) {
+                                if (previewMode != PreviewMode.AUTOMATED_BROWSER && !target.isLoopbackPreviewUrl()) {
                                     addressError = "External navigation is blocked in project preview"
                                     return true
                                 }
@@ -6066,6 +6187,7 @@ private fun PreviewTab(ready: Boolean, url: String?) {
 
                             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                                 val target = request?.url ?: return blockedPreviewResponse()
+                                if (previewMode == PreviewMode.AUTOMATED_BROWSER) return null
                                 return if (target.isLoopbackPreviewUrl()) null else blockedPreviewResponse()
                             }
                         }
@@ -6098,6 +6220,23 @@ private fun normalizePreviewUrl(input: String): String? {
     } else {
         parsed.toString()
     }
+}
+
+private fun normalizeAutomatedBrowserUrl(input: String): String? {
+    val raw = input.trim()
+    if (raw.isBlank()) return "http://127.0.0.1:9222"
+    val withScheme = if ("://" in raw) raw else "https://$raw"
+    val parsed = runCatching { Uri.parse(withScheme) }.getOrNull() ?: return null
+    if (parsed.host.isNullOrBlank()) return null
+    if (parsed.host == "0.0.0.0" || parsed.host == "localhost") {
+        return parsed.buildUpon().encodedAuthority(
+            buildString {
+                append("127.0.0.1")
+                if (parsed.port >= 0) append(":${parsed.port}")
+            },
+        ).build().toString()
+    }
+    return parsed.toString()
 }
 
 private fun Uri.isLoopbackPreviewUrl(): Boolean =

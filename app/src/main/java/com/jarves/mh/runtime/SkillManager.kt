@@ -302,7 +302,58 @@ class SkillManager(private val context: Context) {
         return "https://github.com/" + segments[0] + "/" + segments[1].removeSuffix(".git")
     }
 
+    fun ensureDefaultSkills() {
+        val browserDir = File(root, "browser-automation")
+        val skillFile = File(browserDir, "SKILL.md")
+        if (!skillFile.isFile) {
+            browserDir.mkdirs()
+            skillFile.writeText(
+                """---
+name: browser-automation
+description: Control Chromium via Puppeteer to browse websites, fill forms, click buttons, take screenshots, inspect elements, and automate web tasks.
+---
+
+# Browser Automation Skill
+
+Use `pocket-browser` CLI to automate Chromium and Puppeteer on port 9222.
+The live browser viewport is displayed in real-time in the project's Preview tab.
+
+## Commands
+
+- `pocket-browser start`: Start headless Chromium daemon on port 9222.
+- `pocket-browser open <url>`: Navigate to any website (e.g. `pocket-browser open "https://github.com"`).
+- `pocket-browser click <selector>`: Click an element by CSS selector.
+- `pocket-browser type <selector> <text>`: Type text into an input field or textarea.
+- `pocket-browser press <key>`: Press a key like `Enter`, `Tab`, `Escape`.
+- `pocket-browser screenshot [path]`: Capture a screenshot of the active page.
+- `pocket-browser get-text [selector]`: Extract inner text from elements for AI analysis.
+- `pocket-browser eval "<code>"`: Evaluate JavaScript expression in the page context.
+- `pocket-browser status`: Check active URL, title, and connection state.
+- `pocket-browser stop`: Terminate Chromium.
+""".trimIndent() + "\n",
+            )
+            val current = if (registryFile.isFile) {
+                runCatching {
+                    val array = JSONArray(registryFile.readText())
+                    (0 until array.length()).map { array.getJSONObject(it) }
+                }.getOrDefault(emptyList())
+            } else emptyList()
+            if (current.none { it.optString("name") == "browser-automation" }) {
+                val array = JSONArray(current)
+                array.put(JSONObject().apply {
+                    put("name", "browser-automation")
+                    put("description", "Control Chromium via Puppeteer to browse websites, fill forms, click buttons, take screenshots, inspect elements, and automate web tasks.")
+                    put("source", "built-in")
+                    put("installedAtMillis", System.currentTimeMillis())
+                    put("path", browserDir.absolutePath)
+                })
+                registryFile.writeText(array.toString())
+            }
+        }
+    }
+
     private fun readRegistry(): List<JSONObject> {
+        ensureDefaultSkills()
         if (!registryFile.isFile) return emptyList()
         return runCatching {
             val array = JSONArray(registryFile.readText())
