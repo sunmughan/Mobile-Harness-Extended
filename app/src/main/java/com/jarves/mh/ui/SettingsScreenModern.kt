@@ -161,6 +161,10 @@ fun SettingsScreen(
     onOpenPrivacyPolicy: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val runtimeInstaller = remember { RuntimeInstaller(context) }
+    val installedEnvVersions = remember(state.installedDevStacks) {
+        runCatching { runtimeInstaller.installedEnvironmentVersions() }.getOrDefault(emptyMap())
+    }
     var expanded by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
     var terminalCleared by remember { mutableStateOf(false) }
     var showReliabilityHelp by rememberSaveable { mutableStateOf(false) }
@@ -313,10 +317,10 @@ fun SettingsScreen(
                                     if (installed) {
                                         val versionBadge = when (stack) {
                                             DevStack.WEB -> "v24"
-                                            DevStack.PYTHON -> "v2026.09.2"
-                                            DevStack.ANDROID -> "v2026.09.1"
-                                            DevStack.CPP -> "v10.2"
-                                            DevStack.PHP -> "v8.4"
+                                            DevStack.PYTHON -> installedEnvVersions["python"]?.let { "v$it" } ?: "v2026.09.2"
+                                            DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
+                                            DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
+                                            DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(4.dp),

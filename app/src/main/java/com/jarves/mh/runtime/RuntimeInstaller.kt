@@ -398,8 +398,34 @@ class RuntimeInstaller(private val context: Context) {
         runCatching { JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version") }
             .getOrNull()?.let { put("deepseek", it) }
         runCatching { fetchAgyManifest().getString("version") }.getOrNull()?.let { put("antigravity", it) }
+        runCatching { latestRuntimeBundle("core")?.version }.getOrNull()?.let { put("core", it) }
         runCatching { latestRuntimeBundle("python")?.version }.getOrNull()?.let { put("python", it) }
         runCatching { latestRuntimeBundle("android")?.version }.getOrNull()?.let { put("android", it) }
+
+        // Live official PyPI API for Python pip
+        runCatching {
+            val pypi = JSONObject(fetchText("https://pypi.org/pypi/pip/json"))
+            val pipVer = pypi.getJSONObject("info").getString("version")
+            val pyBase = get("python") ?: PYTHON_BUNDLE.version
+            put("python", "$pyBase (pip $pipVer)")
+        }
+
+        // Live official Composer version from getcomposer.org
+        runCatching {
+            val composerJson = JSONObject(fetchText("https://getcomposer.org/versions"))
+            val stableArray = composerJson.optJSONArray("stable")
+            val composerVer = stableArray?.optJSONObject(0)?.optString("version")
+            if (composerVer != null) {
+                put("php", "8.4 (Composer $composerVer)")
+            } else {
+                put("php", "8.4")
+            }
+        }.onFailure {
+            put("php", "8.4")
+        }
+
+        // C/C++ GCC & build tools upstream
+        put("cpp", "10.2")
     }
 
     suspend fun installEnvironmentStack(
@@ -410,37 +436,57 @@ class RuntimeInstaller(private val context: Context) {
         val runtime = installedRuntime()
         when (id) {
             "python" -> {
-                val bundle = latestRuntimeBundle(id, expectedVersion)
-                    ?: error("No verified runtime package is published for $id $expectedVersion")
-                installRuntimeOverlay(bundle, "Installing Python $expectedVersion", 0.05f, 0.95f, onProgress)
+                val cleanExpected = expectedVersion.substringBefore(" ").trim()
+                val bundle = latestRuntimeBundle(id, cleanExpected)
+                    ?: latestRuntimeBundle(id)
+                val currentVer = File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.trim()
+                if (bundle != null && currentVer?.substringBefore(" ")?.trim() != cleanExpected) {
+                    installRuntimeOverlay(bundle, "Installing Python $cleanExpected", 0.05f, 0.65f, onProgress)
+                }
+                onProgress(RuntimeInstallProgress("Upgrading pip, setuptools, and wheel from official PyPI", 0.70f))
+                runCatching {
+                    runGuest(runtime.proot, "python3 -m pip install --upgrade --no-warn-script-location pip setuptools wheel", 120_000L)
+                }
                 verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
-                File(rootfs, ".pocket-python-tools-version").writeText(expectedVersion)
+                val pipVer = runCatching {
+                    runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
+                }.getOrNull()
+                val finalVersion = if (pipVer != null) "$cleanExpected (pip $pipVer)" else expectedVersion
+                File(rootfs, ".pocket-python-tools-version").writeText(finalVersion)
                 writeDevStackState(readDevStackState().apply { put(DevStack.PYTHON.name, true) })
-                onProgress(RuntimeInstallProgress("Python $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+                onProgress(RuntimeInstallProgress("Python tools are ready ($finalVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             "android" -> {
-                val bundle = latestRuntimeBundle(id, expectedVersion)
+                val cleanExpected = expectedVersion.substringBefore(" ").trim()
+                val bundle = latestRuntimeBundle(id, cleanExpected)
+                    ?: latestRuntimeBundle(id)
                     ?: error("No verified runtime package is published for $id $expectedVersion")
                 installAndroidToolchain(runtime.proot, 0.05f, 0.95f, onProgress, bundle)
+                File(rootfs, "root/.pocket-android-tools-version").writeText(cleanExpected)
                 writeDevStackState(readDevStackState().apply { put(DevStack.ANDROID.name, true) })
-                onProgress(RuntimeInstallProgress("Android $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+                onProgress(RuntimeInstallProgress("Android $cleanExpected is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             "php" -> {
                 updateStack(DevStack.PHP, onProgress)
-                File(rootfs, ".pocket-php-tools-version").writeText(expectedVersion)
                 writeDevStackState(readDevStackState().apply { put(DevStack.PHP.name, true) })
-                onProgress(RuntimeInstallProgress("PHP $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+                val recordedVer = File(rootfs, ".pocket-php-tools-version").readTextOrNull()?.trim() ?: expectedVersion
+                onProgress(RuntimeInstallProgress("PHP $recordedVer is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             "cpp" -> {
                 updateStack(DevStack.CPP, onProgress)
-                File(rootfs, ".pocket-cpp-tools-version").writeText(expectedVersion)
                 writeDevStackState(readDevStackState().apply { put(DevStack.CPP.name, true) })
-                onProgress(RuntimeInstallProgress("C/C++ $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+                val recordedVer = File(rootfs, ".pocket-cpp-tools-version").readTextOrNull()?.trim() ?: expectedVersion
+                onProgress(RuntimeInstallProgress("C/C++ $recordedVer is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             "core" -> {
+                onProgress(RuntimeInstallProgress("Updating core packages and Node tooling", 0.1f))
                 runSystemMaintenance(runtime.proot, onProgress)
-                coreToolsMarker.writeText("core-bundle-$expectedVersion")
-                onProgress(RuntimeInstallProgress("Core runtime $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+                runCatching {
+                    runGuest(runtime.proot, "npm install -g npm@latest || true", 120_000L)
+                }
+                val cleanExpected = expectedVersion.substringBefore(" ").trim()
+                coreToolsMarker.writeText("core-bundle-$cleanExpected")
+                onProgress(RuntimeInstallProgress("Core runtime $cleanExpected is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             else -> error("Unsupported environment stack: $id")
         }
@@ -708,8 +754,10 @@ class RuntimeInstaller(private val context: Context) {
             else -> null
         }
 
+        val cleanExpected = expectedVersion?.substringBefore(" ")?.trim()
+
         if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            return if (expectedVersion == null || fallbackBundle?.version == expectedVersion) fallbackBundle else null
+            return if (cleanExpected == null || fallbackBundle?.version == cleanExpected) fallbackBundle else null
         }
 
         val prefix = when (id) {
@@ -742,8 +790,8 @@ class RuntimeInstaller(private val context: Context) {
                     }
                 }
             }
-            val selected = if (expectedVersion != null) {
-                assets.firstOrNull { it.version == expectedVersion }
+            val selected = if (cleanExpected != null) {
+                assets.firstOrNull { it.version == cleanExpected }
             } else {
                 assets.maxWithOrNull(Comparator { left, right -> compareVersions(left.version, right.version) })
             }
@@ -762,7 +810,7 @@ class RuntimeInstaller(private val context: Context) {
             }
         }
 
-        return if (expectedVersion == null || fallbackBundle?.version == expectedVersion) fallbackBundle else null
+        return if (cleanExpected == null || fallbackBundle?.version == cleanExpected) fallbackBundle else null
     }
 
     private fun compareVersions(left: String, right: String): Int {
@@ -957,38 +1005,56 @@ class RuntimeInstaller(private val context: Context) {
         val runtime = installedRuntime()
         when (stack) {
             DevStack.PYTHON -> {
+                onProgress(RuntimeInstallProgress("Checking and updating Python environment", 0.1f))
                 val targetVersion = latestRuntimeBundle("python")?.version ?: ENV_PYTHON_VERSION
                 val currentVer = File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.trim()
-                if (currentVer != null && currentVer == targetVersion) {
-                    onProgress(RuntimeInstallProgress("Python tools are up to date ($targetVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
-                } else {
-                    installEnvironmentStack("python", targetVersion, onProgress)
+                val currentClean = currentVer?.substringBefore(" ")?.trim()
+                if (currentClean != targetVersion) {
+                    val bundle = latestRuntimeBundle("python", targetVersion)
+                    if (bundle != null) {
+                        installRuntimeOverlay(bundle, "Installing Python runtime", 0.1f, 0.6f, onProgress)
+                    }
                 }
+                onProgress(RuntimeInstallProgress("Updating pip, setuptools, and wheel from official PyPI", 0.65f))
+                runCatching {
+                    runGuest(runtime.proot, "python3 -m pip install --upgrade --no-warn-script-location pip setuptools wheel", 120_000L)
+                }
+                verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
+                val pipVer = runCatching {
+                    runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
+                }.getOrNull()
+                val finalVer = if (pipVer != null) "$targetVersion (pip $pipVer)" else targetVersion
+                File(rootfs, ".pocket-python-tools-version").writeText(finalVer)
+                onProgress(RuntimeInstallProgress("Python tools updated ($finalVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.ANDROID -> {
                 val targetVersion = latestRuntimeBundle("android")?.version ?: ENV_ANDROID_VERSION
                 val currentVer = File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.trim()
-                if (currentVer != null && currentVer == targetVersion) {
-                    onProgress(RuntimeInstallProgress("Android tools are up to date ($targetVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
-                } else {
+                val currentClean = currentVer?.substringBefore(" ")?.trim()
+                if (currentClean != targetVersion) {
                     installEnvironmentStack("android", targetVersion, onProgress)
+                } else {
+                    onProgress(RuntimeInstallProgress("Android tools are up to date ($targetVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
                 }
             }
             DevStack.CPP -> {
-                onProgress(RuntimeInstallProgress("Updating C/C++ compilers and build tools", 0.1f))
+                onProgress(RuntimeInstallProgress("Updating C/C++ compilers and build tools from Ubuntu repositories", 0.1f))
                 aptInstall(
                     runtime.proot,
-                    listOf("build-essential", "cmake", "gdb"),
+                    listOf("build-essential", "cmake", "gdb", "gcc", "g++", "make"),
                     "Updating C/C++ compilers and build tools",
                     0.2f,
                     onProgress,
                 )
                 verifyGuest(runtime.proot, "gcc --version && g++ --version && make --version && cmake --version", "C/C++ tools could not be verified")
-                File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
-                onProgress(RuntimeInstallProgress("C/C++ tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
+                val gccVer = runCatching {
+                    runGuest(runtime.proot, "gcc -dumpversion")
+                }.getOrNull()?.takeIf { it.isNotBlank() } ?: "10.2"
+                File(rootfs, ".pocket-cpp-tools-version").writeText(gccVer)
+                onProgress(RuntimeInstallProgress("C/C++ tools updated (GCC $gccVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.PHP -> {
-                onProgress(RuntimeInstallProgress("Updating PHP environment", 0.1f))
+                onProgress(RuntimeInstallProgress("Updating PHP environment from official repositories", 0.1f))
                 runCatching { preparePhpRepository(runtime.proot, onProgress) }.onFailure {
                     File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
                 }
@@ -1020,10 +1086,18 @@ class RuntimeInstaller(private val context: Context) {
                 } else if (installResult.isFailure) {
                     throw installResult.exceptionOrNull() ?: IllegalStateException("Could not update PHP")
                 }
-                runCatching { installComposer(runtime.proot, 0.75f, onProgress, force = true) }
+                runCatching { installComposer(runtime.proot, 0.70f, onProgress, force = true) }
+                onProgress(RuntimeInstallProgress("Self-updating Composer to official latest release", 0.85f))
+                runCatching {
+                    runGuest(runtime.proot, "composer self-update --2 --no-interaction || true", 120_000L)
+                }
                 verifyGuest(runtime.proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
-                File(rootfs, ".pocket-php-tools-version").writeText("8.4")
-                onProgress(RuntimeInstallProgress("PHP tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
+                val composerVer = runCatching {
+                    runGuest(runtime.proot, "composer --version").split(" ").getOrNull(2)
+                }.getOrNull()
+                val phpVer = if (composerVer != null) "8.4 (Composer $composerVer)" else "8.4"
+                File(rootfs, ".pocket-php-tools-version").writeText(phpVer)
+                onProgress(RuntimeInstallProgress("PHP and Composer updated to latest ($phpVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.WEB -> error("Web tools are part of the core runtime")
         }
@@ -1914,6 +1988,28 @@ class RuntimeInstaller(private val context: Context) {
             .orEmpty()
             .trim()
         check(exit == 0) { actionableProcessError(output, failureMessage) }
+    }
+
+    private suspend fun runGuest(proot: File, command: String, timeoutMs: Long = 60_000L): String {
+        val proc = process(
+            proot = proot,
+            rootfs = rootfs,
+            workspace = File(rootfs, "root"),
+            environment = emptyMap(),
+            guestCommand = listOf("/usr/bin/env", "bash", "-lc", command),
+        )
+        try {
+            withTimeout(timeoutMs) {
+                while (proc.isAlive) delay(50)
+            }
+        } finally {
+            if (proc.isAlive) proc.destroy()
+        }
+        proc.waitFor()
+        return (proc as? NativeSpawnProcess)?.outputFile
+            ?.let(::readProcessOutputSafely)
+            .orEmpty()
+            .trim()
     }
 
     /**

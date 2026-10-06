@@ -2,8 +2,10 @@ package com.jarves.mh.ui
 
 import android.Manifest
 import android.app.ActivityManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.Context
+import android.speech.RecognizerIntent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
@@ -108,6 +110,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.BatterySaver
@@ -4881,6 +4884,56 @@ private fun ChatTab(
         val token = nextPrompt.substringAfterLast(' ').substringAfterLast('\n')
         mentionQuery = if (token.startsWith("@") && token.length <= 160) token.drop(1) else null
     }
+
+    val context = LocalContext.current
+
+    val speechRecognizerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                prompt = if (prompt.isBlank()) spokenText else "$prompt $spokenText"
+                updateMentionQuery(prompt)
+            }
+        }
+    }
+
+    val recordAudioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { isGranted ->
+        if (isGranted) {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to PocketDev…")
+            }
+            try {
+                speechRecognizerLauncher.launch(intent)
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(context, "Voice recognition not supported on this device", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission is required for voice input", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val onStartVoiceInput = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+        ) {
+            recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to PocketDev…")
+            }
+            try {
+                speechRecognizerLauncher.launch(intent)
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(context, "Voice recognition not supported on this device", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     // True while the newest item (message, live panel, or approval card) is on screen.
     val readerAtBottom by remember {
         derivedStateOf {
@@ -5125,48 +5178,62 @@ private fun ChatTab(
                             .padding(horizontal = 6.dp, vertical = 4.dp),
                         verticalAlignment = if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically,
                     ) {
-                        IconButton(
-                            onClick = onAttach,
-                            enabled = pendingAttachments.size < 5,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically),
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            modifier = Modifier.align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically),
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = "Attach files",
-                                modifier = Modifier.size(20.dp),
-                                tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { showWorkspaceControls = !showWorkspaceControls },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically),
-                        ) {
-                            val rotation by animateFloatAsState(
-                                targetValue = if (showWorkspaceControls) 180f else 0f,
-                                label = "workspace_controls_rotation",
-                            )
-                            Box(contentAlignment = Alignment.Center) {
+                            IconButton(
+                                onClick = onAttach,
+                                enabled = pendingAttachments.size < 5,
+                                modifier = Modifier.size(34.dp),
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
-                                    modifier = Modifier
-                                        .size(20.dp)
-                                        .graphicsLayer { rotationZ = rotation },
-                                    tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = "Attach files",
+                                    modifier = Modifier.size(19.dp),
+                                    tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                                if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
-                                    Box(
+                            }
+
+                            IconButton(
+                                onClick = { showWorkspaceControls = !showWorkspaceControls },
+                                modifier = Modifier.size(34.dp),
+                            ) {
+                                val rotation by animateFloatAsState(
+                                    targetValue = if (showWorkspaceControls) 180f else 0f,
+                                    label = "workspace_controls_rotation",
+                                )
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
                                         modifier = Modifier
-                                            .size(6.dp)
-                                            .align(Alignment.TopEnd)
-                                            .background(PocketOrange, CircleShape),
+                                            .size(19.dp)
+                                            .graphicsLayer { rotationZ = rotation },
+                                        tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .align(Alignment.TopEnd)
+                                                .background(PocketOrange, CircleShape),
+                                        )
+                                    }
                                 }
+                            }
+
+                            IconButton(
+                                onClick = onStartVoiceInput,
+                                modifier = Modifier.size(34.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Voice input",
+                                    modifier = Modifier.size(19.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
 
