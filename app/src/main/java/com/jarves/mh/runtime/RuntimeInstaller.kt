@@ -1252,6 +1252,7 @@ class RuntimeInstaller(private val context: Context) {
                     "gcc --version && g++ --version && make --version && cmake --version",
                     "C/C++ tools could not be verified",
                 )
+                if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
             }
             DevStack.PHP -> {
                 check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
@@ -1290,6 +1291,7 @@ class RuntimeInstaller(private val context: Context) {
                 }
                 runCatching { installComposer(proot, from, onProgress) }
                 verifyGuest(proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
+                if (verified) File(rootfs, ".pocket-php-tools-version").writeText("8.4")
             }
         }
         if (!verified) return
