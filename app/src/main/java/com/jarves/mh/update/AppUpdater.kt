@@ -31,36 +31,50 @@ class AppUpdater(
     private val manifestUrlOverride: String = "",
 ) {
     fun check(): AppUpdateInfo? {
-        val manifestUrl = manifestUrlOverride.ifBlank { BuildConfig.APP_UPDATE_MANIFEST_URL }
-        if (!manifestUrl.startsWith("https://")) return null
-        val connection = URL(manifestUrl).openConnection() as HttpURLConnection
-        return try {
-            connection.connectTimeout = 8_000
-            connection.readTimeout = 10_000
-            connection.instanceFollowRedirects = true
-            connection.setRequestProperty("Accept", "application/json")
-            val code = connection.responseCode
-            if (code !in 200..299) return null
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            val root = JSONObject(body)
-            val versionCode = root.optLong("versionCode")
-            if (versionCode <= BuildConfig.VERSION_CODE) return null
-            val artifact = root.optJSONObject("artifacts")?.optJSONObject(BuildConfig.APP_VARIANT)
-                ?: root.optJSONObject(BuildConfig.APP_VARIANT)
-                ?: root
-            val url = artifact.optString("url").ifBlank { artifact.optString("apkUrl") }
-            if (!url.startsWith("https://")) return null
-            AppUpdateInfo(
-                versionCode = versionCode,
-                versionName = root.optString("versionName", versionCode.toString()),
-                apkUrl = url,
-                sha256 = artifact.optString("sha256").lowercase(),
-                sizeBytes = artifact.optLong("sizeBytes", -1L),
-                notes = root.optString("notes"),
+        val urlsToTry = if (manifestUrlOverride.isNotBlank()) {
+            listOf(manifestUrlOverride)
+        } else {
+            listOf(
+                BuildConfig.APP_UPDATE_MANIFEST_URL,
+                "https://raw.githubusercontent.com/techjarves/Mobile-Harness/main/mobile-harness-update.json",
             )
-        } finally {
-            connection.disconnect()
         }
+        for (manifestUrl in urlsToTry) {
+            if (!manifestUrl.startsWith("https://")) continue
+            try {
+                val connection = URL(manifestUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 8_000
+                connection.readTimeout = 10_000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("Accept", "application/json")
+                val code = connection.responseCode
+                if (code !in 200..299) {
+                    connection.disconnect()
+                    continue
+                }
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                connection.disconnect()
+                val root = JSONObject(body)
+                val versionCode = root.optLong("versionCode")
+                if (versionCode <= BuildConfig.VERSION_CODE) return null
+                val artifact = root.optJSONObject("artifacts")?.optJSONObject(BuildConfig.APP_VARIANT)
+                    ?: root.optJSONObject(BuildConfig.APP_VARIANT)
+                    ?: root
+                val url = artifact.optString("url").ifBlank { artifact.optString("apkUrl") }
+                if (!url.startsWith("https://")) return null
+                return AppUpdateInfo(
+                    versionCode = versionCode,
+                    versionName = root.optString("versionName", versionCode.toString()),
+                    apkUrl = url,
+                    sha256 = artifact.optString("sha256").lowercase(),
+                    sizeBytes = artifact.optLong("sizeBytes", -1L),
+                    notes = root.optString("notes"),
+                )
+            } catch (_: Throwable) {
+                // Try next URL
+            }
+        }
+        return null
     }
 
     fun download(info: AppUpdateInfo, progress: (Long, Long) -> Unit): File {

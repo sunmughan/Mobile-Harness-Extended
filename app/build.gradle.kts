@@ -36,7 +36,7 @@ val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets
 val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets") {
     // The release workflow resolves the newest verified runtime assets before every build.
     from(runtimeBundleDir) {
-        include("pocketdev-agy-arm64-*.tar.zst")
+        include("manifest.json", "pocketdev-agy-arm64-*.tar.zst")
     }
     into(generatedRuntimeAssets.map { it.dir("shared/runtime") })
 }

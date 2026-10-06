@@ -1787,9 +1787,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var sampleBytes = 0L
             var sampleTime = android.os.SystemClock.elapsedRealtime()
             var latestSpeed: Long? = null
+            var wasAlreadyUpToDate = false
+            var finalProgressMessage: String? = null
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     installer.updateStack(stack) { progress ->
+                        if (progress.message.contains("up to date", ignoreCase = true)) {
+                            wasAlreadyUpToDate = true
+                        }
+                        finalProgressMessage = progress.message
                         val transfer = progress.totalBytes?.let { total ->
                             (progress.downloadedBytes ?: 0L) to total
                         }
@@ -1819,20 +1825,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             _state.update { current ->
+                val finalMsg = result.fold(
+                    onSuccess = {
+                        finalProgressMessage?.takeIf { it.isNotBlank() }
+                            ?: if (wasAlreadyUpToDate) "${stack.label} is already up to date" else "${stack.label} updated successfully"
+                    },
+                    onFailure = { error -> error.message?.take(200) ?: "Could not update ${stack.label}" },
+                )
                 current.copy(
                     devStackInstalling = null,
                     devStackRemoving = false,
                     devStackProgress = 0f,
                     devStackBytes = null,
                     devStackBytesPerSecond = null,
-                    devStackMessage = result.fold(
-                        onSuccess = { "${stack.label} updated successfully" },
-                        onFailure = { error -> error.message?.take(200) ?: "Could not update ${stack.label}" },
-                    ),
+                    devStackMessage = finalMsg,
                     toastMessage = result.fold(
-                        onSuccess = { "${stack.label} updated" },
+                        onSuccess = {
+                            if (wasAlreadyUpToDate) "${stack.label} is already up to date" else "${stack.label} updated"
+                        },
                         onFailure = { "Could not update ${stack.label}" },
                     ),
+                    installedDevStacks = installer.installedStacks(),
                 )
             }
         }

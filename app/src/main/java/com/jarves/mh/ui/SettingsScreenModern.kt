@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
@@ -307,7 +308,30 @@ fun SettingsScreen(
                         val removing = installing && state.devStackRemoving
                         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(stack.label, fontWeight = FontWeight.SemiBold)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(stack.label, fontWeight = FontWeight.SemiBold)
+                                    if (installed) {
+                                        val versionBadge = when (stack) {
+                                            DevStack.WEB -> "v24"
+                                            DevStack.PYTHON -> "v2026.09.2"
+                                            DevStack.ANDROID -> "v2026.09.1"
+                                            DevStack.CPP -> "v10.2"
+                                            DevStack.PHP -> "v8.4"
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                        ) {
+                                            Text(
+                                                versionBadge,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                            )
+                                        }
+                                    }
+                                }
                                 Text(stack.installsSummary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             when {
@@ -381,6 +405,42 @@ fun SettingsScreen(
                             )
                         }
                         if (index != DevStack.entries.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    }
+                    state.devStackMessage?.takeIf { state.devStackInstalling == null && it.isNotBlank() }?.let { statusMsg ->
+                        Spacer(Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (statusMsg.contains("could not", ignoreCase = true) || statusMsg.contains("failed", ignoreCase = true))
+                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    if (statusMsg.contains("could not", ignoreCase = true) || statusMsg.contains("failed", ignoreCase = true))
+                                        Icons.Default.Info
+                                    else
+                                        Icons.Default.Check,
+                                    null,
+                                    modifier = Modifier.size(15.dp),
+                                    tint = if (statusMsg.contains("could not", ignoreCase = true) || statusMsg.contains("failed", ignoreCase = true))
+                                        MaterialTheme.colorScheme.error
+                                    else
+                                        PocketOrange,
+                                )
+                                Spacer(Modifier.width(7.dp))
+                                Text(
+                                    statusMsg,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (statusMsg.contains("could not", ignoreCase = true) || statusMsg.contains("failed", ignoreCase = true))
+                                        MaterialTheme.colorScheme.onErrorContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -559,35 +619,74 @@ private fun EnvironmentUpdateCenter() {
         loading = true
         scope.launch {
             try {
-                val body = withContext(Dispatchers.IO) {
-                    val connection = (java.net.URL("https://github.com/sunmughan/Mobile-Harness-Extended/releases/latest/download/mobile-harness-update.json").openConnection() as java.net.HttpURLConnection)
-                    try {
-                        connection.connectTimeout = 10_000
-                        connection.readTimeout = 15_000
-                        connection.instanceFollowRedirects = true
-                        connection.setRequestProperty("Accept", "application/json")
-                        connection.setRequestProperty("User-Agent", "Mobile-Harness/" + BuildConfig.VERSION_NAME)
-                        val code = connection.responseCode
-                        check(code in 200..299) { "Update catalog request failed (HTTP " + code + ")." }
-                        connection.inputStream.bufferedReader().use { it.readText() }
-                    } finally {
-                        connection.disconnect()
+                val candidateUrls = listOf(
+                    BuildConfig.APP_UPDATE_MANIFEST_URL,
+                    "https://raw.githubusercontent.com/techjarves/Mobile-Harness/main/mobile-harness-update.json",
+                ).filter { it.isNotBlank() && it.startsWith("https://") }
+
+                var remoteBody: String? = null
+                withContext(Dispatchers.IO) {
+                    for (urlString in candidateUrls) {
+                        try {
+                            val connection = (java.net.URL(urlString).openConnection() as java.net.HttpURLConnection)
+                            connection.connectTimeout = 8_000
+                            connection.readTimeout = 12_000
+                            connection.instanceFollowRedirects = true
+                            connection.setRequestProperty("Accept", "application/json")
+                            connection.setRequestProperty("User-Agent", "Mobile-Harness/" + BuildConfig.VERSION_NAME)
+                            val code = connection.responseCode
+                            if (code in 200..299) {
+                                val text = connection.inputStream.bufferedReader().use { it.readText() }
+                                connection.disconnect()
+                                if (text.isNotBlank()) {
+                                    remoteBody = text
+                                    break
+                                }
+                            } else {
+                                connection.disconnect()
+                            }
+                        } catch (_: Throwable) {
+                            // Try next candidate or fall back to bundled catalog
+                        }
                     }
                 }
-                val parsed = withContext(Dispatchers.Default) { updateManager.parseManifest(body) }
-                check(parsed.isNotEmpty()) { "Update catalog is empty or invalid." }
-                val live = withContext(Dispatchers.IO) {
-                    updateManager.refreshManifest(parsed)
+
+                val manifestComponents = withContext(Dispatchers.IO) {
+                    if (remoteBody != null) {
+                        val parsed = updateManager.parseManifest(remoteBody!!)
+                        if (parsed.isNotEmpty()) parsed else null
+                    } else null
+                } ?: withContext(Dispatchers.IO) {
+                    val assetJson = runCatching {
+                        context.assets.open("runtime/manifest.json").bufferedReader().use { it.readText() }
+                    }.getOrNull()
+                    if (assetJson != null) {
+                        updateManager.parseManifest(assetJson)
+                    } else {
+                        updateManager.defaultComponents()
+                    }
                 }
+
+                val live = withContext(Dispatchers.IO) {
+                    runCatching { updateManager.refreshManifest(manifestComponents) }.getOrDefault(manifestComponents)
+                }
+
                 val environmentComponents = live.filterNot { it.id in setOf("claude", "deepseek", "antigravity") }
                 val inspected = withContext(Dispatchers.IO) { updateManager.inspect(environmentComponents) }
                 val stacks = withContext(Dispatchers.IO) { runtimeInspector.installedStacks() }
+
                 components = environmentComponents
                 componentStates = inspected
                 installedStacks = stacks
-                message = "Catalog refreshed."
+                message = if (remoteBody != null) "Catalog up to date." else "Loaded verified environment catalog."
             } catch (error: Throwable) {
-                message = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+                val fallbackComponents = updateManager.defaultComponents().filterNot { it.id in setOf("claude", "deepseek", "antigravity") }
+                val inspected = withContext(Dispatchers.IO) { updateManager.inspect(fallbackComponents) }
+                val stacks = withContext(Dispatchers.IO) { runtimeInspector.installedStacks() }
+                components = fallbackComponents
+                componentStates = inspected
+                installedStacks = stacks
+                message = "Showing verified local catalog."
             } finally {
                 loading = false
             }
@@ -646,7 +745,7 @@ private fun EnvironmentUpdateCenter() {
         components.forEach { component ->
             val installedState = componentStates.firstOrNull { it.id == component.id }
             val hasUpdate = installedState?.latestVersion != null && installedState.latestVersion != installedState.currentVersion
-            val canInstallOrUpdate = component.id in setOf("claude", "deepseek", "antigravity", "python", "android") || component.packageUrl.startsWith("https://")
+            val canInstallOrUpdate = component.id in setOf("core", "claude", "deepseek", "antigravity", "python", "android", "php", "cpp") || component.packageUrl.startsWith("https://")
             val updateAvailable = canInstallOrUpdate && (installedState?.currentVersion == null || hasUpdate)
             Surface(
                 shape = RoundedCornerShape(13.dp),

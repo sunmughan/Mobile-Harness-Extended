@@ -371,9 +371,25 @@ class RuntimeInstaller(private val context: Context) {
                 version,
             )
         }
-        coreToolsMarker.readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { put("core", it.removePrefix("core-bundle-")) }
-        File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("android", it) }
-        File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.takeIf { it.isNotBlank() }?.let { put("python", it) }
+        val coreVer = coreToolsMarker.readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }?.removePrefix("core-bundle-")
+            ?: if (isInstalled()) CORE_BUNDLE.version else null
+        coreVer?.let { put("core", it) }
+
+        val androidVer = File(rootfs, "root/.pocket-android-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (isStackInstalled(DevStack.ANDROID)) ANDROID_BUNDLE.version else null
+        androidVer?.let { put("android", it) }
+
+        val pythonVer = File(rootfs, ".pocket-python-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (isStackInstalled(DevStack.PYTHON)) PYTHON_BUNDLE.version else null
+        pythonVer?.let { put("python", it) }
+
+        val phpVer = File(rootfs, ".pocket-php-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (isStackInstalled(DevStack.PHP)) "8.4" else null
+        phpVer?.let { put("php", it) }
+
+        val cppVer = File(rootfs, ".pocket-cpp-tools-version").readTextOrNull()?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (isStackInstalled(DevStack.CPP)) "10.2" else null
+        cppVer?.let { put("cpp", it) }
     }
 
     suspend fun latestEnvironmentVersions(): Map<String, String> = buildMap {
@@ -391,25 +407,43 @@ class RuntimeInstaller(private val context: Context) {
         expectedVersion: String,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        val stack = when (id) {
-            "python" -> DevStack.PYTHON
-            "android" -> DevStack.ANDROID
-            else -> error("Unsupported environment stack: $id")
-        }
-        val bundle = latestRuntimeBundle(id, expectedVersion)
-            ?: error("No verified runtime package is published for $id $expectedVersion")
         val runtime = installedRuntime()
-        when (stack) {
-            DevStack.PYTHON -> {
+        when (id) {
+            "python" -> {
+                val bundle = latestRuntimeBundle(id, expectedVersion)
+                    ?: error("No verified runtime package is published for $id $expectedVersion")
                 installRuntimeOverlay(bundle, "Installing Python $expectedVersion", 0.05f, 0.95f, onProgress)
                 verifyGuest(runtime.proot, "python3 --version && pip3 --version", "Python tools could not be verified")
                 File(rootfs, ".pocket-python-tools-version").writeText(expectedVersion)
+                writeDevStackState(readDevStackState().apply { put(DevStack.PYTHON.name, true) })
+                onProgress(RuntimeInstallProgress("Python $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
-            DevStack.ANDROID -> installAndroidToolchain(runtime.proot, 0.05f, 0.95f, onProgress, bundle)
+            "android" -> {
+                val bundle = latestRuntimeBundle(id, expectedVersion)
+                    ?: error("No verified runtime package is published for $id $expectedVersion")
+                installAndroidToolchain(runtime.proot, 0.05f, 0.95f, onProgress, bundle)
+                writeDevStackState(readDevStackState().apply { put(DevStack.ANDROID.name, true) })
+                onProgress(RuntimeInstallProgress("Android $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+            }
+            "php" -> {
+                updateStack(DevStack.PHP, onProgress)
+                File(rootfs, ".pocket-php-tools-version").writeText(expectedVersion)
+                writeDevStackState(readDevStackState().apply { put(DevStack.PHP.name, true) })
+                onProgress(RuntimeInstallProgress("PHP $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+            }
+            "cpp" -> {
+                updateStack(DevStack.CPP, onProgress)
+                File(rootfs, ".pocket-cpp-tools-version").writeText(expectedVersion)
+                writeDevStackState(readDevStackState().apply { put(DevStack.CPP.name, true) })
+                onProgress(RuntimeInstallProgress("C/C++ $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+            }
+            "core" -> {
+                runSystemMaintenance(runtime.proot, onProgress)
+                coreToolsMarker.writeText("core-bundle-$expectedVersion")
+                onProgress(RuntimeInstallProgress("Core runtime $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
+            }
             else -> error("Unsupported environment stack: $id")
         }
-        writeDevStackState(readDevStackState().apply { put(stack.name, true) })
-        onProgress(RuntimeInstallProgress("$id $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
     }
 
     suspend fun updateEnvironmentAgent(
@@ -651,13 +685,11 @@ class RuntimeInstaller(private val context: Context) {
     )
 
     private suspend fun latestRuntimeBundle(id: String, expectedVersion: String? = null): RuntimeBundle? {
-        // Offline APKs already contain the verified Python/Android bundles. Do not
-        // hit GitHub just to resolve an asset that is guaranteed to be embedded.
-        if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            val manifestBundle = runCatching {
-                val manifest = context.assets.open("runtime/manifest.json").bufferedReader().use { JSONObject(it.readText()) }
-                val item = manifest.optJSONObject("bundles")?.optJSONObject(id) ?: manifest.optJSONObject(id)
-                if (item == null) null else RuntimeBundle(
+        val fallbackBundle = runCatching {
+            val manifest = context.assets.open("runtime/manifest.json").bufferedReader().use { JSONObject(it.readText()) }
+            val item = manifest.optJSONObject("bundles")?.optJSONObject(id) ?: manifest.optJSONObject(id)
+            if (item != null) {
+                RuntimeBundle(
                     label = when (id) {
                         "core" -> "Core"
                         "python" -> "Python"
@@ -666,19 +698,18 @@ class RuntimeInstaller(private val context: Context) {
                     },
                     fileName = item.getString("file"),
                     sha256 = item.getString("sha256"),
-                    compressedBytes = item.optLong("sizeBytes", 0L),
+                    compressedBytes = item.optLong("compressedBytes", item.optLong("sizeBytes", 0L)),
                 )
-            }.getOrNull()
-            if (manifestBundle != null) {
-                return if (expectedVersion == null || manifestBundle.version == expectedVersion) manifestBundle else null
-            }
-            val bundled = when (id) {
-                "python" -> PYTHON_BUNDLE
-                "android" -> ANDROID_BUNDLE
-                "core" -> CORE_BUNDLE
-                else -> return null
-            }
-            return if (expectedVersion == null || bundled.version == expectedVersion) bundled else null
+            } else null
+        }.getOrNull() ?: when (id) {
+            "python" -> PYTHON_BUNDLE
+            "android" -> ANDROID_BUNDLE
+            "core" -> CORE_BUNDLE
+            else -> null
+        }
+
+        if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            return if (expectedVersion == null || fallbackBundle?.version == expectedVersion) fallbackBundle else null
         }
 
         val prefix = when (id) {
@@ -687,41 +718,51 @@ class RuntimeInstaller(private val context: Context) {
             "android" -> "pocketdev-android-arm64-"
             else -> return null
         }
-        val releases = JSONArray(fetchText("https://api.github.com/repos/techjarves/Mobile-Harness/releases?per_page=30"))
-        val assets = buildList {
-            for (i in 0 until releases.length()) {
-                val release = releases.getJSONObject(i)
-                if (release.optBoolean("draft") || release.optBoolean("prerelease")) continue
-                if (!release.optString("tag_name").startsWith("runtime-")) continue
-                val array = release.optJSONArray("assets") ?: continue
-                for (j in 0 until array.length()) {
-                    val asset = array.getJSONObject(j)
-                    val name = asset.optString("name")
-                    if (!name.startsWith(prefix) || !name.endsWith(".tar.zst")) continue
-                    val version = name.removePrefix(prefix).removeSuffix(".tar.zst")
-                    val digest = asset.optString("digest").removePrefix("sha256:")
-                    if (version.isNotBlank() && digest.matches(Regex("[0-9a-fA-F]{64}"))) {
-                        add(PublishedRuntimeAsset(version, name, asset.optString("browser_download_url"), digest, asset.optLong("size", 0L)))
+
+        val releases = runCatching {
+            JSONArray(fetchText("https://api.github.com/repos/techjarves/Mobile-Harness/releases?per_page=30"))
+        }.getOrNull()
+
+        if (releases != null) {
+            val assets = buildList {
+                for (i in 0 until releases.length()) {
+                    val release = releases.getJSONObject(i)
+                    if (release.optBoolean("draft") || release.optBoolean("prerelease")) continue
+                    if (!release.optString("tag_name").startsWith("runtime-")) continue
+                    val array = release.optJSONArray("assets") ?: continue
+                    for (j in 0 until array.length()) {
+                        val asset = array.getJSONObject(j)
+                        val name = asset.optString("name")
+                        if (!name.startsWith(prefix) || !name.endsWith(".tar.zst")) continue
+                        val version = name.removePrefix(prefix).removeSuffix(".tar.zst")
+                        val digest = asset.optString("digest").removePrefix("sha256:")
+                        if (version.isNotBlank() && digest.matches(Regex("[0-9a-fA-F]{64}"))) {
+                            add(PublishedRuntimeAsset(version, name, asset.optString("browser_download_url"), digest, asset.optLong("size", 0L)))
+                        }
                     }
                 }
             }
+            val selected = if (expectedVersion != null) {
+                assets.firstOrNull { it.version == expectedVersion }
+            } else {
+                assets.maxWithOrNull(Comparator { left, right -> compareVersions(left.version, right.version) })
+            }
+            if (selected != null) {
+                return RuntimeBundle(
+                    label = when (id) {
+                        "core" -> "Core"
+                        "python" -> "Python"
+                        else -> "Android"
+                    },
+                    fileName = selected.fileName,
+                    sha256 = selected.sha256,
+                    compressedBytes = selected.sizeBytes,
+                    remoteUrl = selected.url,
+                )
+            }
         }
-        val selected = if (expectedVersion != null) {
-            assets.firstOrNull { it.version == expectedVersion }
-        } else {
-            assets.maxWithOrNull(Comparator { left, right -> compareVersions(left.version, right.version) })
-        } ?: return null
-        return RuntimeBundle(
-            label = when (id) {
-                "core" -> "Core"
-                "python" -> "Python"
-                else -> "Android"
-            },
-            fileName = selected.fileName,
-            sha256 = selected.sha256,
-            compressedBytes = selected.sizeBytes,
-            remoteUrl = selected.url,
-        )
+
+        return if (expectedVersion == null || fallbackBundle?.version == expectedVersion) fallbackBundle else null
     }
 
     private fun compareVersions(left: String, right: String): Int {
@@ -934,9 +975,7 @@ class RuntimeInstaller(private val context: Context) {
                 }
             }
             DevStack.CPP -> {
-                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    "C/C++ updates require the online APK because APT packages are not bundled offline"
-                }
+                onProgress(RuntimeInstallProgress("Updating C/C++ compilers and build tools", 0.1f))
                 aptInstall(
                     runtime.proot,
                     listOf("build-essential", "cmake", "gdb"),
@@ -945,12 +984,11 @@ class RuntimeInstaller(private val context: Context) {
                     onProgress,
                 )
                 verifyGuest(runtime.proot, "gcc --version && g++ --version && make --version && cmake --version", "C/C++ tools could not be verified")
+                File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
                 onProgress(RuntimeInstallProgress("C/C++ tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.PHP -> {
-                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    "PHP updates require the online APK because APT packages are not bundled offline"
-                }
+                onProgress(RuntimeInstallProgress("Updating PHP environment", 0.1f))
                 runCatching { preparePhpRepository(runtime.proot, onProgress) }.onFailure {
                     File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
                 }
@@ -984,6 +1022,7 @@ class RuntimeInstaller(private val context: Context) {
                 }
                 runCatching { installComposer(runtime.proot, 0.75f, onProgress, force = true) }
                 verifyGuest(runtime.proot, "php --version || php8.4 --version || php7.4 --version", "PHP tools could not be verified")
+                File(rootfs, ".pocket-php-tools-version").writeText("8.4")
                 onProgress(RuntimeInstallProgress("PHP tools are up to date", 1f, event = RuntimeInstallEvent.COMPLETED))
             }
             DevStack.WEB -> error("Web tools are part of the core runtime")

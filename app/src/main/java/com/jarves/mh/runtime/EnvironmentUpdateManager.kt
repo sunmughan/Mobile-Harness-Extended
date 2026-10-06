@@ -53,27 +53,174 @@ class EnvironmentUpdateManager(
     private val downloads get() = File(context.cacheDir, "environment-updates")
 
     fun parseManifest(body: String): List<EnvironmentManifestComponent> {
-        val root = JSONObject(body)
-        val array = root.optJSONArray("components") ?: return emptyList()
-        val result = ArrayList<EnvironmentManifestComponent>()
-        for (i in 0 until array.length()) {
-            val item = array.getJSONObject(i)
-            result += EnvironmentManifestComponent(
-                id = item.getString("id"),
-                label = item.optString("label", item.getString("id")),
-                version = item.getString("version"),
-                packageUrl = item.optString("packageUrl", ""),
-                sha256 = item.getString("sha256"),
-                sizeBytes = item.optLong("sizeBytes", 0L),
-                status = item.optString("status", "stable"),
-                minRuntimeGeneration = item.optInt("minRuntimeGeneration", 1),
-                activeLink = item.optString("activeLink", ""),
-                healthCommand = item.optString("healthCommand", ""),
-                notes = item.optString("notes", ""),
-            )
+        val root = runCatching { JSONObject(body) }.getOrNull() ?: return defaultComponents()
+        val array = root.optJSONArray("components")
+        if (array != null && array.length() > 0) {
+            val result = ArrayList<EnvironmentManifestComponent>()
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val id = item.optString("id").takeIf { it.isNotBlank() } ?: continue
+                result += EnvironmentManifestComponent(
+                    id = id,
+                    label = item.optString("label", id),
+                    version = item.optString("version", "1.0"),
+                    packageUrl = item.optString("packageUrl", ""),
+                    sha256 = item.optString("sha256", ""),
+                    sizeBytes = item.optLong("sizeBytes", 0L),
+                    status = item.optString("status", "stable"),
+                    minRuntimeGeneration = item.optInt("minRuntimeGeneration", 1),
+                    activeLink = item.optString("activeLink", ""),
+                    healthCommand = item.optString("healthCommand", ""),
+                    notes = item.optString("notes", ""),
+                )
+            }
+            if (result.isNotEmpty()) return result
         }
-        return result
+
+        val bundles = root.optJSONObject("bundles")
+        if (bundles != null) {
+            val result = ArrayList<EnvironmentManifestComponent>()
+            val keys = bundles.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val bundle = bundles.optJSONObject(key) ?: continue
+                val id = when (key) {
+                    "core" -> "core"
+                    "python" -> "python"
+                    "android" -> "android"
+                    "claude" -> "claude"
+                    "agy" -> "antigravity"
+                    "dsh" -> "deepseek"
+                    else -> key
+                }
+                val label = when (id) {
+                    "core" -> "Core Linux Runtime"
+                    "python" -> "Python"
+                    "android" -> "Android SDK / Build Tools / Gradle"
+                    "claude" -> "Claude Code"
+                    "deepseek" -> "DeepSeek Harness"
+                    "antigravity" -> "Antigravity CLI"
+                    else -> id.replaceFirstChar { it.uppercase() }
+                }
+                result += EnvironmentManifestComponent(
+                    id = id,
+                    label = label,
+                    version = bundle.optString("version", "1.0"),
+                    packageUrl = "",
+                    sha256 = bundle.optString("sha256", ""),
+                    sizeBytes = bundle.optLong("compressedBytes", 0L),
+                    status = "stable",
+                    minRuntimeGeneration = 1,
+                    activeLink = "",
+                    healthCommand = "",
+                    notes = bundle.optJSONArray("includes")?.let { arr ->
+                        (0 until arr.length()).joinToString(", ") { arr.optString(it) }
+                    } ?: "",
+                )
+            }
+            if (result.none { it.id == "php" }) {
+                result += EnvironmentManifestComponent(
+                    id = "php",
+                    label = "PHP",
+                    version = "8.4",
+                    packageUrl = "",
+                    sha256 = "",
+                    sizeBytes = 0L,
+                    status = "stable",
+                    minRuntimeGeneration = 1,
+                    activeLink = "",
+                    healthCommand = "php --version && composer --version",
+                    notes = "PHP 8.4 package source via Ondřej PHP PPA; Composer latest-stable release.",
+                )
+            }
+            if (result.none { it.id == "cpp" }) {
+                result += EnvironmentManifestComponent(
+                    id = "cpp",
+                    label = "C/C++",
+                    version = "10.2",
+                    packageUrl = "",
+                    sha256 = "",
+                    sizeBytes = 0L,
+                    status = "stable",
+                    minRuntimeGeneration = 1,
+                    activeLink = "",
+                    healthCommand = "gcc --version && g++ --version && cmake --version",
+                    notes = "GCC, G++, CMake, and GNU Make compilers and build tools.",
+                )
+            }
+            if (result.isNotEmpty()) return result
+        }
+
+        return defaultComponents()
     }
+
+    fun defaultComponents(): List<EnvironmentManifestComponent> = listOf(
+        EnvironmentManifestComponent(
+            id = "core",
+            label = "Core Linux Runtime",
+            version = "2026.09.5",
+            packageUrl = "",
+            sha256 = "df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012",
+            sizeBytes = 72185773L,
+            status = "stable",
+            minRuntimeGeneration = 1,
+            activeLink = "",
+            healthCommand = "git --version && node --version",
+            notes = "Ubuntu 20.04 ARM64 core runtime bundle with Node.js 24 and Git.",
+        ),
+        EnvironmentManifestComponent(
+            id = "python",
+            label = "Python",
+            version = "2026.09.2",
+            packageUrl = "",
+            sha256 = "6b3f56f7743fec142bc045db3ea561ee83fe89af87c2799165ef60351164ef85",
+            sizeBytes = 55419626L,
+            status = "stable",
+            minRuntimeGeneration = 1,
+            activeLink = "",
+            healthCommand = "python3 --version && pip3 --version",
+            notes = "Python 3.8, pip, and venv runtime bundle.",
+        ),
+        EnvironmentManifestComponent(
+            id = "android",
+            label = "Android SDK / Build Tools / Gradle",
+            version = "2026.09.1",
+            packageUrl = "",
+            sha256 = "01bea058ebcb17416d1eb08c0211b3782da3228eb3c8348eb3719f2d61dd3ec6",
+            sizeBytes = 569652007L,
+            status = "stable",
+            minRuntimeGeneration = 1,
+            activeLink = "",
+            healthCommand = "java -version && gradle --version",
+            notes = "Temurin OpenJDK 17, Android SDK 36, Gradle 8.14.",
+        ),
+        EnvironmentManifestComponent(
+            id = "php",
+            label = "PHP",
+            version = "8.4",
+            packageUrl = "",
+            sha256 = "",
+            sizeBytes = 0L,
+            status = "stable",
+            minRuntimeGeneration = 1,
+            activeLink = "",
+            healthCommand = "php --version && composer --version",
+            notes = "PHP 8.4 package source via Ondřej PHP PPA; Composer latest-stable release.",
+        ),
+        EnvironmentManifestComponent(
+            id = "cpp",
+            label = "C/C++",
+            version = "10.2",
+            packageUrl = "",
+            sha256 = "",
+            sizeBytes = 0L,
+            status = "stable",
+            minRuntimeGeneration = 1,
+            activeLink = "",
+            healthCommand = "gcc --version && g++ --version && cmake --version",
+            notes = "GCC, G++, CMake, and GNU Make compilers and build tools.",
+        ),
+    )
 
     suspend fun refreshManifest(manifest: List<EnvironmentManifestComponent>): List<EnvironmentManifestComponent> {
         val latest = runtime.latestEnvironmentVersions()
@@ -357,7 +504,7 @@ class EnvironmentUpdateManager(
 
     companion object {
         private val AGENT_COMPONENT_IDS = setOf("claude", "deepseek", "antigravity")
-        private val STACK_COMPONENT_IDS = setOf("python", "android")
+        private val STACK_COMPONENT_IDS = setOf("core", "python", "android", "php", "cpp")
     }
 
     private fun sha256(file: File): String {
