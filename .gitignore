@@ -67,3 +67,6 @@ dist/update-test/
 
 # Local attachments
 attachments/
+
+# Release distribution builds
+release-dist/
