@@ -4322,7 +4322,7 @@ private fun WorkspaceScreen(
                             )
                         }
                         Text(
-                            "${state.activeProject?.name.orEmpty()} · ${activeChat?.title ?: "Chat"}",
+                            activeChat?.title ?: "Chat",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -4333,6 +4333,7 @@ private fun WorkspaceScreen(
                 navigationIcon = {},
                 actions = {
                     Row(
+                        modifier = Modifier.offset(y = (-7).dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {

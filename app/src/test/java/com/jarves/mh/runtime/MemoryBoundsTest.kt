@@ -74,4 +74,31 @@ class MemoryBoundsTest {
             directory.deleteRecursively()
         }
     }
+
+    @Test
+    fun truncateHeadAndTailCompressesLongOutput() {
+        val longOutput = (1..100).joinToString("\n") { "line-$it" }
+        val truncated = truncateHeadAndTail(longOutput, maxHeadLines = 5, maxTailLines = 5, maxTotalLines = 20)
+        assertTrue(truncated.contains("line-1"))
+        assertTrue(truncated.contains("line-5"))
+        assertTrue(truncated.contains("... [output truncated: 90 lines omitted] ..."))
+        assertTrue(truncated.contains("line-96"))
+        assertTrue(truncated.contains("line-100"))
+        assertFalse(truncated.contains("line-50"))
+    }
+
+    @Test
+    fun compactHistoryCompactsOlderCodeBlocks() {
+        val oldCode = "```kotlin\n" + (1..30).joinToString("\n") { "val x$it = $it" } + "\n```"
+        val history = listOf(
+            ChatMessage(fromUser = true, text = "Create class"),
+            ChatMessage(fromUser = false, text = oldCode),
+            ChatMessage(fromUser = true, text = "Add function"),
+            ChatMessage(fromUser = false, text = "Immediate previous response"),
+        )
+        val compacted = compactHistoryForPrompt(history, maxCharacters = 10_000)
+        assertEquals(4, compacted.size)
+        assertTrue(compacted[1].text.contains("lines of code collapsed"))
+        assertEquals("Immediate previous response", compacted[3].text)
+    }
 }

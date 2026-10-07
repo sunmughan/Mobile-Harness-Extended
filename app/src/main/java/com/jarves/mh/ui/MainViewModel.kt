@@ -62,6 +62,7 @@ import com.jarves.mh.runtime.RuntimeSetupService
 import com.jarves.mh.runtime.RuntimeSetupSnapshot
 import com.jarves.mh.runtime.RuntimeSetupStatus
 import com.jarves.mh.runtime.readTailText
+import com.jarves.mh.runtime.truncateHeadAndTail
 import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.RuntimeFailureClassifier
 import com.jarves.mh.runtime.WorkspaceCheckpoints
@@ -951,7 +952,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     projectGuestRoot(project),
                 )
                 val exitCode = process.waitFor()
-                val buildOutput = (process as? NativeSpawnProcess)?.outputFile?.readTailText(MAX_PROCESS_OUTPUT_BYTES).orEmpty()
+                val rawBuildOutput = (process as? NativeSpawnProcess)?.outputFile?.readTailText(MAX_PROCESS_OUTPUT_BYTES).orEmpty()
+                val buildOutput = truncateHeadAndTail(rawBuildOutput, maxHeadLines = 10, maxTailLines = 30, maxTotalLines = 50)
                 check(exitCode == 0) {
                     buildOutput.trim().takeLast(2_000).ifBlank { "Gradle build failed (exit code $exitCode)" }
                 }

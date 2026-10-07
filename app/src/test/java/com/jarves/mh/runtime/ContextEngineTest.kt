@@ -32,4 +32,22 @@ class ContextEngineTest {
             temp.deleteRecursively()
         }
     }
+
+    @Test
+    fun conversationalRequestsDoNotDumpBroadMatches() {
+        val temp = Files.createTempDirectory("mobile-harness-context-brief").toFile()
+        try {
+            File(temp, "ui").mkdirs()
+            File(temp, "ui/Main.kt").writeText("class Main")
+            val engine = ContextEngine(ProjectIndex(temp))
+            val context = engine.buildPromptContext(
+                projectId = "project",
+                workspace = temp,
+                request = "continue",
+            )
+            assertTrue(context.isBlank())
+        } finally {
+            temp.deleteRecursively()
+        }
+    }
 }

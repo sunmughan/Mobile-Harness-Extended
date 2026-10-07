@@ -11,6 +11,22 @@ data class ContextReference(
 )
 
 class ContextEngine(private val projectIndex: ProjectIndex) {
+    companion object {
+        private val CONVERSATIONAL_KEYWORDS = setOf(
+            "yes", "no", "ok", "okay", "continue", "proceed", "go ahead",
+            "approve", "approved", "done", "next", "thanks", "thank you",
+            "start", "run", "build", "stop", "cancel", "help",
+        )
+    }
+
+    private fun isConversationalOrBrief(request: String): Boolean {
+        val trimmed = request.trim().lowercase()
+        if (trimmed.length < 3) return true
+        if (trimmed in CONVERSATIONAL_KEYWORDS) return true
+        val words = trimmed.split("\\s+".toRegex())
+        return words.size <= 2 && words.all { it in CONVERSATIONAL_KEYWORDS }
+    }
+
     fun buildPromptContext(
         projectId: String,
         workspace: File,
@@ -33,21 +49,23 @@ class ContextEngine(private val projectIndex: ProjectIndex) {
             }
         }
 
-        projectIndex.search(snapshot, request, limit = maxReferences * 2)
-            .forEach { file ->
-                if (references.size < maxReferences) {
-                    references.putIfAbsent(
-                        file.path,
-                        ContextReference(
-                            path = file.path,
-                            language = file.language,
-                            symbols = file.symbols,
-                            imports = file.imports,
-                            reason = "Relevance match",
-                        ),
-                    )
+        if (!isConversationalOrBrief(request)) {
+            projectIndex.search(snapshot, request, limit = maxReferences * 2)
+                .forEach { file ->
+                    if (references.size < maxReferences) {
+                        references.putIfAbsent(
+                            file.path,
+                            ContextReference(
+                                path = file.path,
+                                language = file.language,
+                                symbols = file.symbols,
+                                imports = file.imports,
+                                reason = "Relevance match",
+                            ),
+                        )
+                    }
                 }
-            }
+        }
 
         if (references.isEmpty()) return ""
 
@@ -57,10 +75,10 @@ class ContextEngine(private val projectIndex: ProjectIndex) {
             references.values.forEach { reference ->
                 appendLine("- " + reference.path + " [" + reference.language + "] — " + reference.reason)
                 if (reference.symbols.isNotEmpty()) {
-                    appendLine("  symbols: " + reference.symbols.take(12).joinToString(", "))
+                    appendLine("  symbols: " + reference.symbols.take(8).joinToString(", "))
                 }
                 if (reference.imports.isNotEmpty()) {
-                    appendLine("  imports: " + reference.imports.take(10).joinToString(", "))
+                    appendLine("  imports: " + reference.imports.take(5).joinToString(", "))
                 }
             }
             appendLine("</relevant_project_context>")
