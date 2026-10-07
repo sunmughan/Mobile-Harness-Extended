@@ -32,15 +32,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Person
@@ -54,8 +59,10 @@ import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -125,8 +132,16 @@ import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jarves.mh.auth.model.AppUser
+import com.jarves.mh.auth.model.AuthState
+import com.jarves.mh.auth.model.AuthProviderType
+import com.jarves.mh.auth.ui.AuthViewModel
+import com.jarves.mh.auth.ui.ChangePasswordDialog
+import com.jarves.mh.auth.ui.DeleteAccountDialog
+import com.jarves.mh.auth.ui.EditDisplayNameDialog
 
-private enum class SettingsSection { APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL }
+private enum class SettingsSection { ACCOUNT, APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,6 +174,8 @@ fun SettingsScreen(
     onToggleAutoUpdateToolsAndSkills: (Boolean) -> Unit = {},
     onUpdateAllToolsAndSkills: () -> Unit = {},
     onOpenPrivacyPolicy: () -> Unit = {},
+    authViewModel: AuthViewModel? = null,
+    onNavigateToAuth: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val runtimeInstaller = remember { RuntimeInstaller(context) }
@@ -188,6 +205,41 @@ fun SettingsScreen(
             },
             dismissButton = { TextButton(onClick = { stackPendingRemoval = null }) { Text("Cancel") } },
         )
+    }
+
+    authViewModel?.let { authVm ->
+        val authUiState by authVm.uiState.collectAsStateWithLifecycle()
+        val authStateVal by authVm.authState.collectAsStateWithLifecycle()
+        val userVal = when (authStateVal) {
+            is AuthState.Authenticated -> (authStateVal as AuthState.Authenticated).user
+            is AuthState.EmailVerificationRequired -> (authStateVal as AuthState.EmailVerificationRequired).user
+            else -> null
+        }
+
+        if (authUiState.showEditNameDialog && userVal != null) {
+            EditDisplayNameDialog(
+                currentName = userVal.displayName ?: "",
+                isLoading = authUiState.isLoading,
+                onDismiss = { authVm.showEditName(false) },
+                onSubmit = { newName -> authVm.updateDisplayName(newName) },
+            )
+        }
+        if (authUiState.showChangePasswordDialog) {
+            ChangePasswordDialog(
+                isLoading = authUiState.isLoading,
+                onDismiss = { authVm.showChangePassword(false) },
+                onSubmit = { cur, new, confirm -> authVm.changePassword(cur, new, confirm) },
+            )
+        }
+        if (authUiState.showDeleteAccountDialog) {
+            val isEmail = userVal?.provider == AuthProviderType.EMAIL
+            DeleteAccountDialog(
+                isEmailProvider = isEmail,
+                isLoading = authUiState.isLoading,
+                onDismiss = { authVm.showDeleteAccount(false) },
+                onConfirm = { pass -> authVm.deleteAccount(pass) },
+            )
+        }
     }
 
     fun toggle(section: SettingsSection) {
@@ -249,6 +301,36 @@ fun SettingsScreen(
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+
+            item {
+                val currentAuth = authViewModel?.authState?.collectAsStateWithLifecycle()?.value ?: AuthState.Unauthenticated
+                val user = when (currentAuth) {
+                    is AuthState.Authenticated -> currentAuth.user
+                    is AuthState.EmailVerificationRequired -> currentAuth.user
+                    else -> null
+                }
+                SettingsAccordion(
+                    title = "Account",
+                    subtitle = user?.displayName?.ifBlank { null } ?: user?.email ?: if (user != null) "Signed in" else "Guest mode · Local only",
+                    icon = Icons.Default.Person,
+                    expanded = expanded == SettingsSection.ACCOUNT,
+                    onClick = { toggle(SettingsSection.ACCOUNT) },
+                ) {
+                    if (authViewModel != null) {
+                        AccountSectionContent(
+                            viewModel = authViewModel,
+                            authState = currentAuth,
+                            onNavigateToAuth = onNavigateToAuth,
+                        )
+                    } else {
+                        Text(
+                            "Authentication service not initialized.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
 
             item {
                 SettingsAccordion(
@@ -1450,5 +1532,244 @@ private fun ContributorLinkButton(label: String, url: String, modifier: Modifier
         Text(label, fontSize = 10.sp, maxLines = 1, softWrap = false)
     }
 }
+
+@Composable
+private fun AccountSectionContent(
+    viewModel: AuthViewModel,
+    authState: AuthState,
+    onNavigateToAuth: () -> Unit,
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val user = when (authState) {
+        is AuthState.Authenticated -> authState.user
+        is AuthState.EmailVerificationRequired -> authState.user
+        else -> null
+    }
+
+    uiState.errorMessage?.let { error ->
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(error, fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
+                IconButton(onClick = viewModel::dismissError, modifier = Modifier.size(22.dp)) {
+                    Icon(Icons.Default.Close, "Dismiss", modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+    }
+
+    uiState.successMessage?.let { success ->
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = Color(0xFF2E9D72).copy(alpha = 0.15f),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Check, null, tint = Color(0xFF2E9D72), modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(success, fontSize = 12.sp, color = Color(0xFF2E9D72), modifier = Modifier.weight(1f))
+                IconButton(onClick = viewModel::dismissSuccess, modifier = Modifier.size(22.dp)) {
+                    Icon(Icons.Default.Close, "Dismiss", modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+    }
+
+    if (user != null) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(PocketOrange.copy(alpha = 0.15f), shape = CircleShape)
+                            .border(1.dp, PocketOrange.copy(alpha = 0.4f), shape = CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = (user.displayName?.take(1) ?: user.email?.take(1) ?: "U").uppercase(),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            color = PocketOrange,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            user.displayName ?: "No display name set",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                        )
+                        Text(
+                            user.email ?: "No email registered",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Provider", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    ) {
+                        Text(
+                            user.provider.title,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Email Verification", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (user.emailVerified) Color(0xFF2E9D72).copy(alpha = 0.12f) else MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                    ) {
+                        Text(
+                            if (user.emailVerified) "Verified" else "Unverified",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (user.emailVerified) Color(0xFF2E9D72) else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+
+                if (!user.emailVerified && user.provider == AuthProviderType.EMAIL) {
+                    OutlinedButton(
+                        onClick = viewModel::resendEmailVerification,
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Send Verification Email", fontSize = 12.sp)
+                    }
+                }
+
+                user.createdAt?.let { created ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("Member Since", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val dateStr = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault()).format(java.util.Date(created))
+                        Text(dateStr, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        OutlinedButton(
+            onClick = { viewModel.showEditName(true) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Edit Display Name")
+        }
+
+        if (user.provider == AuthProviderType.EMAIL) {
+            OutlinedButton(
+                onClick = { viewModel.showChangePassword(true) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Lock, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Change Password")
+            }
+        }
+
+        OutlinedButton(
+            onClick = viewModel::signOut,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ExitToApp, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Sign Out")
+        }
+
+        TextButton(
+            onClick = { viewModel.showDeleteAccount(true) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.DeleteOutline, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.width(8.dp))
+            Text("Delete Account", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = PocketOrange.copy(alpha = 0.12f),
+                        ) {
+                            Text(
+                                "Offline / Guest Mode",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PocketOrange,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        "You are currently using PocketDev in local guest mode. All your projects, tools, and code run privately on this device.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Button(
+                onClick = onNavigateToAuth,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = PocketOrange),
+            ) {
+                Text("Sign In / Create Account", fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
 
 

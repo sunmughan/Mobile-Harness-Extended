@@ -200,6 +200,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jarves.mh.auth.model.AppUser
+import com.jarves.mh.auth.model.AuthState
+import com.jarves.mh.auth.ui.AuthScreen
+import com.jarves.mh.auth.ui.AuthViewModel
+import com.jarves.mh.auth.ui.EmailVerificationBanner
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
@@ -274,16 +279,37 @@ private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
 }
 
 @Composable
-fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
+fun PocketDevApp(
+    viewModel: MainViewModel = viewModel(),
+    authViewModel: AuthViewModel = viewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val authState by authViewModel.authState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val projectsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    var guestDismissedAuth by rememberSaveable { mutableStateOf(false) }
+    var showAuthModal by rememberSaveable { mutableStateOf(false) }
+
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             viewModel.consumeToast()
         }
     }
+
+    val showAuthScreen = showAuthModal || (!guestDismissedAuth && authState is AuthState.Unauthenticated && state.startupStage != StartupStage.CHECKING)
+
+    if (showAuthScreen) {
+        AuthScreen(
+            viewModel = authViewModel,
+            onContinueAsGuest = {
+                guestDismissedAuth = true
+                showAuthModal = false
+            },
+        )
+        return
+    }
+
     when {
         state.startupStage == StartupStage.CHECKING -> StartupLoadingScreen(
             state = state,
@@ -400,7 +426,13 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onBindFolder = viewModel::bindFolderToActiveProject,
             onSetProjectRootDirectory = viewModel::setProjectRootDirectory,
         )
-        else -> RootScreenHost(state, viewModel, projectsListState)
+        else -> RootScreenHost(
+            state = state,
+            viewModel = viewModel,
+            projectsListState = projectsListState,
+            authViewModel = authViewModel,
+            onNavigateToAuth = { showAuthModal = true },
+        )
     }
 }
 
@@ -2154,6 +2186,8 @@ private fun RootScreenHost(
     state: AppUiState,
     viewModel: MainViewModel,
     projectsListState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    authViewModel: AuthViewModel? = null,
+    onNavigateToAuth: () -> Unit = {},
 ) {
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
@@ -2200,7 +2234,19 @@ private fun RootScreenHost(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        val authState = authViewModel?.authState?.collectAsStateWithLifecycle()?.value ?: AuthState.Unauthenticated
+        val authUiState = authViewModel?.uiState?.collectAsStateWithLifecycle()?.value
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (authState is AuthState.EmailVerificationRequired) {
+                EmailVerificationBanner(
+                    email = authState.user.email,
+                    isLoading = authUiState?.isLoading ?: false,
+                    onResend = { authViewModel?.resendEmailVerification() },
+                    onRefresh = { authViewModel?.refreshVerificationStatus() },
+                    onSignOut = { authViewModel?.signOut() },
+                )
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
             when (screen) {
                 RootScreen.PROJECTS -> ProjectsScreen(
                     state = state,
@@ -2294,10 +2340,13 @@ private fun RootScreenHost(
                     onToggleAutoUpdateToolsAndSkills = viewModel::toggleAutoUpdateToolsAndSkills,
                     onUpdateAllToolsAndSkills = { viewModel.autoUpdateToolsAndSkills(force = true) },
                     onOpenPrivacyPolicy = { showPrivacyPolicy = true },
+                    authViewModel = authViewModel,
+                    onNavigateToAuth = onNavigateToAuth,
                 )
             }
         }
     }
+}
     if (showQuickTerminal) {
         QuickTerminalSheet(
             onDismiss = { showQuickTerminal = false },
