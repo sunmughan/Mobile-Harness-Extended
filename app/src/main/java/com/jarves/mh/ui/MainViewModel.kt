@@ -364,8 +364,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         preferences.antigravityAccountEmail = email.orEmpty()
         if (!signedIn) preferences.clearAgentConversations(AgentKind.ANTIGRAVITY)
     }
+    private val isWarmReady = preferences.runtimeSetupComplete && preferences.onboardingComplete
+    private val initialProjects = preferences.loadProjects()
+    private val initialActiveProject = if (isWarmReady) {
+        preferences.lastActiveProjectId?.let { lastId -> initialProjects.firstOrNull { it.id == lastId } }
+    } else null
+    private val initialChats = initialActiveProject?.let { proj ->
+        preferences.loadProjectChats(proj.id).ifEmpty {
+            listOf(ProjectChat(title = "Main chat"))
+        }
+    } ?: emptyList()
+    private val initialActiveChatId = initialActiveProject?.let { proj ->
+        val lastChatId = preferences.getLastActiveChatId(proj.id)
+        (initialChats.firstOrNull { it.id == lastChatId } ?: initialChats.firstOrNull())?.id
+    }
+    private val initialMessages = if (initialActiveProject != null && initialActiveChatId != null) {
+        preferences.loadMessages(initialActiveProject.id, initialActiveChatId).ifEmpty {
+            listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."))
+        }
+    } else {
+        listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."))
+    }
+    private val initialActiveRoadmap = initialMessages.mapNotNull { it.roadmap }.lastOrNull()
+    private val initialScratchpad = deriveScratchpadItems(initialActiveRoadmap, emptyList(), false)
+
     private val _state = MutableStateFlow(
         AppUiState(
+            startupStage = if (isWarmReady) StartupStage.READY else StartupStage.CHECKING,
+            startupProgress = if (isWarmReady) 1f else 0f,
             onboardingComplete = preferences.onboardingComplete,
             backgroundSetupComplete = preferences.backgroundSetupComplete,
             agentKind = initialAgentKind,
@@ -381,7 +407,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             antigravityEffort = preferences.antigravityEffort,
             themeMode = runCatching { com.jarves.mh.ui.theme.AppThemeMode.valueOf(preferences.themeMode.uppercase()) }
                 .getOrDefault(com.jarves.mh.ui.theme.AppThemeMode.DARK),
-            projects = preferences.loadProjects(),
+            projects = initialProjects,
+            activeProject = initialActiveProject,
+            workspaceVisible = isWarmReady && initialActiveProject != null,
+            projectChats = initialChats,
+            activeChatId = initialActiveChatId,
+            messages = initialMessages,
+            activeRoadmap = initialActiveRoadmap,
+            scratchpadItems = initialScratchpad,
             githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
             githubLogin = preferences.githubLogin.takeIf(String::isNotBlank),
             skills = skillManager.installed(),
@@ -475,6 +508,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (cleanedProjects.size != loadedProjects.size) {
             preferences.saveProjects(cleanedProjects)
             _state.update { it.copy(projects = cleanedProjects) }
+        }
+        if (isWarmReady && initialActiveProject != null && cleanedProjects.any { it.id == initialActiveProject.id }) {
+            configureBridgeRoots(initialActiveProject.id, initialActiveProject.rootPath)
+            val terminal = loadProjectTerminal(initialActiveProject)
+            _state.update {
+                it.copy(
+                    projectTerminalLines = terminal.lines,
+                    projectTerminalCwd = terminal.cwd,
+                )
+            }
+            refreshProjectFiles()
         }
     }
 
@@ -1077,6 +1121,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             resumeRuntimeSetupService()
             return
         }
+        val isWarmBoot = preferences.runtimeSetupComplete && preferences.onboardingComplete
         val installed = withContext(Dispatchers.IO) {
             // Upgrades from the old single-bundle layout keep every already-installed tool.
             installer.migrateLegacyToolMarkers()
@@ -1097,7 +1142,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 preferences.runtimeSetupComplete = true
                 _state.update { it.copy(startupStage = StartupStage.MODEL_SETUP, startupProgress = 1f) }
             }
-            else -> initializeRuntime()
+            else -> initializeRuntime(isWarmBoot = isWarmBoot)
         }
     }
 
@@ -1197,39 +1242,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun initializeRuntime() {
+    private suspend fun initializeRuntime(isWarmBoot: Boolean = false) {
         val startedAt = SystemClock.elapsedRealtime()
-        _state.update {
-            it.copy(
-                startupStage = StartupStage.INITIALIZING,
-                startupProgress = 0.05f,
-                startupMessage = "Opening your private workspace",
-                startupBytes = null,
-                startupLogs = listOf("\$ Opening your private workspace"),
-                startupIndeterminate = false,
-                startupError = null,
-                startupErrorIsOffline = false,
-            )
+        if (!isWarmBoot) {
+            _state.update {
+                it.copy(
+                    startupStage = StartupStage.INITIALIZING,
+                    startupProgress = 0.05f,
+                    startupMessage = "Opening your private workspace",
+                    startupBytes = null,
+                    startupLogs = listOf("\$ Opening your private workspace"),
+                    startupIndeterminate = false,
+                    startupError = null,
+                    startupErrorIsOffline = false,
+                )
+            }
         }
         val result = runCatching {
             withContext(Dispatchers.IO) {
                 installer.initializeExisting { progress ->
-                    _state.update { current ->
-                        current.copy(
-                            startupProgress = 0.05f + progress.fraction * 0.95f,
-                            startupMessage = progress.message,
-                            startupBytes = null,
-                            startupLogs = mergeStartupLog(current.startupLogs, progress),
-                        )
+                    if (!isWarmBoot) {
+                        _state.update { current ->
+                            current.copy(
+                                startupProgress = 0.05f + progress.fraction * 0.95f,
+                                startupMessage = progress.message,
+                                startupBytes = null,
+                                startupLogs = mergeStartupLog(current.startupLogs, progress),
+                            )
+                        }
                     }
                 }
             }
         }
         if (result.isSuccess) {
             // The real version probe can finish in a fraction of a second on fast phones.
-            // Keep the successful loading state visible long enough to be understandable.
-            val remaining = MINIMUM_INITIALIZATION_SCREEN_MS - (SystemClock.elapsedRealtime() - startedAt)
-            if (remaining > 0) delay(remaining)
+            // Keep the successful loading state visible long enough to be understandable during initial setup.
+            if (!isWarmBoot) {
+                val remaining = MINIMUM_INITIALIZATION_SCREEN_MS - (SystemClock.elapsedRealtime() - startedAt)
+                if (remaining > 0) delay(remaining)
+            }
             _state.update {
                 it.copy(
                     startupStage = StartupStage.READY,
@@ -1241,9 +1292,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pingApi()
             checkForAppUpdate()
             autoUpdateToolsAndSkills()
-            preferences.lastActiveProjectId?.let { lastId ->
-                _state.value.projects.firstOrNull { it.id == lastId }?.let { lastProject ->
-                    openProject(lastProject)
+            if (!isWarmBoot || _state.value.activeProject == null) {
+                preferences.lastActiveProjectId?.let { lastId ->
+                    _state.value.projects.firstOrNull { it.id == lastId }?.let { lastProject ->
+                        openProject(lastProject)
+                    }
                 }
             }
         } else {
