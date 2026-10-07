@@ -221,14 +221,16 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("com.github.luben:zstd-jni:1.5.6-9@aar")
 
-    // FCM and Firebase Auth are available to the online build only. The offline build remains
-    // free of cloud runtimes while sharing the same application and notification policy.
-    add("onlineImplementation", platform("com.google.firebase:firebase-bom:34.19.0"))
+    // Firebase Auth and Identity libraries are shared across both online and offline builds
+    // so account management, Google sign-in, and team collaboration work seamlessly with project credentials.
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+
+    // FCM messaging is enabled for online builds
     add("onlineImplementation", "com.google.firebase:firebase-messaging")
-    add("onlineImplementation", "com.google.firebase:firebase-auth")
-    add("onlineImplementation", "androidx.credentials:credentials:1.3.0")
-    add("onlineImplementation", "androidx.credentials:credentials-play-services-auth:1.3.0")
-    add("onlineImplementation", "com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250107")
