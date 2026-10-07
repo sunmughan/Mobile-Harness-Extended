@@ -185,6 +185,8 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
         }
     }
 
+    fun writeSafely(targetFile: File, content: String): Boolean = atomicWriteFile(targetFile, content)
+
     private fun saveIndex(projectId: String, checkpoints: List<WorkspaceCheckpoint>) {
         val arr = JSONArray()
         checkpoints.forEach { ck ->
