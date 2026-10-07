@@ -345,7 +345,7 @@ class RuntimeSetupService : Service() {
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         wakeLock = getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "com.jarves.mh:runtime-setup")
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "com.codeair.mhe:runtime-setup")
             .apply { acquire(MAX_WAKE_LOCK_MS) }
     }
 
@@ -363,8 +363,8 @@ class RuntimeSetupService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        const val ACTION_START = "com.jarves.mh.START_SETUP"
-        const val ACTION_STOP = "com.jarves.mh.STOP_SETUP"
+        const val ACTION_START = "com.codeair.mhe.START_SETUP"
+        const val ACTION_STOP = "com.codeair.mhe.STOP_SETUP"
         const val EXTRA_STACKS = "selected_stacks"
         const val EXTRA_AGENT = "selected_agent"
         private const val CHANNEL_ID = "runtime-setup"

@@ -5144,7 +5144,14 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     fun restoreAllWorkspaces(): Int {
         val app = getApplication<Application>()
         val externalDir = app.getExternalFilesDir("backups") ?: File(app.filesDir, "backups")
-        val count = checkpointManager.restoreAllWorkspaces(externalDir)
+        var count = checkpointManager.restoreAllWorkspaces(externalDir)
+        if (count == 0) {
+            // Migration fallback: check legacy package backups directory if current path has no backups
+            val legacyExternalDir = File("/storage/emulated/0/Android/data/com.jarves.mh/files/backups")
+            if (legacyExternalDir.isDirectory) {
+                count = checkpointManager.restoreAllWorkspaces(legacyExternalDir)
+            }
+        }
         if (count > 0) {
             reloadProjects()
             _state.update { it.copy(toastMessage = "Restored $count projects from backup") }

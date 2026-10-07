@@ -73,5 +73,8 @@
         <receiver
             android:name=".runtime.AndroidAppInstallReceiver"
             android:exported="false" />
+        <property
+            android:name="package_compatibility"
+            android:value="package: name='com.jarves.mh'" />
     </application>
 </manifest>

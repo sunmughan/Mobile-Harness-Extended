@@ -216,13 +216,18 @@ class FirebaseAuthRepository(
 
     private fun mapFirebaseError(throwable: Throwable): String {
         AppCrashLogger.log("FirebaseAuth error: ${throwable.javaClass.simpleName} - ${throwable.message}")
-        return when (throwable) {
-            is FirebaseAuthInvalidCredentialsException -> "Invalid email or password. Please verify your credentials."
-            is FirebaseAuthUserCollisionException -> "An account with this email address already exists."
-            is FirebaseAuthWeakPasswordException -> "Password is too weak. Please use at least 6 characters including numbers or symbols."
-            is FirebaseAuthInvalidUserException -> "Account not found or has been disabled."
-            is FirebaseAuthRecentLoginRequiredException -> "For security, please sign in again before performing this sensitive operation."
-            is FirebaseNetworkException -> "Network error. Please check your internet connection and try again."
+        val message = throwable.message.orEmpty()
+        return when {
+            message.contains("operation is not allowed", ignoreCase = true) ||
+                message.contains("provider is disabled", ignoreCase = true) ||
+                message.contains("OPERATION_NOT_ALLOWED", ignoreCase = true) ->
+                "Email/Password sign-in is disabled in your Firebase console for project 'codeair-tech'. Please enable 'Email/Password' under Firebase Console → Authentication → Sign-in method, or sign in using Google."
+            throwable is FirebaseAuthInvalidCredentialsException -> "Invalid email or password. Please verify your credentials."
+            throwable is FirebaseAuthUserCollisionException -> "An account with this email address already exists."
+            throwable is FirebaseAuthWeakPasswordException -> "Password is too weak. Please use at least 6 characters including numbers or symbols."
+            throwable is FirebaseAuthInvalidUserException -> "Account not found or has been disabled."
+            throwable is FirebaseAuthRecentLoginRequiredException -> "For security, please sign in again before performing this sensitive operation."
+            throwable is FirebaseNetworkException -> "Network error. Please check your internet connection and try again."
             else -> throwable.message?.takeIf(String::isNotBlank) ?: "An unexpected authentication error occurred."
         }
     }
