@@ -129,6 +129,13 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.DesktopWindows
+import androidx.compose.material.icons.filled.FindInPage
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -6141,19 +6148,111 @@ private fun DiffLineRow(line: DiffLine) {
     )
 }
 
+private data class BrowserTab(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String = "New Tab",
+    val url: String = "",
+    val activeUrl: String? = null,
+    val isDesktopMode: Boolean = false,
+    val canGoBack: Boolean = false,
+    val canGoForward: Boolean = false,
+)
+
+private data class BrowserHistoryItem(
+    val title: String,
+    val url: String,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+private data class BrowserBookmark(
+    val title: String,
+    val url: String,
+)
+
+private const val DESKTOP_USER_AGENT =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PreviewTab(ready: Boolean, url: String?) {
     val context = LocalContext.current
-    var address by rememberSaveable(url) {
-        mutableStateOf(if (ready && !url.isNullOrBlank()) url else "")
+
+    // Multi-tab state
+    var tabs by rememberSaveable {
+        mutableStateOf(
+            listOf(
+                BrowserTab(
+                    id = "tab_initial",
+                    title = if (ready && !url.isNullOrBlank()) "Project" else "New Tab",
+                    url = if (ready && !url.isNullOrBlank()) url else "",
+                    activeUrl = if (ready && !url.isNullOrBlank()) normalizePreviewUrl(url) else null,
+                ),
+            ),
+        )
     }
-    var activeUrl by rememberSaveable(url) {
-        mutableStateOf(if (ready && !url.isNullOrBlank()) normalizePreviewUrl(url) else null)
-    }
+    var activeTabId by rememberSaveable { mutableStateOf(tabs.first().id) }
+    val currentTab = tabs.find { it.id == activeTabId } ?: tabs.first()
+
+    var address by remember(currentTab.id, currentTab.url) { mutableStateOf(currentTab.url) }
     var addressError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     val canGoBack = remember { mutableStateOf(false) }
+
+    // UI overlays & sheets
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var showHistorySheet by remember { mutableStateOf(false) }
+    var showExtensionsModal by remember { mutableStateOf(false) }
+    var showTabsStrip by rememberSaveable { mutableStateOf(false) }
+
+    // Find in Page state
+    var showFindInPage by remember { mutableStateOf(false) }
+    var findQuery by remember { mutableStateOf("") }
+    var findMatchCurrent by remember { mutableIntStateOf(0) }
+    var findMatchTotal by remember { mutableIntStateOf(0) }
+
+    // History & Bookmarks state
+    var historyList by remember { mutableStateOf(listOf<BrowserHistoryItem>()) }
+    var bookmarksList by remember { mutableStateOf(listOf<BrowserBookmark>()) }
+
+    // Custom Extension / User Script runner
+    var customScriptText by remember { mutableStateOf("") }
+    var scriptOutputText by remember { mutableStateOf<String?>(null) }
+
+    val openNewTab: (String?) -> Unit = { initialUrl ->
+        val newId = java.util.UUID.randomUUID().toString()
+        val normalized = initialUrl?.let { normalizePreviewUrl(it) }
+        val newTab = BrowserTab(
+            id = newId,
+            title = if (normalized != null) "Loading..." else "New Tab",
+            url = normalized.orEmpty(),
+            activeUrl = normalized,
+        )
+        tabs = tabs + newTab
+        activeTabId = newId
+        address = normalized.orEmpty()
+        addressError = null
+        showTabsStrip = true
+    }
+
+    val closeTab: (String) -> Unit = { tabIdToClose ->
+        if (tabs.size <= 1) {
+            val resetId = java.util.UUID.randomUUID().toString()
+            tabs = listOf(BrowserTab(id = resetId))
+            activeTabId = resetId
+            address = ""
+            addressError = null
+        } else {
+            val nextTabs = tabs.filter { it.id != tabIdToClose }
+            if (activeTabId == tabIdToClose) {
+                val closedIndex = tabs.indexOfFirst { it.id == tabIdToClose }
+                val nextActiveIndex = (closedIndex - 1).coerceAtLeast(0)
+                activeTabId = nextTabs[nextActiveIndex].id
+                address = nextTabs[nextActiveIndex].url
+            }
+            tabs = nextTabs
+        }
+    }
 
     val navigateTo: (String) -> Unit = { targetInput ->
         val normalized = normalizePreviewUrl(targetInput)
@@ -6162,17 +6261,47 @@ private fun PreviewTab(ready: Boolean, url: String?) {
         } else {
             addressError = null
             address = normalized
-            activeUrl = normalized
+            tabs = tabs.map { tab ->
+                if (tab.id == activeTabId) tab.copy(url = normalized, activeUrl = normalized, title = normalized) else tab
+            }
         }
     }
 
     val navigate = { navigateTo(address) }
 
+    val toggleDesktopSite: () -> Unit = {
+        val newDesktop = !currentTab.isDesktopMode
+        tabs = tabs.map {
+            if (it.id == activeTabId) it.copy(isDesktopMode = newDesktop) else it
+        }
+        webView?.settings?.let { s ->
+            s.userAgentString = if (newDesktop) DESKTOP_USER_AGENT else null
+            s.useWideViewPort = true
+            s.loadWithOverviewMode = true
+        }
+        webView?.reload()
+    }
+
+    val isBookmarked = bookmarksList.any { it.url == currentTab.url && it.url.isNotBlank() }
+    val toggleBookmark: () -> Unit = {
+        if (currentTab.url.isNotBlank()) {
+            bookmarksList = if (isBookmarked) {
+                bookmarksList.filter { it.url != currentTab.url }
+            } else {
+                listOf(BrowserBookmark(currentTab.title.ifBlank { currentTab.url }, currentTab.url)) + bookmarksList
+            }
+        }
+    }
+
     LaunchedEffect(ready, url) {
-        if (ready && !url.isNullOrBlank() && activeUrl == null) {
-            normalizePreviewUrl(url)?.let {
-                address = it
-                activeUrl = it
+        if (ready && !url.isNullOrBlank()) {
+            normalizePreviewUrl(url)?.let { normUrl ->
+                if (tabs.firstOrNull()?.activeUrl == null) {
+                    tabs = tabs.mapIndexed { idx, tab ->
+                        if (idx == 0 && tab.activeUrl == null) tab.copy(url = normUrl, activeUrl = normUrl, title = "Project") else tab
+                    }
+                    address = normUrl
+                }
             }
         }
     }
@@ -6186,111 +6315,467 @@ private fun PreviewTab(ready: Boolean, url: String?) {
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
             tonalElevation = 1.dp,
         ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                // Slim, modern pill URL bar (height 40dp) with embedded Refresh and Go buttons
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = if (addressError != null) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp),
+            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+                // Top controls row: Slim Pill URL Bar + Tab Count Button + 3-Dots Menu
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Row(
+                    // Slim, modern pill URL bar (height 40dp) with embedded Refresh and Go buttons
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (addressError != null) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        ),
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .weight(1f)
+                            .height(40.dp),
                     ) {
-                        // Embedded Reload button on the left
-                        IconButton(
-                            onClick = { webView?.reload() ?: navigate() },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Reload",
-                                modifier = Modifier.size(16.dp),
-                                tint = if (activeUrl != null) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        // Center URL input
-                        Box(
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 6.dp),
-                            contentAlignment = Alignment.CenterStart,
+                                .fillMaxSize()
+                                .padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (address.isEmpty()) {
-                                Text(
-                                    text = "Search or enter address (e.g. 3000, google.com)",
-                                    style = TextStyle(
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            BasicTextField(
-                                value = address,
-                                onValueChange = {
-                                    address = it
-                                    addressError = null
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                textStyle = TextStyle(
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                ),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Uri,
-                                    imeAction = ImeAction.Go,
-                                ),
-                                keyboardActions = KeyboardActions(onGo = { navigate() }),
-                            )
-                        }
-
-                        if (address.isNotBlank()) {
+                            // Embedded Reload button on the left
                             IconButton(
-                                onClick = {
-                                    address = ""
-                                    addressError = null
-                                },
-                                modifier = Modifier.size(28.dp),
+                                onClick = { webView?.reload() ?: navigate() },
+                                modifier = Modifier.size(32.dp),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Reload",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (currentTab.activeUrl != null) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                            }
+
+                            // Center URL input
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 6.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (address.isEmpty()) {
+                                    Text(
+                                        text = "Search or enter address",
+                                        style = TextStyle(
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                BasicTextField(
+                                    value = address,
+                                    onValueChange = {
+                                        address = it
+                                        addressError = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    textStyle = TextStyle(
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Uri,
+                                        imeAction = ImeAction.Go,
+                                    ),
+                                    keyboardActions = KeyboardActions(onGo = { navigate() }),
+                                )
+                            }
+
+                            if (address.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        address = ""
+                                        addressError = null
+                                    },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+
+                            // Embedded Go button on the right
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .clickable(onClick = navigate),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "Go",
+                                        modifier = Modifier.size(15.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Mobile Chrome-style Tab Counter Badge button (e.g. [ 2 ])
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (showTabsStrip) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, if (showTabsStrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showTabsStrip = !showTabsStrip },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "${tabs.size}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (showTabsStrip) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+
+                    // 3-Dots Menu button (MoreVert)
+                    Box {
+                        IconButton(
+                            onClick = { showMoreMenu = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Browser options",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        // Chromium 3-Dots Options Menu
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false },
+                        ) {
+                            // Desktop Site toggle
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        Icon(Icons.Default.DesktopWindows, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Desktop site", modifier = Modifier.weight(1f))
+                                        if (currentTab.isDesktopMode) {
+                                            Icon(Icons.Default.Check, contentDescription = "Active", tint = PocketGreen, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    toggleDesktopSite()
+                                },
+                            )
+
+                            // New Tab
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("New tab")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    openNewTab(null)
+                                },
+                            )
+
+                            // Close Tab
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Close tab")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    closeTab(activeTabId)
+                                },
+                            )
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            // Find in page
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.FindInPage, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Find in page")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showFindInPage = true
+                                },
+                            )
+
+                            // Bookmarks toggle
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(
+                                            imageVector = if (isBookmarked) Icons.Default.Star else Icons.Default.StarBorder,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (isBookmarked) PocketOrange else MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Text(if (isBookmarked) "Remove bookmark" else "Bookmark page")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    toggleBookmark()
+                                },
+                            )
+
+                            // History
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("History (${historyList.size})")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showHistorySheet = true
+                                },
+                            )
+
+                            // Extensions & User Scripts
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.Extension, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Extensions & Scripts")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showExtensionsModal = true
+                                },
+                            )
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            // Zoom In & Out
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.ZoomIn, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Zoom in")
+                                    }
+                                },
+                                onClick = {
+                                    webView?.zoomIn()
+                                    showMoreMenu = false
+                                },
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.ZoomOut, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Zoom out")
+                                    }
+                                },
+                                onClick = {
+                                    webView?.zoomOut()
+                                    showMoreMenu = false
+                                },
+                            )
+
+                            // Clear browsing data
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Clear browsing data")
+                                    }
+                                },
+                                onClick = {
+                                    webView?.clearCache(true)
+                                    webView?.clearHistory()
+                                    android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                                    historyList = emptyList()
+                                    Toast.makeText(context, "Browser cache and data cleared", Toast.LENGTH_SHORT).show()
+                                    showMoreMenu = false
+                                },
+                            )
+
+                            // CDP Port 9222 status shortcut
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Chromium CDP (Port 9222)")
+                                    }
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    navigateTo("http://127.0.0.1:9222")
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Horizontal Tabs Strip (shown when toggled or multiple tabs open)
+                if (showTabsStrip || tabs.size > 1) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        tabs.forEach { tab ->
+                            val isSelected = tab.id == activeTabId
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                ),
+                                modifier = Modifier.clickable {
+                                    activeTabId = tab.id
+                                    address = tab.url
+                                    addressError = null
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Language,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(12.dp),
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        text = tab.title.ifBlank { "New Tab" },
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.widthIn(max = 110.dp),
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    IconButton(
+                                        onClick = { closeTab(tab.id) },
+                                        modifier = Modifier.size(18.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Close tab",
+                                            modifier = Modifier.size(11.dp),
+                                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                             }
                         }
 
-                        // Embedded Go button on the right
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .clickable(onClick = navigate),
+                        // Add new tab '+' button
+                        IconButton(
+                            onClick = { openNewTab(null) },
+                            modifier = Modifier.size(28.dp),
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = "Go",
-                                    modifier = Modifier.size(15.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimary,
+                            Icon(Icons.Default.Add, "New Tab", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+
+                // Native Find in Page search bar
+                if (showFindInPage) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .height(38.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                            BasicTextField(
+                                value = findQuery,
+                                onValueChange = {
+                                    findQuery = it
+                                    if (it.isNotBlank()) {
+                                        webView?.findAllAsync(it)
+                                    } else {
+                                        webView?.clearMatches()
+                                        findMatchCurrent = 0
+                                        findMatchTotal = 0
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                textStyle = TextStyle(fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            )
+                            if (findQuery.isNotBlank()) {
+                                Text(
+                                    text = if (findMatchTotal > 0) "$findMatchCurrent/$findMatchTotal" else "0/0",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                            }
+                            IconButton(
+                                onClick = { webView?.findNext(false) },
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, "Previous match", modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { webView?.findNext(true) },
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowDown, "Next match", modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    showFindInPage = false
+                                    findQuery = ""
+                                    webView?.clearMatches()
+                                },
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(Icons.Default.Close, "Dismiss find", modifier = Modifier.size(14.dp))
                             }
                         }
                     }
@@ -6314,7 +6799,8 @@ private fun PreviewTab(ready: Boolean, url: String?) {
             }
         }
 
-        val targetUrl = activeUrl
+        // Active page rendering
+        val targetUrl = currentTab.activeUrl
         if (targetUrl == null) {
             Column(
                 modifier = Modifier
@@ -6339,14 +6825,14 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                 }
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Browser & Project Preview",
+                    text = "Chromium Browser & Preview",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Run local project dev servers, online websites, or inspect automated Chromium in one place.",
+                    text = "Multiple tabs, Desktop view, DevTools inspection, and online/local web navigation.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
@@ -6395,6 +6881,19 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         settings.allowContentAccess = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
+                        settings.setSupportZoom(true)
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+
+                        if (currentTab.isDesktopMode) {
+                            settings.userAgentString = DESKTOP_USER_AGENT
+                        }
+
+                        setFindListener { activeMatchOrdinal, numberOfMatches, _ ->
+                            findMatchCurrent = activeMatchOrdinal + 1
+                            findMatchTotal = numberOfMatches
+                        }
+
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 loading = newProgress < 100
@@ -6406,6 +6905,9 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                                 val scheme = target.scheme?.lowercase()
                                 if (scheme == "http" || scheme == "https" || scheme == "about") {
                                     address = target.toString()
+                                    tabs = tabs.map {
+                                        if (it.id == activeTabId) it.copy(url = target.toString(), activeUrl = target.toString()) else it
+                                    }
                                     return false
                                 }
                                 return try {
@@ -6419,8 +6921,21 @@ private fun PreviewTab(ready: Boolean, url: String?) {
 
                             override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                                 super.onPageFinished(view, finishedUrl)
-                                if (!finishedUrl.isNullOrBlank()) {
+                                if (!finishedUrl.isNullOrBlank() && finishedUrl != "about:blank") {
                                     address = finishedUrl
+                                    val title = view?.title.orEmpty().ifBlank { finishedUrl }
+                                    tabs = tabs.map {
+                                        if (it.id == activeTabId) it.copy(
+                                            url = finishedUrl,
+                                            activeUrl = finishedUrl,
+                                            title = title.take(28),
+                                            canGoBack = view?.canGoBack() == true,
+                                            canGoForward = view?.canGoForward() == true,
+                                        ) else it
+                                    }
+                                    if (historyList.firstOrNull()?.url != finishedUrl) {
+                                        historyList = (listOf(BrowserHistoryItem(title, finishedUrl)) + historyList).take(50)
+                                    }
                                 }
                                 canGoBack.value = view?.canGoBack() == true
                             }
@@ -6430,11 +6945,240 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                 },
                 update = { current ->
                     webView = current
+                    if (currentTab.isDesktopMode && current.settings.userAgentString != DESKTOP_USER_AGENT) {
+                        current.settings.userAgentString = DESKTOP_USER_AGENT
+                    } else if (!currentTab.isDesktopMode && current.settings.userAgentString != null) {
+                        current.settings.userAgentString = null
+                    }
                     if (current.url != targetUrl) current.loadUrl(targetUrl)
                 },
                 modifier = Modifier.fillMaxSize(),
             )
         }
+    }
+
+    // History & Bookmarks Modal Sheet
+    if (showHistorySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showHistorySheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Browsing History", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    if (historyList.isNotEmpty()) {
+                        TextButton(onClick = { historyList = emptyList() }) {
+                            Text("Clear all", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+
+                if (bookmarksList.isNotEmpty()) {
+                    Text("Bookmarks", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = PocketGreen, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                    bookmarksList.forEach { bm ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showHistorySheet = false
+                                    navigateTo(bm.url)
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Default.Star, contentDescription = null, tint = PocketOrange, modifier = Modifier.size(16.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(bm.title, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(bm.url, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+
+                if (historyList.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("No recent history", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
+                        items(historyList) { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showHistorySheet = false
+                                        navigateTo(item.url)
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.title, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.url, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Extensions & User Scripts Modal
+    if (showExtensionsModal) {
+        AlertDialog(
+            onDismissRequest = {
+                showExtensionsModal = false
+                scriptOutputText = null
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Extensions & Scripts")
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        "Inject developer tools, user styles, or automated scripts into the active page.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    // 1. Eruda Mobile DevTools
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Eruda Mobile DevTools", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text("Inspect element, DOM, console, & network", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Button(
+                                onClick = {
+                                    val erudaJs = """
+                                        (function() {
+                                            if (window.eruda) { window.eruda.show(); return; }
+                                            var s = document.createElement('script');
+                                            s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+                                            s.onload = function() { eruda.init(); eruda.show(); };
+                                            document.body.appendChild(s);
+                                        })();
+                                    """.trimIndent()
+                                    webView?.evaluateJavascript(erudaJs, null)
+                                    Toast.makeText(context, "Eruda DevTools injected", Toast.LENGTH_SHORT).show()
+                                    showExtensionsModal = false
+                                },
+                            ) {
+                                Text("Inject", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // 2. Dark Reader Mode
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Dark Reader CSS", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text("Inverts & styles page into dark mode", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Button(
+                                onClick = {
+                                    val darkJs = """
+                                        (function() {
+                                            var el = document.getElementById('pocket-dark-mode');
+                                            if (el) { el.remove(); }
+                                            else {
+                                                var s = document.createElement('style');
+                                                s.id = 'pocket-dark-mode';
+                                                s.innerHTML = 'html { filter: invert(90%) hue-rotate(180deg) !important; background: #121212 !important; } img, video, canvas { filter: invert(100%) hue-rotate(180deg) !important; }';
+                                                document.head.appendChild(s);
+                                            }
+                                        })();
+                                    """.trimIndent()
+                                    webView?.evaluateJavascript(darkJs, null)
+                                    Toast.makeText(context, "Dark mode style toggled", Toast.LENGTH_SHORT).show()
+                                    showExtensionsModal = false
+                                },
+                            ) {
+                                Text("Toggle", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // 3. Custom JavaScript Evaluator
+                    Text("Run Custom Script:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    BasicTextField(
+                        value = customScriptText,
+                        onValueChange = { customScriptText = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface),
+                    )
+
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Button(
+                            onClick = {
+                                if (customScriptText.isNotBlank()) {
+                                    webView?.evaluateJavascript(customScriptText) { result ->
+                                        scriptOutputText = result
+                                    }
+                                }
+                            },
+                        ) {
+                            Text("Execute JS", fontSize = 11.sp)
+                        }
+                    }
+
+                    if (scriptOutputText != null) {
+                        Text("Output: $scriptOutputText", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = PocketGreen)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExtensionsModal = false
+                    scriptOutputText = null
+                }) {
+                    Text("Close")
+                }
+            },
+        )
     }
 }
 

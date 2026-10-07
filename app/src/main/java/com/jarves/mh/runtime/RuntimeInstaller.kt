@@ -2614,6 +2614,11 @@ async function ensureChromium() {
   const running = await isPortOpen(PORT);
   if (running) return;
 
+  const extDir = ['/workspace/extensions', '/workspace/.extensions', '/root/.extensions'].find(p => fs.existsSync(p));
+  const extArgs = extDir
+    ? [`--load-extension=${'$'}{extDir}`, `--disable-extensions-except=${'$'}{extDir}`]
+    : [];
+
   const bin = findChromium();
   const args = [
     '--headless',
@@ -2624,7 +2629,7 @@ async function ensureChromium() {
     `--remote-debugging-port=${'$'}{PORT}`,
     '--remote-debugging-address=127.0.0.1',
     '--window-size=1280,800',
-    '--disable-extensions',
+    ...extArgs,
     'about:blank'
   ];
 
@@ -2692,9 +2697,88 @@ async function main() {
         const { browser, page } = await getBrowserAndPage();
         const url = page.url();
         const title = await page.title();
-        console.log(JSON.stringify({ status: 'running', port: PORT, url, title }));
+        const pages = await browser.pages();
+        console.log(JSON.stringify({ status: 'running', port: PORT, url, title, tabCount: pages.length }));
         browser.disconnect();
       }
+      process.exit(0);
+      break;
+    }
+
+    case 'tabs':
+    case 'list-tabs': {
+      await ensureChromium();
+      const puppeteer = getPuppeteer();
+      const browser = await puppeteer.connect({
+        browserURL: `http://127.0.0.1:${'$'}{PORT}`
+      });
+      const pages = await browser.pages();
+      const tabsInfo = await Promise.all(pages.map(async (p, idx) => ({
+        index: idx,
+        url: p.url(),
+        title: await p.title()
+      })));
+      console.log(JSON.stringify(tabsInfo, null, 2));
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'new-tab':
+    case 'open-tab': {
+      const url = args[0] || 'about:blank';
+      const targetUrl = url.includes('://') ? url : (url === 'about:blank' ? url : 'http://' + url);
+      await ensureChromium();
+      const puppeteer = getPuppeteer();
+      const browser = await puppeteer.connect({
+        browserURL: `http://127.0.0.1:${'$'}{PORT}`
+      });
+      const page = await browser.newPage();
+      if (targetUrl !== 'about:blank') {
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      }
+      const pages = await browser.pages();
+      const index = pages.indexOf(page);
+      console.log(JSON.stringify({ status: 'created', index, url: page.url(), title: await page.title() }));
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'switch-tab': {
+      const idx = parseInt(args[0] || '0', 10);
+      await ensureChromium();
+      const puppeteer = getPuppeteer();
+      const browser = await puppeteer.connect({
+        browserURL: `http://127.0.0.1:${'$'}{PORT}`
+      });
+      const pages = await browser.pages();
+      if (idx >= 0 && idx < pages.length) {
+        await pages[idx].bringToFront();
+        console.log(JSON.stringify({ status: 'switched', index: idx, url: pages[idx].url(), title: await pages[idx].title() }));
+      } else {
+        console.error(`Invalid tab index: ${'$'}{idx}. Total open: ${'$'}{pages.length}`);
+      }
+      browser.disconnect();
+      process.exit(0);
+      break;
+    }
+
+    case 'close-tab': {
+      const idx = parseInt(args[0] || '0', 10);
+      await ensureChromium();
+      const puppeteer = getPuppeteer();
+      const browser = await puppeteer.connect({
+        browserURL: `http://127.0.0.1:${'$'}{PORT}`
+      });
+      const pages = await browser.pages();
+      if (idx >= 0 && idx < pages.length) {
+        await pages[idx].close();
+        console.log(`Closed tab at index ${'$'}{idx}`);
+      } else {
+        console.error(`Invalid tab index: ${'$'}{idx}. Total open: ${'$'}{pages.length}`);
+      }
+      browser.disconnect();
       process.exit(0);
       break;
     }
@@ -2785,7 +2869,8 @@ async function main() {
       break;
     }
 
-    case 'eval': {
+    case 'eval':
+    case 'inject': {
       const code = args.join(' ');
       if (!code) {
         console.error('Usage: pocket-browser eval <code>');
@@ -2805,7 +2890,11 @@ async function main() {
 Commands:
   start                     Start headless Chromium on port ${'$'}{PORT}
   stop                      Stop Chromium process
-  status                    Show active page URL, title, and port
+  status                    Show active page URL, title, tab count, and port
+  tabs                      List all open tabs / pages
+  new-tab [url]             Open a new tab (optionally with URL)
+  switch-tab <index>        Switch active page to tab index
+  close-tab <index>         Close tab at index
   open <url>                Navigate to URL
   click <selector>          Click element by CSS selector
   type <selector> <text>    Type text into input element
@@ -2813,6 +2902,7 @@ Commands:
   screenshot [path]         Capture viewport screenshot to file
   get-text [selector]       Extract text content from selector
   eval <code>               Execute JavaScript expression in page
+  inject <code>             Alias for eval
 `);
       process.exit(0);
   }
