@@ -47,6 +47,7 @@ class DshRuntimeBridge(
     private val checkpoints = WorkspaceCheckpoints(context.filesDir)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
+    override val supportsSessionRecovery: Boolean = true
     private val finishedSessions = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var activeProcess: Process? = null
     @Volatile private var activeSessionId: String? = null

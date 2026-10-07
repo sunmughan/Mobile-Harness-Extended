@@ -1,15 +1,15 @@
 {
-  "versionCode": 23,
-  "versionName": "1.0.22",
-  "notes": "Mobile Harness v1.0.22: In-task media attachments, animated workspace switcher, resilient developer toolchain updates, and hardened environment updates.",
+  "versionCode": 24,
+  "versionName": "1.0.23",
+  "notes": "Mobile Harness v1.0.23: Custom project folder binding & root directory configuration, Chromium & Puppeteer browser stack, instant task completion indicators, and connection loss resume recovery.",
   "artifacts": {
     "online": {
-      "url": "https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.22/app-online-release.apk",
+      "url": "https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.23/app-online-release.apk",
       "sha256": "4b68019e1fa3b07ae7e189873d6ebefae3e0ec05f013d2f928e469e38d77bfbb",
       "sizeBytes": 87421923
     },
     "offline": {
-      "url": "https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.22/app-offline-release.apk",
+      "url": "https://github.com/techjarves/Mobile-Harness/releases/download/v1.0.23/app-offline-release.apk",
       "sha256": "8064a7c06ebfa507d8cf1f486d3029272898c69ee33ea8536f6d50ff0630b42b",
       "sizeBytes": 887721644
     }

@@ -323,6 +323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var githubAuthJob: kotlinx.coroutines.Job? = null
     @Volatile private var lastOpenedAntigravityAuthUrl: String? = null
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
+    private var lastInterruptedRequest: RuntimeRetryRequest? = null
     private val failedApiKeyIds = mutableSetOf<String>()
     private val transcriptWrites = Channel<TranscriptWrite>(Channel.UNLIMITED)
     private val initialAgentKind = AgentKind.fromStored(preferences.agentKind)
@@ -2198,10 +2199,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun consumeToast() = _state.update { it.copy(toastMessage = null) }
 
-    fun createProject(name: String) {
-        if (name.isBlank()) return
+    fun createProject(name: String, folderUri: Uri? = null) {
+        if (name.isBlank() && folderUri == null) return
         if (_state.value.isRunning || _state.value.projectTerminalRunning) {
             _state.update { it.copy(toastMessage = "Stop the background task before creating another project") }
+            return
+        }
+        if (folderUri != null) {
+            _state.update { it.copy(projectImporting = true, projectImportMessage = "Creating project and binding folder…") }
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val app = getApplication<Application>()
+                        val documentFile = DocumentFile.fromTreeUri(app, folderUri)
+                        val folderName = documentFile?.name?.trim()?.takeIf { it.isNotBlank() } ?: "Project"
+                        val effectiveName = if (name.isNotBlank()) name.trim() else folderName
+                        val baseSlug = projectSlug(effectiveName)
+                        val usedSlugs = _state.value.projects.mapTo(mutableSetOf()) { it.slug }
+                        val slug = generateSequence(1) { it + 1 }
+                            .map { number -> if (number == 1) baseSlug else "$baseSlug-$number" }
+                            .first { it !in usedSlugs }
+                        val projectId = UUID.randomUUID().toString()
+                        val destination = File(app.filesDir, "workspaces/$projectId").apply { mkdirs() }
+                        val copiedCount = copyTreeToDirectory(folderUri, destination)
+                        val preliminary = Project(
+                            id = projectId,
+                            name = effectiveName,
+                            description = "Imported from device storage",
+                            language = "General",
+                            slug = slug,
+                        )
+                        val nestedRoot = detectNestedProjectRoot(preliminary)
+                        val projectRoot = nestedRoot?.let { File(destination, it) } ?: destination
+                        val metadata = detectImportedProjectMetadata(projectRoot)
+                        val project = preliminary.copy(
+                            description = metadata.first.ifBlank { "Local device repository" },
+                            language = metadata.second.ifBlank { "General" },
+                            rootPath = nestedRoot.orEmpty(),
+                        )
+                        project to copiedCount
+                    }
+                }
+                result.onSuccess { (project, count) ->
+                    val firstChat = ProjectChat(title = "New chat")
+                    preferences.saveProjectChats(project.id, listOf(firstChat))
+                    _state.update { current ->
+                        current.copy(
+                            projects = listOf(project) + current.projects,
+                            projectImporting = false,
+                            projectImportMessage = null,
+                            toastMessage = "${project.name} created ($count files bound)",
+                        )
+                    }
+                    preferences.saveProjects(_state.value.projects)
+                    openProject(project)
+                }.onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            projectImporting = false,
+                            projectImportMessage = null,
+                            toastMessage = "Project creation failed: ${error.message?.take(180) ?: "Unknown error"}",
+                        )
+                    }
+                }
+            }
             return
         }
         val baseSlug = projectSlug(name)
@@ -2439,22 +2500,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun copyFolderToWorkspace(treeUri: Uri): Project {
+    private fun copyTreeToDirectory(treeUri: Uri, destinationDir: File): Int {
         val app = getApplication<Application>()
         runCatching {
             app.contentResolver.takePersistableUriPermission(
                 treeUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
         }
         val documentFile = DocumentFile.fromTreeUri(app, treeUri)
             ?: error("Cannot access the selected device folder")
-        val rawName = documentFile.name
-        val folderName = if (rawName.isNullOrBlank()) "Device Project" else rawName.trim()
-        val identity = generateQuickChatIdentity(_state.value.projects.mapTo(mutableSetOf()) { it.slug })
-        val projectId = UUID.randomUUID().toString()
-        val destination = File(app.filesDir, "workspaces/$projectId").apply { mkdirs() }
-
         var copiedCount = 0
         val maxFiles = 3000
 
@@ -2480,7 +2535,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        copyTree(documentFile, destination)
+        copyTree(documentFile, destinationDir)
+        return copiedCount
+    }
+
+    private fun copyFolderToWorkspace(treeUri: Uri): Project {
+        val app = getApplication<Application>()
+        val documentFile = DocumentFile.fromTreeUri(app, treeUri)
+            ?: error("Cannot access the selected device folder")
+        val rawName = documentFile.name
+        val folderName = if (rawName.isNullOrBlank()) "Device Project" else rawName.trim()
+        val identity = generateQuickChatIdentity(_state.value.projects.mapTo(mutableSetOf()) { it.slug })
+        val projectId = UUID.randomUUID().toString()
+        val destination = File(app.filesDir, "workspaces/$projectId").apply { mkdirs() }
+
+        copyTreeToDirectory(treeUri, destination)
 
         val preliminary = Project(
             id = projectId,
@@ -2499,6 +2568,90 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             language = metadata.second.ifBlank { "General" },
             rootPath = nestedRoot.orEmpty(),
         )
+    }
+
+    fun bindFolderToActiveProject(treeUri: Uri) {
+        val current = _state.value
+        val project = current.activeProject ?: return
+        if (current.projectImporting || current.isRunning || current.projectTerminalRunning) {
+            _state.update { it.copy(toastMessage = "Wait for active tasks to finish before binding a folder") }
+            return
+        }
+        _state.update { it.copy(projectImporting = true, projectImportMessage = "Binding device folder to ${project.name}…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val app = getApplication<Application>()
+                    val destination = File(app.filesDir, "workspaces/${project.id}").apply { mkdirs() }
+                    val copiedCount = copyTreeToDirectory(treeUri, destination)
+                    val nestedRoot = detectNestedProjectRoot(project)
+                    val projectRoot = nestedRoot?.let { File(destination, it) } ?: destination
+                    val metadata = detectImportedProjectMetadata(projectRoot)
+                    val updated = project.copy(
+                        description = if (project.description == "Starter web project") metadata.first.ifBlank { project.description } else project.description,
+                        language = if (project.language == "TypeScript" && metadata.second != "TypeScript") metadata.second else project.language,
+                        rootPath = nestedRoot.orEmpty(),
+                        updatedAtMillis = System.currentTimeMillis(),
+                    )
+                    updated to copiedCount
+                }
+            }
+            result.onSuccess { (updated, count) ->
+                configureBridgeRoots(updated.id, updated.rootPath)
+                val projects = _state.value.projects.map { if (it.id == updated.id) updated else it }
+                preferences.saveProjects(projects)
+                val guestRoot = projectGuestRoot(updated)
+                _state.update { state ->
+                    state.copy(
+                        projects = projects,
+                        activeProject = updated,
+                        projectImporting = false,
+                        projectImportMessage = null,
+                        projectTerminalCwd = guestRoot,
+                        toastMessage = "Bound folder to ${updated.name} ($count files copied)",
+                    )
+                }
+                refreshProjectFiles()
+            }.onFailure { error ->
+                _state.update { state ->
+                    state.copy(
+                        projectImporting = false,
+                        projectImportMessage = null,
+                        toastMessage = "Failed to bind folder: ${error.message?.take(180) ?: "Unknown error"}",
+                    )
+                }
+            }
+        }
+    }
+
+    fun setProjectRootDirectory(relativePath: String) {
+        val current = _state.value
+        val project = current.activeProject ?: return
+        if (current.isRunning || current.projectTerminalRunning) return
+        val normalized = relativePath.trim().removePrefix("/").removeSuffix("/")
+        val base = File(getApplication<Application>().filesDir, "workspaces/${project.id}")
+        val target = if (normalized.isBlank()) base else File(base, normalized)
+        if (!target.isDirectory || !target.canonicalFile.toPath().startsWith(base.canonicalFile.toPath())) {
+            _state.update { it.copy(toastMessage = "Invalid directory path") }
+            return
+        }
+        val updated = project.copy(rootPath = normalized, updatedAtMillis = System.currentTimeMillis())
+        configureBridgeRoots(updated.id, updated.rootPath)
+        val projects = current.projects.map { if (it.id == updated.id) updated else it }
+        val guestRoot = projectGuestRoot(updated)
+        preferences.saveProjects(projects)
+        saveProjectTerminal(updated.id, guestRoot, current.projectTerminalLines)
+        _state.update {
+            it.copy(
+                projects = projects,
+                activeProject = updated,
+                suggestedProjectRoot = null,
+                projectTerminalCwd = guestRoot,
+                changes = emptyList(),
+                toastMessage = if (normalized.isBlank()) "Workspace root is now the project root" else "$normalized is now the project working directory",
+            )
+        }
+        refreshProjectFiles()
     }
 
     private fun detectImportedProjectMetadata(root: File): Pair<String, String> {
@@ -3146,7 +3299,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             roadmap.steps.forEach { step ->
                 val status = when (step.status) {
                     StepStatus.COMPLETED -> TaskStatus.FINISHED
-                    StepStatus.IN_PROGRESS -> TaskStatus.RUNNING
+                    StepStatus.IN_PROGRESS -> if (isRunning) TaskStatus.RUNNING else TaskStatus.FINISHED
                     StepStatus.SKIPPED -> TaskStatus.FINISHED
                     StepStatus.PENDING -> TaskStatus.PENDING
                 }
@@ -3162,7 +3315,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         liveProcess.forEach { proc ->
             if (proc.title.isNotBlank() && proc.title != "Think") {
-                val status = if (proc.isComplete) TaskStatus.FINISHED else TaskStatus.RUNNING
+                val status = if (proc.isComplete || !isRunning) TaskStatus.FINISHED else TaskStatus.RUNNING
                 if (items.none { it.title.equals(proc.title, ignoreCase = true) }) {
                     items.add(
                         ScratchpadItem(
@@ -3704,6 +3857,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
             history = history,
             provider = state.value.provider,
         )
+        lastInterruptedRequest = activeRuntimeRequest
         viewModelScope.launch {
             val request = activeRuntimeRequest ?: return@launch
             val workspace = withContext(Dispatchers.IO) {
@@ -3723,6 +3877,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
             }
             val enriched = request.copy(prompt = enrichedPrompt)
             activeRuntimeRequest = enriched
+            lastInterruptedRequest = enriched
             runtimeRecoveryStartedAtMillis = null
             runtimeRecoveryAttempt = 0
             enriched.runtime.startSession(
@@ -3758,13 +3913,14 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     }
 
     fun stopTask() {
-        if (!_state.value.isRunning) return
+        if (!_state.value.isRunning && !_state.value.runtimeRecoveryCanResume) return
         runtimeRecoveryJob?.cancel()
         runtimeRecoveryJob = null
         runtimeRecoveryStartedAtMillis = null
         runtimeRecoveryAttempt = 0
         activeRuntimeRequest = null
-        _state.update { it.copy(runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
+        lastInterruptedRequest = null
+        _state.update { it.copy(isRunning = false, runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
         viewModelScope.launch { activeRuntime().stopActiveSession() }
     }
 
@@ -4192,8 +4348,11 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                 }
             }
         }
-        if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed) {
+        if (event is RuntimeEvent.SessionCompleted || (event is RuntimeEvent.SessionFailed && !_state.value.runtimeRecoveryCanResume)) {
             activeRuntimeRequest = null
+            if (event is RuntimeEvent.SessionCompleted) {
+                lastInterruptedRequest = null
+            }
             failedApiKeyIds.clear()
         }
         if (event is RuntimeEvent.FilesChanged || event is RuntimeEvent.SessionCompleted ||
@@ -4226,9 +4385,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
 
     private fun recoverTransientRuntimeFailure(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
-        val request = activeRuntimeRequest ?: return false
-        if (!current.isRunning || current.activeSessionId != event.sessionId) return false
-        if (!request.runtime.supportsSessionRecovery) return false
+        val request = activeRuntimeRequest ?: lastInterruptedRequest ?: return false
+        if (!current.isRunning || (current.activeSessionId != null && current.activeSessionId != event.sessionId)) return false
         if (!RuntimeFailureClassifier.isTransientNetworkFailure(event.reason)) return false
 
         val now = System.currentTimeMillis()
@@ -4308,7 +4466,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
 
         runtimeRecoveryJob = viewModelScope.launch {
             delay(retryDelay)
-            if (!_state.value.isRunning || activeRuntimeRequest !== request) return@launch
+            if (!_state.value.isRunning || (activeRuntimeRequest !== request && lastInterruptedRequest !== request)) return@launch
             val updatedElapsed = System.currentTimeMillis() - recoveryStartedAt
             val currentRemaining = (((maxDurationMillis - updatedElapsed) / 1000L).coerceAtLeast(1L))
             _state.update { it.copy(
@@ -4326,24 +4484,28 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     }
 
     fun resumeInterruptedTask() {
-        val request = activeRuntimeRequest ?: return
-        if (!_state.value.runtimeRecoveryCanResume) return
+        val request = activeRuntimeRequest ?: lastInterruptedRequest ?: buildResumeRequestFallback() ?: return
+        activeRuntimeRequest = request
+        lastInterruptedRequest = request
         runtimeRecoveryJob?.cancel()
         runtimeRecoveryAttempt = 0
         runtimeRecoveryStartedAtMillis = null
         _state.update { it.copy(
             isRunning = true,
+            activeSessionId = null,
             runtimeRecoveryStatus = "Reconnecting…",
             runtimeRecoveryCanResume = false,
             liveProcess = it.liveProcess + ActivityItem("Resuming task", "Reconnecting to the preserved provider session."),
         ) }
-        runtimeRecoveryJob = viewModelScope.launch {
+        viewModelScope.launch {
             runCatching {
                 request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider)
             }.onFailure { error ->
                 val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
                 _state.update { state ->
                     state.copy(
+                        isRunning = false,
+                        activeSessionId = null,
                         runtimeRecoveryStatus = "Waiting for network",
                         runtimeRecoveryCanResume = true,
                         liveProcess = state.liveProcess + ActivityItem("Resume failed", failureReason),
@@ -4351,6 +4513,18 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                 }
             }
         }
+    }
+
+    private fun buildResumeRequestFallback(): RuntimeRetryRequest? {
+        val project = _state.value.activeProject ?: return null
+        val lastUserMessage = _state.value.messages.lastOrNull { it.fromUser } ?: return null
+        return RuntimeRetryRequest(
+            runtime = activeRuntime(),
+            project = project,
+            prompt = lastUserMessage.text,
+            history = _state.value.messages.dropLast(1),
+            provider = _state.value.provider,
+        )
     }
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value

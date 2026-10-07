@@ -350,31 +350,26 @@ jobs:
           ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
           export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
-          cat > release-notes.md <<EOF
+          if [ -f "release-notes-${TAG}.md" ]; then
+            cp "release-notes-${TAG}.md" release-notes.md
+          else
+            cat > release-notes.md <<EOF
           ## Mobile Harness $TAG
 
           ### Changes in this build
-          - Fixed Antigravity CLI detection when the guest executable is exposed through absolute or relative symlinks inside the Ubuntu PRoot rootfs.
-          - Unified guest-aware executable detection for Antigravity, Claude / Cloud Code, and DeepSeek.
-          - Fixed stale agent installation state so Settings reflects the actual installed agent inventory.
-          - Added live installed-agent refresh when opening Agent and Settings screens and after changing the active agent.
-          - Agent installation and update controls remain exclusively on the Agents screen; Settings remains focused on environment updates.
-          - Added skill update checking and per-skill update actions, including GitHub main/master fallback and safe extraction.
-          - Fixed Skills screen compile issues for the new update controls.
-          - Kept offline runtime setup network-free; missing non-bundled toolchains now fail clearly instead of silently downloading.
-          - Added live environment version refresh for Claude Code, DeepSeek Harness, and Antigravity CLI from their real upstream sources.
-          - Environment Update actions are enabled only for components with a supported live updater or verified HTTPS package; metadata-only core/Python/Android entries no longer trigger a fake package update.
-          - Added real install/update routing for Python and Android toolchains through the latest verified upstream runtime bundles; CI now resolves the newest non-prerelease runtime asset for every bundled toolchain instead of pinning stale asset IDs.
-          - Removed misleading disabled actions for components that do not have a standalone package; bundled Core remains runtime-managed while Python/Android expose real Install/Update actions, and PHP/C++ update paths are explicit about online package requirements.
-          - Added persistent operation-failure logging for environment updates so caught runtime update exceptions are captured in crash.log.
-          - Updated PHP to the PHP 8.4 package path with Composer refresh support, dynamically resolved the latest verified runtime bundles, and verified online/offline builds, unit tests, permanent release signing, APK alignment, and release integrity in CI.
+          - Flexible project folder binding and custom working directory configuration.
+          - Chromium & Puppeteer automated browser DevStack with Dual-mode Preview tab.
+          - Fixed instant task completion indicators in header and scratchpad pill.
+          - Fixed connection loss recovery resume action.
+          - Upgraded unit test suite for runtime skills and browser DevStack.
 
           ### Release files
           - **Online Release:** app-online-release.apk
           - **Offline Release:** app-offline-release.apk
 
-          The release contains the two APKs plus the `mobile-harness-update.json` manifest. Debug APKs are CI-only artifacts and are not release downloads.
+          The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
           EOF
+          fi
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Mobile Harness $TAG" --notes-file release-notes.md
           gh release edit "$TAG" --title "Mobile Harness $TAG" --notes-file release-notes.md

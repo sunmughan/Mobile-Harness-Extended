@@ -10,7 +10,7 @@
 
   <br />
 
-  [![Release v1.0.22](https://img.shields.io/badge/Release-v1.0.22-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.22)
+  [![Release v1.0.23](https://img.shields.io/badge/Release-v1.0.23-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v1.0.23)
   [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#system-requirements)
   [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#system-requirements)
   [![MIT License](https://img.shields.io/badge/License-MIT-8B7CF6?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
@@ -18,8 +18,8 @@
 
   <br />
 
-  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.22/app-online-release.apk) &nbsp;•&nbsp;
-  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.22/app-offline-release.apk) &nbsp;•&nbsp;
+  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.23/app-online-release.apk) &nbsp;•&nbsp;
+  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.23/app-offline-release.apk) &nbsp;•&nbsp;
   [**Watch Walkthrough (3 min)**](https://youtu.be/QzAau52Z7yQ) &nbsp;•&nbsp;
   [**Quickstart Guide**](#quickstart) &nbsp;•&nbsp;
   [**Architecture**](#architecture) &nbsp;•&nbsp;
@@ -28,7 +28,7 @@
 </div>
 
 > [!NOTE]
-> **Current development status (October 2026):** Mobile Harness **v1.0.22** (versionCode `23`) is the latest verified production release.
+> **Current development status (October 2026):** Mobile Harness **v1.0.23** (versionCode `24`) is the latest verified production release.
 > 
 > Major advancements in this release:
 > - **Interactive Workflow Modes**: First-class **Plan**, **Build**, and **Unified** modes featuring interactive task checklists, step-by-step roadmaps, and approval gates.
@@ -37,7 +37,9 @@
 > - **Tri-Agent Ecosystem**: Native support for **Google Antigravity CLI (`agy`)**, **Anthropic Claude Code**, and **DeepSeek Harness (`dsh`)** with guest-aware executable discovery and live environment version tracking.
 > - **Skills Marketplace & Management**: Dedicated Skills manager with live version checks, GitHub main/master fallback updates, and safe tarball extraction.
 > - **Built-in IDE & Offline Privacy**: Integrated full code editor with syntax highlighting, bracket matching, find/replace, symbol outline, workspace `@file` mentions, and bundled offline Privacy Policy viewer.
-> - **Verified ARM64 Toolchains**: Dynamically resolved runtime bundles for Python 3.11+, Android SDK / Build Tools, and PHP 8.4 with Composer.
+> - **Verified ARM64 Toolchains**: Dynamically resolved runtime bundles for Python 3.11+, Android SDK / Build Tools, PHP 8.4 with Composer, and Chromium + Puppeteer browser automation.
+> - **Automated Browser & Dual-Mode Preview**: Built-in `pocket-browser` CLI, Chrome DevTools Protocol on port 9222, and dual-mode Preview switcher between Web Server and Automated Chromium.
+> - **Flexible Project Folder Binding**: Select and bind any directory from phone storage as the project working directory on new project creation or within active workspaces.
 > - **Verified In-Place Updates**: Permanent Codeair release key signing and automated Android 34 emulator in-place upgrade verification in CI.
 
 <br />
@@ -75,7 +77,7 @@
       <h3>Online Edition</h3>
       <p><strong>91,431,815 bytes (~87.2 MiB) · Core bundled</strong></p>
       <p>Lightweight APK. Downloads verified runtime packages (Python, Android SDK, Claude, Antigravity, DeepSeek) on demand.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.22/app-online-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.23/app-online-release.apk">
         <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
       </a>
     </td>
@@ -83,7 +85,7 @@
       <h3>Offline Edition</h3>
       <p><strong>888,492,059 bytes (~847.3 MiB) · Everything included</strong></p>
       <p>Completely self-contained. Pre-bundles all ARM64 runtimes (Core, Python, Android, Claude, DeepSeek, Antigravity) for zero-network setup.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.22/app-offline-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v1.0.23/app-offline-release.apk">
         <img src="https://img.shields.io/badge/Download-Offline_APK-5B8DEF?style=for-the-badge&logo=android&logoColor=white" alt="Download Offline APK" />
       </a>
     </td>
@@ -91,7 +93,7 @@
 </table>
 
 <p align="center">
-  <strong>ARM64 Android 9+ · Release v1.0.22</strong><br />
+  <strong>ARM64 Android 9+ · Release v1.0.23</strong><br />
   <sub>Direct APK installation · No root required · No USB or wireless ADB pairing · Permanent Codeair signature</sub>
 </p>
 
@@ -193,7 +195,7 @@ Download the latest signed release APK from [GitHub Releases](https://github.com
 
 ```text
 Target Architecture : ARM64 (arm64-v8a)
-Package Version     : v1.0.22
+Package Version     : v1.0.23
 Minimum OS Level    : Android 9.0 (API 28)
 ```
 
@@ -386,6 +388,7 @@ Mobile Harness allows downloading optional developer packs on demand to conserve
 * **Android & JVM**: OpenJDK 17 headless runtime, Android SDK Build Tools, and Gradle with direct on-device APK installation.
 * **PHP Development**: PHP 8.4 runtime via Ondřej PHP PPA for Ubuntu 20.04 ARM64, official latest-stable Composer, and database extensions.
 * **C / C++ Compiler Suite**: GCC/G++, Clang, Make, and CMake for native tool compilation.
+* **Browser Automation (Chromium & Puppeteer)**: Chromium browser, `puppeteer-core`, and `pocket-browser` CLI with Chrome DevTools Protocol (CDP) on port 9222. Includes real-time viewport inspection in the dual-mode Preview tab.
 
 > *Note: Kernel-level virtualization technologies such as Docker, KVM, systemd services, and nested hardware emulators are not supported under PRoot.*
 

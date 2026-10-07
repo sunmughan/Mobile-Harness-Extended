@@ -70,6 +70,7 @@ class ClaudeRuntimeBridge(
     private val installer = RuntimeInstaller(context)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
+    override val supportsSessionRecovery: Boolean = true
     private val pending = ConcurrentHashMap<String, PendingPermission>()
     private val toolNames = ConcurrentHashMap<String, String>()
     private val seenToolCalls = ConcurrentHashMap.newKeySet<String>()

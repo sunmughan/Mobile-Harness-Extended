@@ -149,11 +149,12 @@ fun ScratchpadPill(
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     modifier: Modifier = Modifier,
+    isRunning: Boolean = false,
 ) {
     if (items.isEmpty()) return
 
     val finishedCount = items.count { it.status == TaskStatus.FINISHED }
-    val runningCount = items.count { it.status == TaskStatus.RUNNING }
+    val runningCount = if (isRunning) items.count { it.status == TaskStatus.RUNNING } else 0
     val pendingCount = items.count { it.status == TaskStatus.PENDING }
 
     Surface(

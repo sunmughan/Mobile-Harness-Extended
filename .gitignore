@@ -70,3 +70,6 @@ attachments/
 
 # Release distribution builds
 release-dist/
+
+# Runtime synchronized agent skills
+.agents/

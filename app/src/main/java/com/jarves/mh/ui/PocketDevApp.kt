@@ -248,6 +248,7 @@ import com.jarves.mh.ui.theme.AppThemeMode
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.documentfile.provider.DocumentFile
 
 // Mobile Harness Extended branding is rendered in the shared setup headers.
 private enum class RootScreen(val label: String, val icon: ImageVector) {
@@ -388,6 +389,8 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onToggleScratchpad = viewModel::toggleScratchpadExpanded,
             onAddRoadmapComment = viewModel::addRoadmapComment,
             onApproveAndBuildRoadmap = viewModel::approveAndBuildRoadmap,
+            onBindFolder = viewModel::bindFolderToActiveProject,
+            onSetProjectRootDirectory = viewModel::setProjectRootDirectory,
         )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
@@ -3205,7 +3208,7 @@ private fun ProjectsScreen(
     state: AppUiState,
     listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
     onOpen: (Project) -> Unit,
-    onCreate: (String) -> Unit,
+    onCreate: (String, Uri?) -> Unit,
     onCreateQuickProject: () -> Unit,
     onImportZip: (Uri) -> Unit,
     onImportFolder: (Uri) -> Unit = {},
@@ -3230,8 +3233,20 @@ private fun ProjectsScreen(
     var gitUrl by rememberSaveable { mutableStateOf("") }
     var repositorySearch by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
+    var selectedFolderUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var selectedFolderName by rememberSaveable { mutableStateOf<String?>(null) }
     val projects = state.projects
     val context = LocalContext.current
+    val selectFolderForNewProjectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            selectedFolderUri = uri
+            val doc = DocumentFile.fromTreeUri(context, uri)
+            selectedFolderName = doc?.name ?: "Selected folder"
+            if (name.isBlank()) {
+                name = doc?.name.orEmpty()
+            }
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         onInstallUpdate()
     }
@@ -3540,14 +3555,64 @@ private fun ProjectsScreen(
         }
     }
     if (showCreate) AlertDialog(
-        onDismissRequest = { showCreate = false },
-        title = { Text("Create a starter project") },
+        onDismissRequest = {
+            showCreate = false
+            selectedFolderUri = null
+            selectedFolderName = null
+        },
+        title = { Text("Create project") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Project name") }, singleLine = true)
-                if (name.isNotBlank()) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Project name") },
+                    placeholder = { Text(selectedFolderName ?: "My project") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (selectedFolderUri != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Binding device folder:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(selectedFolderName ?: "Selected folder", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                            }
+                            IconButton(
+                                onClick = {
+                                    selectedFolderUri = null
+                                    selectedFolderName = null
+                                },
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(Icons.Default.Close, "Remove folder", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { selectFolderForNewProjectLauncher.launch(null) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Select folder from device (Optional)", fontSize = 12.sp)
+                    }
+                }
+                if (name.isNotBlank() || selectedFolderName != null) {
                     Text(
-                        "Terminal folder: /workspace/${projectSlug(name)}",
+                        "Terminal folder: /workspace/${projectSlug(name.ifBlank { selectedFolderName.orEmpty() })}",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3555,8 +3620,25 @@ private fun ProjectsScreen(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(name); showCreate = false; name = "" }, enabled = name.isNotBlank()) { Text("Create") } },
-        dismissButton = { TextButton(onClick = { showCreate = false }) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onCreate(name, selectedFolderUri)
+                    showCreate = false
+                    name = ""
+                    selectedFolderUri = null
+                    selectedFolderName = null
+                },
+                enabled = name.isNotBlank() || selectedFolderUri != null,
+            ) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                showCreate = false
+                selectedFolderUri = null
+                selectedFolderName = null
+            }) { Text("Cancel") }
+        },
     )
     if (showGitDialog) AlertDialog(
         onDismissRequest = { if (!state.gitCloneRunning) showGitDialog = false },
@@ -4048,11 +4130,17 @@ private fun WorkspaceScreen(
     onToggleScratchpad: () -> Unit = {},
     onAddRoadmapComment: (roadmapId: String, text: String, stepId: String?) -> Unit = { _, _, _ -> },
     onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
+    onBindFolder: (Uri) -> Unit = {},
+    onSetProjectRootDirectory: (String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val isAndroidProject = state.androidProjectDetected
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val bindFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+        onResult = { uri -> if (uri != null) onBindFolder(uri) },
+    )
     val exportProjectLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
         onResult = { uri -> if (uri != null) onExportProject(uri) },
@@ -4175,6 +4263,7 @@ private fun WorkspaceScreen(
                     WorkspaceCommand.CHANGES -> selectedTab = WorkspaceTab.CHANGES
                     WorkspaceCommand.PREVIEW -> selectedTab = WorkspaceTab.PREVIEW
                     WorkspaceCommand.REFRESH_FILES -> onRefreshFiles()
+                    WorkspaceCommand.BIND_FOLDER -> bindFolderLauncher.launch(null)
                 }
             },
         )
@@ -4378,6 +4467,8 @@ private fun WorkspaceScreen(
                     onExport = {
                         exportProjectLauncher.launch("${state.activeProject?.slug ?: "project"}.zip")
                     },
+                    onBindFolder = { bindFolderLauncher.launch(null) },
+                    onSetProjectRootDirectory = onSetProjectRootDirectory,
                 )
                 WorkspaceTab.TERMINAL -> TerminalScreen(
                     lines = state.projectTerminalLines,
@@ -4422,6 +4513,7 @@ private enum class WorkspaceCommand(val title: String, val keywords: String) {
     CHANGES("Review Changes", "changes diff undo keep"),
     PREVIEW("Open Preview", "preview browser localhost"),
     REFRESH_FILES("Refresh Project Files", "refresh files reload"),
+    BIND_FOLDER("Bind Folder from Device", "open folder bind directory storage import external"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -4652,6 +4744,8 @@ private fun FilesTab(
     onOpenFile: (WorkspaceEntry) -> Unit,
     onUseSuggestedProjectRoot: () -> Unit,
     onExport: () -> Unit,
+    onBindFolder: () -> Unit = {},
+    onSetProjectRootDirectory: (String) -> Unit = {},
 ) {
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fileQuery by rememberSaveable { mutableStateOf("") }
@@ -4705,6 +4799,7 @@ private fun FilesTab(
                             Text("Collapse all", fontSize = 11.sp)
                         }
                     }
+                    IconButton(onClick = onBindFolder) { Icon(Icons.Default.Folder, "Bind folder from device") }
                     if (!loading && files.any { !it.isDirectory }) {
                         IconButton(onClick = onExport) { Icon(Icons.Default.Download, "Export project as ZIP") }
                     }
@@ -4748,7 +4843,36 @@ private fun FilesTab(
             }
         }
         if (!loading && files.isEmpty()) {
-            item { EmptyState(Icons.Default.Folder, "No files yet", "Ask your coding agent to create something in this project.") }
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(36.dp), tint = PocketOrange)
+                        Text("No files in workspace yet", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(
+                            "Ask the agent to create files, or open and bind an existing project folder from your phone storage.",
+                            textAlign = TextAlign.Center,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(
+                            onClick = onBindFolder,
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Open / Bind folder from device")
+                        }
+                    }
+                }
+            }
         } else if (!loading && normalizedQuery.isNotBlank() && visibleFiles.isEmpty()) {
             item { EmptyState(Icons.Default.Search, "No matching files", "Try a different filename or path.") }
         }
@@ -4802,6 +4926,19 @@ private fun FilesTab(
                     Modifier.weight(1f),
                     color = if (!entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )
+                if (entry.isDirectory) {
+                    IconButton(
+                        onClick = { onSetProjectRootDirectory(entry.path) },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Tune,
+                            contentDescription = "Set as working directory",
+                            modifier = Modifier.size(15.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                        )
+                    }
+                }
                 if (!entry.isDirectory) {
                     Spacer(Modifier.width(8.dp))
                     Text(formatFileSize(entry.sizeBytes), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -4961,6 +5098,7 @@ private fun ChatTab(
                 ) {
                     ScratchpadPill(
                         items = scratchpadItems,
+                        isRunning = isRunning,
                         isExpanded = scratchpadExpanded,
                         onToggleExpand = onToggleScratchpad,
                     )

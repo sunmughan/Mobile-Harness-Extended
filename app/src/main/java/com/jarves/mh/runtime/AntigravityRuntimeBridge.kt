@@ -338,10 +338,28 @@ class AntigravityRuntimeBridge(
                                 eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, event.response))
                             }
                             resultSeen = true
+                            val paths = checkpoints.changedFiles(workspace, before)
+                            checkpoints.saveChangedPaths(projectId, paths)
+                            if (paths.isNotEmpty()) {
+                                eventBus.emit(RuntimeEvent.FilesChanged(sessionId, checkpoints.buildChangeDetails(projectId, workspace, paths)))
+                            }
+                            val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
+                            val durationText = formatDurationText(durationSeconds)
+                            emitCompleted(sessionId)
+                            finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
                         } else if (assistantTextSeen) {
                             // Assistant already produced complete text output; trailing errors during cleanup
                             // should not fail the session.
                             resultSeen = true
+                            val paths = checkpoints.changedFiles(workspace, before)
+                            checkpoints.saveChangedPaths(projectId, paths)
+                            if (paths.isNotEmpty()) {
+                                eventBus.emit(RuntimeEvent.FilesChanged(sessionId, checkpoints.buildChangeDetails(projectId, workspace, paths)))
+                            }
+                            val durationSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(1L)
+                            val durationText = formatDurationText(durationSeconds)
+                            emitCompleted(sessionId)
+                            finishForegroundRuntime(true, projectSlug, "Antigravity finished the task in $projectSlug in $durationText.")
                         } else throw AntigravitySessionException(friendlyError(event.error ?: event.status))
                     }
                     null -> {
@@ -351,7 +369,7 @@ class AntigravityRuntimeBridge(
                     }
                 }
             }
-            while (process.isAlive || native.outputFile.length() > offset) {
+            while (!resultSeen && (process.isAlive || native.outputFile.length() > offset)) {
                 val available = native.outputFile.length() - offset
                 if (available <= 0) {
                     delay(50)
@@ -370,6 +388,7 @@ class AntigravityRuntimeBridge(
                     val line = pending.substring(0, newline).trimEnd('\r')
                     pending.delete(0, newline + 1)
                     handleLine(line)
+                    if (resultSeen) break
                     newline = pending.indexOf("\n")
                 }
             }
@@ -377,7 +396,10 @@ class AntigravityRuntimeBridge(
                 handleLine(it)
                 pending.setLength(0)
             }
-            val exit = process.waitFor()
+            if (resultSeen) {
+                runCatching { process.destroy() }
+            }
+            val exit = runCatching { process.waitFor() }.getOrDefault(0)
             if (userStopRequested) {
                 throw AntigravitySessionException("Stopped by user")
             }

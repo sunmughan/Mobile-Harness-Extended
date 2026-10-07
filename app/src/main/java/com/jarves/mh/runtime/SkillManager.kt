@@ -31,9 +31,16 @@ data class SkillUpdateInfo(
     val source: String,
 )
 
-class SkillManager(private val context: Context) {
-    private val root = File(context.filesDir, "skills").apply { mkdirs() }
+class SkillManager(
+    private val context: Context? = null,
+    baseDir: File? = null,
+) {
+    constructor(context: Context) : this(context, null)
+    constructor(baseDir: File) : this(null, baseDir)
+
+    private val root = (baseDir ?: File(context?.filesDir, "skills")).apply { mkdirs() }
     private val registryFile = File(root, "registry.json")
+    private val cache = context?.cacheDir ?: File(root, ".cache").apply { mkdirs() }
 
     fun installed(): List<SkillInfo> = readRegistry().mapNotNull { json ->
         val path = json.optString("path")
@@ -93,11 +100,12 @@ class SkillManager(private val context: Context) {
     }
 
     fun installFromUri(uri: Uri): List<SkillInfo> {
-        val temp = File(context.cacheDir, "skill-import-" + UUID.randomUUID() + ".zip")
+        val temp = File(cache, "skill-import-" + UUID.randomUUID() + ".zip")
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            val stream = context?.contentResolver?.openInputStream(uri) ?: error("Could not read the selected skill archive.")
+            stream.use { input ->
                 temp.outputStream().use { output -> input.copyTo(output) }
-            } ?: error("Could not read the selected skill archive.")
+            }
             return installZip(temp, uri.toString())
         } finally {
             temp.delete()
@@ -122,8 +130,8 @@ class SkillManager(private val context: Context) {
     private fun githubSkillChanged(skill: SkillInfo): Boolean {
         val normalized = normalizeGitHubRepositoryUrl(skill.source)
         val ownerRepo = URI(normalized).path.trim('/').removeSuffix(".git")
-        val archive = File(context.cacheDir, "skill-check-" + UUID.randomUUID() + ".zip")
-        val extraction = File(context.cacheDir, "skill-check-extract-" + UUID.randomUUID()).apply { mkdirs() }
+        val archive = File(cache, "skill-check-" + UUID.randomUUID() + ".zip")
+        val extraction = File(cache, "skill-check-extract-" + UUID.randomUUID()).apply { mkdirs() }
         try {
             runCatching {
                 downloadSkillArchive("https://codeload.github.com/" + ownerRepo + "/zip/refs/heads/main", archive)
@@ -180,7 +188,7 @@ class SkillManager(private val context: Context) {
     }
 
     private fun installZipDownload(url: String, source: String): List<SkillInfo> {
-        val temp = File(context.cacheDir, "skill-download-" + UUID.randomUUID() + ".zip")
+        val temp = File(cache, "skill-download-" + UUID.randomUUID() + ".zip")
         try {
             downloadSkillArchive(url, temp)
             return installZip(temp, source)
@@ -227,7 +235,7 @@ class SkillManager(private val context: Context) {
 
     private fun installZip(zip: File, source: String): List<SkillInfo> {
         require(zip.length() <= 100L * 1024L * 1024L) { "Skill archive exceeds the 100 MB safety limit." }
-        val extraction = File(context.cacheDir, "skill-extract-" + UUID.randomUUID()).apply { mkdirs() }
+        val extraction = File(cache, "skill-extract-" + UUID.randomUUID()).apply { mkdirs() }
         try {
             ZipInputStream(zip.inputStream().buffered()).use { input ->
                 var entries = 0
