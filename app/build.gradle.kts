@@ -84,8 +84,8 @@ android {
         targetSdk = if (playBuild) 36 else 28
         // Keep literal defaults so F-Droid's static manifest parser can detect
         // the tagged release. Gradle properties may still override Play builds.
-        versionCode = 25
-        versionName = "1.0.24"
+        versionCode = 26
+        versionName = "2.0.0"
         providers.gradleProperty("appVersionCode").orNull?.toIntOrNull()?.let { versionCode = it }
         providers.gradleProperty("appVersionName").orNull?.let { versionName = it }
 
@@ -153,11 +153,18 @@ android {
         compose = true
         buildConfig = true
     }
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+    val enableCmake = providers.gradleProperty("mh.buildNative").orNull?.toBoolean()
+        ?: (System.getProperty("os.arch") != "aarch64" && System.getProperty("os.arch") != "arm64")
+
+    if (enableCmake) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
+    } else {
+        sourceSets.getByName("main").jniLibs.srcDir("src/main/prebuiltJniLibs")
     }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     packaging.jniLibs.useLegacyPackaging = true
