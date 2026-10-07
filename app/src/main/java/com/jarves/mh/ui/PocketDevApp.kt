@@ -4294,7 +4294,8 @@ private fun WorkspaceScreen(
     }
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (selectedTab != WorkspaceTab.PREVIEW) {
+                TopAppBar(
                 title = {
                     Column(Modifier.fillMaxWidth()) {
                         Row(
@@ -4385,6 +4386,7 @@ private fun WorkspaceScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
+            }
         },
         bottomBar = {
             if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
@@ -6138,48 +6140,24 @@ private fun DiffLineRow(line: DiffLine) {
     )
 }
 
-private enum class PreviewMode(val label: String, val icon: ImageVector) {
-    WEB_SERVER("Web Server", Icons.Default.Language),
-    AUTOMATED_BROWSER("Automated Chromium", Icons.Default.SmartToy),
-}
-
 @Composable
 private fun PreviewTab(ready: Boolean, url: String?) {
-    var previewMode by rememberSaveable { mutableStateOf(PreviewMode.WEB_SERVER) }
-    var address by rememberSaveable(url, previewMode) {
-        mutableStateOf(
-            if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
-                if (ready && !url.isNullOrBlank()) url else "http://127.0.0.1:9222"
-            } else {
-                if (ready) url.orEmpty() else ""
-            }
-        )
+    val context = LocalContext.current
+    var address by rememberSaveable(url) {
+        mutableStateOf(if (ready && !url.isNullOrBlank()) url else "")
     }
-    var activeUrl by rememberSaveable(url, previewMode) {
-        mutableStateOf(
-            if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
-                normalizeAutomatedBrowserUrl(if (ready && !url.isNullOrBlank()) url else "http://127.0.0.1:9222")
-            } else {
-                if (ready) url else null
-            }
-        )
+    var activeUrl by rememberSaveable(url) {
+        mutableStateOf(if (ready && !url.isNullOrBlank()) normalizePreviewUrl(url) else null)
     }
     var addressError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    val canGoBack = remember { mutableStateOf(false) }
 
-    val navigate = {
-        val normalized = if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
-            normalizeAutomatedBrowserUrl(address)
-        } else {
-            normalizePreviewUrl(address)
-        }
+    val navigateTo: (String) -> Unit = { targetInput ->
+        val normalized = normalizePreviewUrl(targetInput)
         if (normalized == null) {
-            addressError = if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
-                "Enter a valid URL or host"
-            } else {
-                "Use a local URL such as localhost:3000"
-            }
+            addressError = "Enter a valid URL or port (e.g. 3000, localhost:8080, google.com)"
         } else {
             addressError = null
             address = normalized
@@ -6187,159 +6165,228 @@ private fun PreviewTab(ready: Boolean, url: String?) {
         }
     }
 
+    val navigate = { navigateTo(address) }
+
     LaunchedEffect(ready, url) {
         if (ready && !url.isNullOrBlank() && activeUrl == null) {
-            val normalized = if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
-                normalizeAutomatedBrowserUrl(url)
-            } else {
-                normalizePreviewUrl(url)
-            }
-            normalized?.let {
+            normalizePreviewUrl(url)?.let {
                 address = it
                 activeUrl = it
             }
         }
     }
 
+    BackHandler(enabled = canGoBack.value) {
+        webView?.goBack()
+    }
+
     Column(Modifier.fillMaxSize()) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
             tonalElevation = 1.dp,
         ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                // Dual-mode switcher
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                // Slim, modern pill URL bar (height 40dp) with embedded Refresh and Go buttons
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (addressError != null) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp),
                 ) {
-                    PreviewMode.entries.forEach { mode ->
-                        val selected = previewMode == mode
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(
-                                1.dp,
-                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            ),
-                            modifier = Modifier.clickable {
-                                previewMode = mode
-                                addressError = null
-                                if (mode == PreviewMode.AUTOMATED_BROWSER && (address.isBlank() || address.contains(":3000") || address.contains(":8080"))) {
-                                    address = "http://127.0.0.1:9222"
-                                    activeUrl = "http://127.0.0.1:9222"
-                                } else if (mode == PreviewMode.WEB_SERVER && address == "http://127.0.0.1:9222") {
-                                    address = if (ready && !url.isNullOrBlank()) url else ""
-                                    activeUrl = if (ready) url else null
-                                }
-                            },
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Embedded Reload button on the left
+                        IconButton(
+                            onClick = { webView?.reload() ?: navigate() },
+                            modifier = Modifier.size(32.dp),
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Reload",
+                                modifier = Modifier.size(16.dp),
+                                tint = if (activeUrl != null) PocketGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        // Center URL input
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            if (address.isEmpty()) {
+                                Text(
+                                    text = "Search or enter address (e.g. 3000, google.com)",
+                                    style = TextStyle(
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            BasicTextField(
+                                value = address,
+                                onValueChange = {
+                                    address = it
+                                    addressError = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Uri,
+                                    imeAction = ImeAction.Go,
+                                ),
+                                keyboardActions = KeyboardActions(onGo = { navigate() }),
+                            )
+                        }
+
+                        if (address.isNotBlank()) {
+                            IconButton(
+                                onClick = {
+                                    address = ""
+                                    addressError = null
+                                },
+                                modifier = Modifier.size(28.dp),
                             ) {
                                 Icon(
-                                    mode.icon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(13.dp),
-                                    tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    mode.label,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
-                    }
-                    if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
-                        Spacer(Modifier.weight(1f))
+
+                        // Embedded Go button on the right
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = PocketGreen.copy(alpha = 0.15f),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = navigate),
                         ) {
-                            Text(
-                                "Port 9222 CDP",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PocketGreen,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Go",
+                                    modifier = Modifier.size(15.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
                         }
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = address,
-                        onValueChange = {
-                            address = it
-                            addressError = null
-                        },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        label = { Text(if (previewMode == PreviewMode.AUTOMATED_BROWSER) "Automated Browser URL" else "Preview URL") },
-                        placeholder = { Text(if (previewMode == PreviewMode.AUTOMATED_BROWSER) "https://... or 127.0.0.1:9222" else "localhost:3000") },
-                        leadingIcon = {
-                            Box(
-                                Modifier.size(8.dp).background(
-                                    if (activeUrl != null) PocketGreen else MaterialTheme.colorScheme.outline,
-                                    CircleShape,
-                                ),
-                            )
-                        },
-                        trailingIcon = {
-                            IconButton(onClick = navigate) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Open URL")
-                            }
-                        },
-                        isError = addressError != null,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Uri,
-                            imeAction = ImeAction.Go,
-                        ),
-                        keyboardActions = KeyboardActions(onGo = { navigate() }),
-                    )
-                    IconButton(
-                        onClick = { webView?.reload() ?: navigate() },
-                        enabled = address.isNotBlank(),
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh preview")
-                    }
-                }
                 if (addressError != null) {
                     Text(
                         addressError.orEmpty(),
                         color = MaterialTheme.colorScheme.error,
                         fontSize = 11.sp,
-                        modifier = Modifier.padding(start = 16.dp, top = 3.dp),
+                        modifier = Modifier.padding(start = 12.dp, top = 4.dp),
                     )
                 } else if (loading) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 5.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .height(2.dp),
+                    )
                 }
             }
         }
+
         val targetUrl = activeUrl
         if (targetUrl == null) {
-            if (previewMode == PreviewMode.AUTOMATED_BROWSER) {
-                EmptyState(
-                    Icons.Default.SmartToy,
-                    "Automated Chromium Browser",
-                    "Give instructions in Chat (e.g. 'pocket-browser open https://...') or enter a URL above to inspect and control web automation live.",
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.size(64.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Browser & Project Preview",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
                 )
-            } else {
-                EmptyState(
-                    Icons.Default.PlayArrow,
-                    "Preview not running",
-                    "Enter a localhost URL above, or start a local web server in the project Terminal.",
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Run local project dev servers, online websites, or inspect automated Chromium in one place.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp,
                 )
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "Quick shortcuts:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                ) {
+                    listOf("localhost:3000", "localhost:5173", "localhost:8080").forEach { chip ->
+                        AssistChip(
+                            onClick = { navigateTo(chip) },
+                            label = { Text(chip, fontSize = 11.sp) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                ) {
+                    listOf("127.0.0.1:9222", "google.com", "github.com").forEach { chip ->
+                        AssistChip(
+                            onClick = { navigateTo(chip) },
+                            label = { Text(chip, fontSize = 11.sp) },
+                        )
+                    }
+                }
             }
         } else {
             AndroidView(
-                factory = { context ->
-                    WebView(context).apply {
+                factory = { ctx ->
+                    WebView(ctx).apply {
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -6354,19 +6401,27 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         }
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                val target = request?.url ?: return true
-                                if (previewMode != PreviewMode.AUTOMATED_BROWSER && !target.isLoopbackPreviewUrl()) {
-                                    addressError = "External navigation is blocked in project preview"
-                                    return true
+                                val target = request?.url ?: return false
+                                val scheme = target.scheme?.lowercase()
+                                if (scheme == "http" || scheme == "https" || scheme == "about") {
+                                    address = target.toString()
+                                    return false
                                 }
-                                address = target.toString()
-                                return false
+                                return try {
+                                    val intent = Intent(Intent.ACTION_VIEW, target)
+                                    context.startActivity(intent)
+                                    true
+                                } catch (_: Exception) {
+                                    false
+                                }
                             }
 
-                            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                                val target = request?.url ?: return blockedPreviewResponse()
-                                if (previewMode == PreviewMode.AUTOMATED_BROWSER) return null
-                                return if (target.isLoopbackPreviewUrl()) null else blockedPreviewResponse()
+                            override fun onPageFinished(view: WebView?, finishedUrl: String?) {
+                                super.onPageFinished(view, finishedUrl)
+                                if (!finishedUrl.isNullOrBlank()) {
+                                    address = finishedUrl
+                                }
+                                canGoBack.value = view?.canGoBack() == true
                             }
                         }
                         loadUrl(targetUrl)
@@ -6385,28 +6440,37 @@ private fun PreviewTab(ready: Boolean, url: String?) {
 private fun normalizePreviewUrl(input: String): String? {
     val raw = input.trim()
     if (raw.isBlank()) return null
-    val withScheme = if ("://" in raw) raw else "http://$raw"
-    val parsed = runCatching { Uri.parse(withScheme) }.getOrNull() ?: return null
-    if (!parsed.isLoopbackPreviewUrl() || parsed.host.isNullOrBlank()) return null
-    return if (parsed.host == "0.0.0.0") {
-        parsed.buildUpon().encodedAuthority(
-            buildString {
-                append("127.0.0.1")
-                if (parsed.port >= 0) append(":${parsed.port}")
-            },
-        ).build().toString()
-    } else {
-        parsed.toString()
-    }
-}
 
-private fun normalizeAutomatedBrowserUrl(input: String): String? {
-    val raw = input.trim()
-    if (raw.isBlank()) return "http://127.0.0.1:9222"
-    val withScheme = if ("://" in raw) raw else "https://$raw"
-    val parsed = runCatching { Uri.parse(withScheme) }.getOrNull() ?: return null
-    if (parsed.host.isNullOrBlank()) return null
-    if (parsed.host == "0.0.0.0" || parsed.host == "localhost") {
+    // Support entering just port number e.g. "3000" or ":3000"
+    val portCandidate = raw.removePrefix(":")
+    if (portCandidate.isNotEmpty() && portCandidate.all { it.isDigit() }) {
+        val port = portCandidate.toIntOrNull()
+        if (port != null && port in 1..65535) {
+            return "http://localhost:$port"
+        }
+    }
+
+    val hasScheme = raw.startsWith("http://", ignoreCase = true) ||
+        raw.startsWith("https://", ignoreCase = true) ||
+        raw.startsWith("about:", ignoreCase = true) ||
+        raw.startsWith("file://", ignoreCase = true)
+
+    val candidate = if (hasScheme) {
+        raw
+    } else {
+        val lower = raw.lowercase()
+        if (lower.startsWith("localhost") || lower.startsWith("127.0.0.1") || lower.startsWith("0.0.0.0")) {
+            "http://$raw"
+        } else {
+            "https://$raw"
+        }
+    }
+
+    val parsed = runCatching { Uri.parse(candidate) }.getOrNull() ?: return null
+    val host = parsed.host
+    if (host.isNullOrBlank() && !candidate.startsWith("about:")) return null
+
+    if (host == "0.0.0.0") {
         return parsed.buildUpon().encodedAuthority(
             buildString {
                 append("127.0.0.1")
@@ -6416,13 +6480,6 @@ private fun normalizeAutomatedBrowserUrl(input: String): String? {
     }
     return parsed.toString()
 }
-
-private fun Uri.isLoopbackPreviewUrl(): Boolean =
-    scheme in setOf("data", "blob", "about") ||
-        (scheme in setOf("http", "https", "ws", "wss") && host in setOf("127.0.0.1", "localhost", "0.0.0.0"))
-
-private fun blockedPreviewResponse(): WebResourceResponse =
-    WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
 
 @Composable
 private fun EmptyState(icon: ImageVector, title: String, body: String) {
