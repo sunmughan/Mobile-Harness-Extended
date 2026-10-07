@@ -114,6 +114,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
@@ -4296,52 +4297,91 @@ private fun WorkspaceScreen(
             TopAppBar(
                 title = {
                     Column(Modifier.fillMaxWidth()) {
-                        Text(
-                            state.activeProject?.name.orEmpty(),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.combinedClickable(
                                 onClick = {},
                                 onLongClick = {
                                     Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
                                 },
                             ),
-                        )
+                        ) {
+                            Icon(
+                                Icons.Default.PhoneAndroid,
+                                contentDescription = "IDE",
+                                modifier = Modifier.size(19.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "IDE",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                maxLines = 1,
+                            )
+                        }
                         Text(
-                            "${activeChat?.title ?: "Chat"} · ${if (state.agentKind == AgentKind.ANTIGRAVITY) state.agentKind.title else state.provider.kind.title}",
+                            "${state.activeProject?.name.orEmpty()} · ${activeChat?.title ?: "Chat"}",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Projects") } },
+                navigationIcon = {},
                 actions = {
-                    if (isAndroidProject) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        if (isAndroidProject) {
+                            IconButton(
+                                onClick = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                        !context.packageManager.canRequestPackageInstalls()) {
+                                        unknownAppsLauncher.launch(
+                                            Intent(
+                                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                                Uri.parse("package:${context.packageName}"),
+                                            ),
+                                        )
+                                    } else {
+                                        onBuildAndRunAndroid()
+                                    }
+                                },
+                                enabled = !state.androidBuildRunning && !state.isRunning && !state.projectTerminalRunning,
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
+                            }
+                        }
                         IconButton(
-                            onClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                                    !context.packageManager.canRequestPackageInstalls()) {
-                                    unknownAppsLauncher.launch(
-                                        Intent(
-                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                            Uri.parse("package:${context.packageName}"),
-                                        ),
-                                    )
-                                } else {
-                                    onBuildAndRunAndroid()
-                                }
-                            },
-                            enabled = !state.androidBuildRunning && !state.isRunning && !state.projectTerminalRunning,
+                            onClick = { showChats = true },
+                            modifier = Modifier.size(36.dp),
                         ) {
-                            if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.PlayArrow, "Build and run Android app")
+                            Icon(Icons.Default.History, "Project chats", modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(
+                            onClick = { showCommandPalette = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(Icons.Default.MoreVert, "Command palette", modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Projects", modifier = Modifier.size(20.dp))
+                        }
+                        if (state.isRunning) {
+                            CircularProgressIndicator(
+                                Modifier.padding(start = 2.dp, end = 4.dp).size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
                         }
                     }
-                    IconButton(onClick = { showChats = true }) { Icon(Icons.Default.History, "Project chats") }
-                    IconButton(onClick = { showCommandPalette = true }) { Icon(Icons.Default.MoreVert, "Command palette") }
-                    if (state.isRunning) CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
