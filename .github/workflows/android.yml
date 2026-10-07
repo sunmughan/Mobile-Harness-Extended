@@ -334,7 +334,7 @@ jobs:
       # Header layout release 1.0.12.
       # Release publication marker for the verified build.
       - name: Publish release assets
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v2'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
