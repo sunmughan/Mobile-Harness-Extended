@@ -575,6 +575,20 @@ class AppPreferences(private val context: Context) {
         }.getOrDefault(emptyList())
     }
 
+    fun getOpenEditorTabs(projectId: String): List<String> {
+        val raw = preferences.getString("open_editor_tabs_$projectId", null) ?: return emptyList()
+        return runCatching {
+            val arr = org.json.JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }
+        }.getOrDefault(emptyList())
+    }
+
+    fun setOpenEditorTabs(projectId: String, tabs: List<String>) {
+        val arr = org.json.JSONArray()
+        tabs.forEach { arr.put(it) }
+        preferences.edit().putString("open_editor_tabs_$projectId", arr.toString()).apply()
+    }
+
     private fun String.toChatTitle(): String {
         val clean = replace(Regex("\\s+"), " ").trim()
         return if (clean.length <= 42) clean else clean.take(39).trimEnd() + "…"

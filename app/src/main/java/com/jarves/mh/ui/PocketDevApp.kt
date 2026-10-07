@@ -425,6 +425,16 @@ fun PocketDevApp(
             onApproveAndBuildRoadmap = viewModel::approveAndBuildRoadmap,
             onBindFolder = viewModel::bindFolderToActiveProject,
             onSetProjectRootDirectory = viewModel::setProjectRootDirectory,
+            onSelectTab = viewModel::selectEditorTab,
+            onCloseTab = viewModel::closeEditorTab,
+            onCloseOtherTabs = viewModel::closeOtherEditorTabs,
+            onCloseAllTabs = viewModel::closeAllEditorTabs,
+            onSelectTerminalSession = viewModel::selectTerminalSession,
+            onNewTerminalSession = viewModel::createTerminalSession,
+            onCloseTerminalSession = viewModel::closeTerminalSession,
+            onResumeInterruptedSession = viewModel::resumeInterruptedSession,
+            onDismissInterruptedSession = viewModel::dismissInterruptedSession,
+            onRunAutonomousVerification = viewModel::runAutonomousVerification,
         )
         else -> RootScreenHost(
             state = state,
@@ -4189,6 +4199,16 @@ private fun WorkspaceScreen(
     onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
     onBindFolder: (Uri) -> Unit = {},
     onSetProjectRootDirectory: (String) -> Unit = {},
+    onSelectTab: (String) -> Unit = {},
+    onCloseTab: (String) -> Unit = {},
+    onCloseOtherTabs: (String) -> Unit = {},
+    onCloseAllTabs: () -> Unit = {},
+    onSelectTerminalSession: (String) -> Unit = {},
+    onNewTerminalSession: () -> Unit = {},
+    onCloseTerminalSession: (String) -> Unit = {},
+    onResumeInterruptedSession: () -> Unit = {},
+    onDismissInterruptedSession: () -> Unit = {},
+    onRunAutonomousVerification: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4271,6 +4291,14 @@ private fun WorkspaceScreen(
             filePath = state.openedFilePath,
             content = state.openedFileContent,
             loading = state.fileContentLoading,
+            openTabs = state.openEditorTabs.ifEmpty { listOf(state.openedFilePath) },
+            onSelectTab = onSelectTab,
+            onCloseTab = onCloseTab,
+            onCloseOtherTabs = onCloseOtherTabs,
+            onCloseAllTabs = {
+                onCloseAllTabs()
+                selectedTab = WorkspaceTab.FILES
+            },
             onClose = {
                 onCloseFile()
                 selectedTab = WorkspaceTab.FILES
@@ -4491,6 +4519,34 @@ private fun WorkspaceScreen(
                     }
                 }
             }
+            if (state.interruptedSession != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Interrupted Session Found", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text(
+                                "Task: \"${state.interruptedSession.initialPrompt.take(60)}\" in ${state.interruptedSession.projectTitle}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = onResumeInterruptedSession) {
+                            Text("Resume")
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = onDismissInterruptedSession) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
+                }
+            }
             if (selectedTab == WorkspaceTab.CHAT && state.changes.isNotEmpty()) {
                 val added = state.changes.sumOf { it.additions }
                 val deleted = state.changes.sumOf { it.deletions }
@@ -4589,6 +4645,11 @@ private fun WorkspaceScreen(
                     showThemeAction = false,
                     showQuickCommands = false,
                     compactHeader = true,
+                    sessions = state.terminalSessions,
+                    activeSessionId = state.activeTerminalSessionId,
+                    onSelectSession = onSelectTerminalSession,
+                    onNewSession = onNewTerminalSession,
+                    onCloseSession = onCloseTerminalSession,
                 )
                 WorkspaceTab.CHANGES -> ChangesTab(
                     state.changes,

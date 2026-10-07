@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -110,7 +113,14 @@ fun TerminalScreen(
     showThemeAction: Boolean = false,
     showQuickCommands: Boolean = true,
     compactHeader: Boolean = false,
+    sessions: List<TerminalSessionTab> = emptyList(),
+    activeSessionId: String? = null,
+    onSelectSession: (String) -> Unit = {},
+    onNewSession: () -> Unit = {},
+    onCloseSession: (String) -> Unit = {},
 ) {
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
     var commandInput by remember { mutableStateOf(TextFieldValue()) }
     var commandHistory by remember { mutableStateOf(emptyList<String>()) }
     var historyIndex by remember { mutableStateOf(-1) }
@@ -151,6 +161,11 @@ fun TerminalScreen(
         }
     }
 
+    val displayedLines = remember(lines, searchQuery) {
+        if (searchQuery.isBlank()) lines
+        else lines.filter { it.command.contains(searchQuery, ignoreCase = true) || it.output.contains(searchQuery, ignoreCase = true) }
+    }
+
     // Auto-scroll to bottom whenever scrollable content grows
     LaunchedEffect(Unit) {
         snapshotFlow { terminalScrollState.maxValue }
@@ -159,7 +174,7 @@ fun TerminalScreen(
             }
     }
     // Also trigger scroll when key state changes (e.g. isRunning toggling)
-    LaunchedEffect(lines.size, isRunning, commandInput.text.length) {
+    LaunchedEffect(displayedLines.size, isRunning, commandInput.text.length) {
         delay(100)
         terminalScrollState.scrollTo(terminalScrollState.maxValue)
     }
@@ -245,6 +260,9 @@ fun TerminalScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { searchOpen = !searchOpen }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search terminal output")
+                        }
                         IconButton(onClick = onClear) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = "Clear output")
                         }
@@ -268,6 +286,124 @@ fun TerminalScreen(
                 .padding(padding)
                 .then(if (compactHeader) Modifier else Modifier.imePadding()),
         ) {
+            if (sessions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    sessions.forEach { session ->
+                        val isSelected = session.id == activeSessionId
+                        Surface(
+                            onClick = { onSelectSession(session.id) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+                            modifier = Modifier.height(30.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                if (session.isRunning) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .background(PocketGreen, CircleShape),
+                                    )
+                                }
+                                Text(
+                                    text = session.title,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (sessions.size > 1) {
+                                    IconButton(
+                                        onClick = { onCloseSession(session.id) },
+                                        modifier = Modifier.size(18.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Close session",
+                                            modifier = Modifier.size(11.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    IconButton(
+                        onClick = onNewSession,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "New terminal session",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+            if (searchOpen) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            decorationBox = { innerTextField ->
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        "Filter terminal output...",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    )
+                                }
+                                innerTextField()
+                            },
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            Text(
+                                "${displayedLines.size} matches",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                searchQuery = ""
+                                searchOpen = false
+                            },
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close search", modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
             if (showQuickCommands && !keyboardVisible) {
                 // Quick command chips are useful in the standalone terminal, but
                 // project terminal space is reserved for the actual project session.
@@ -324,16 +460,17 @@ fun TerminalScreen(
                 ) {
                     SelectionContainer {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (lines.isEmpty()) {
+                            if (displayedLines.isEmpty()) {
                                 Text(
-                                    "Mobile Harness Terminal ready.\nType a bash command below or tap a quick command chip above.",
+                                    if (searchQuery.isNotEmpty()) "No matching terminal output found."
+                                    else "Mobile Harness Terminal ready.\nType a bash command below or tap a quick command chip above.",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.sp,
                                     color = emptyStateColor,
                                 )
                             }
 
-                            lines.forEach { item ->
+                            displayedLines.forEach { item ->
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     TerminalCommandPrompt(promptPath = terminalPromptPath, command = item.command, isDark = isDark)
                                     if (item.output.isNotEmpty()) {

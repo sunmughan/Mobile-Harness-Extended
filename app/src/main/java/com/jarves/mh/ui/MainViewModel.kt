@@ -113,6 +113,14 @@ data class TerminalOutputLine(
     val exitCode: Int = 0,
 )
 
+data class TerminalSessionTab(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val isRunning: Boolean = false,
+    val cwd: String = "/workspace",
+    val lines: List<TerminalOutputLine> = emptyList(),
+)
+
 private val ANSI_TERMINAL_SEQUENCE = Regex("\\u001B(?:\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)|\\[[0-?]*[ -/]*[@-~]|[()][A-Z0-9])")
 
 internal fun sanitizeTerminalOutput(text: String): String = text
@@ -201,6 +209,7 @@ data class AppUiState(
     val filesLoading: Boolean = false,
     val openedFilePath: String? = null,
     val openedFileContent: String? = null,
+    val openEditorTabs: List<String> = emptyList(),
     val fileContentLoading: Boolean = false,
     val messages: List<ChatMessage> = listOf(
         ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."),
@@ -220,6 +229,7 @@ data class AppUiState(
     val previewUrl: String? = null,
     val isRunning: Boolean = false,
     val activeSessionId: String? = null,
+    val interruptedSession: com.jarves.mh.session.PersistedAgentSession? = null,
     val runtimeRecoveryStatus: String? = null,
     val runtimeRecoveryAttempt: Int = 0,
     val runtimeRecoveryCanResume: Boolean = false,
@@ -236,6 +246,8 @@ data class AppUiState(
     val projectTerminalCommand: String? = null,
     val projectTerminalDraft: String? = null,
     val pendingTerminalCommand: String? = null,
+    val activeTerminalSessionId: String = "term-1",
+    val terminalSessions: List<TerminalSessionTab> = listOf(TerminalSessionTab(id = "term-1", title = "Terminal 1")),
     val suggestedProjectRoot: String? = null,
     val selectedDevStacks: Set<DevStack> = emptySet(),
     val installedDevStacks: Set<DevStack> = emptySet(),
@@ -305,6 +317,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val providerApi = ProviderApiClient()
     private val skillManager = SkillManager(application)
     private val editorCheckpoints = WorkspaceCheckpoints(application.filesDir)
+    val sessionManager = com.jarves.mh.session.AgentSessionManager(application)
+    val checkpointManager = com.jarves.mh.workspace.WorkspaceCheckpointManager(application.filesDir)
     private val projectIndex = ProjectIndex(application.filesDir)
     private val contextEngine = ContextEngine(projectIndex)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
@@ -433,6 +447,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { vault.remove(LEGACY_GITHUB_TOKEN_KEY) }
         viewModelScope.launch { refreshGitHubConnection() }
         runCatching { RuntimeSetupController.restore(application) }
+        val interrupted = sessionManager.checkInterruptedSession()
+        if (interrupted != null) {
+            _state.update { it.copy(interruptedSession = interrupted) }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             for (write in transcriptWrites) {
                 preferences.saveMessages(write.projectId, write.chatId, write.messages)
@@ -689,6 +707,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pendingTerminalCommand = null,
                 previewReady = it.previewReady || requestedPreviewUrl != null,
                 previewUrl = requestedPreviewUrl ?: it.previewUrl,
+                terminalSessions = it.terminalSessions.map { s ->
+                    if (s.id == it.activeTerminalSessionId) s.copy(isRunning = true) else s
+                },
             )
         }
         viewModelScope.launch {
@@ -719,6 +740,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         projectTerminalRunning = false,
                         projectTerminalCwd = result.cwd,
                         projectTerminalCommand = null,
+                        terminalSessions = it.terminalSessions.map { s ->
+                            if (s.id == it.activeTerminalSessionId) s.copy(
+                                lines = updatedLines,
+                                cwd = result.cwd,
+                                isRunning = false,
+                            ) else s
+                        },
                     )
                 }
                 refreshProjectFiles()
@@ -750,8 +778,88 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearProjectTerminal() {
         val project = _state.value.activeProject ?: return
         if (_state.value.projectTerminalRunning) return
-        _state.update { it.copy(projectTerminalLines = emptyList(), projectTerminalLiveOutput = "") }
+        _state.update { state ->
+            state.copy(
+                projectTerminalLines = emptyList(),
+                projectTerminalLiveOutput = "",
+                terminalSessions = state.terminalSessions.map { s ->
+                    if (s.id == state.activeTerminalSessionId) s.copy(lines = emptyList()) else s
+                },
+            )
+        }
         saveProjectTerminal(project.id, _state.value.projectTerminalCwd, emptyList())
+    }
+
+    fun createTerminalSession() {
+        val sessions = _state.value.terminalSessions
+        val nextNum = sessions.size + 1
+        val newId = "term-${System.currentTimeMillis()}"
+        val newSession = TerminalSessionTab(
+            id = newId,
+            title = "Terminal $nextNum",
+            isRunning = false,
+            cwd = _state.value.projectTerminalCwd,
+            lines = emptyList(),
+        )
+        val updated = sessions + newSession
+        _state.update {
+            it.copy(
+                terminalSessions = updated,
+                activeTerminalSessionId = newId,
+                projectTerminalLines = emptyList(),
+                projectTerminalLiveOutput = "",
+            )
+        }
+    }
+
+    fun selectTerminalSession(sessionId: String) {
+        val currentSessionId = _state.value.activeTerminalSessionId
+        if (currentSessionId == sessionId) return
+        val current = _state.value
+        val updatedSessions = current.terminalSessions.map { session ->
+            if (session.id == currentSessionId) {
+                session.copy(
+                    lines = current.projectTerminalLines,
+                    cwd = current.projectTerminalCwd,
+                    isRunning = current.projectTerminalRunning,
+                )
+            } else session
+        }
+        val target = updatedSessions.firstOrNull { it.id == sessionId } ?: return
+        _state.update {
+            it.copy(
+                terminalSessions = updatedSessions,
+                activeTerminalSessionId = target.id,
+                projectTerminalLines = target.lines,
+                projectTerminalCwd = target.cwd,
+                projectTerminalRunning = target.isRunning,
+                projectTerminalLiveOutput = "",
+            )
+        }
+    }
+
+    fun closeTerminalSession(sessionId: String) {
+        val sessions = _state.value.terminalSessions
+        if (sessions.size <= 1) {
+            clearProjectTerminal()
+            return
+        }
+        val remaining = sessions.filter { it.id != sessionId }
+        val newActive = if (_state.value.activeTerminalSessionId == sessionId) {
+            remaining.last()
+        } else {
+            remaining.firstOrNull { it.id == _state.value.activeTerminalSessionId } ?: remaining.first()
+        }
+        _state.update {
+            it.copy(
+                terminalSessions = remaining,
+                activeTerminalSessionId = newActive.id,
+                projectTerminalLines = newActive.lines,
+                projectTerminalCwd = newActive.cwd,
+                projectTerminalRunning = newActive.isRunning,
+                projectTerminalLiveOutput = "",
+            )
+        }
     }
 
     private fun runProjectTerminalProcess(projectId: String, command: String, cwd: String): ProjectTerminalResult {
@@ -2100,6 +2208,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val msgs = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) }
         val loadedRoadmap = msgs.mapNotNull { it.roadmap }.lastOrNull()
         val loadedScratchpad = deriveScratchpadItems(loadedRoadmap, emptyList(), false)
+        val savedTabs = preferences.getOpenEditorTabs(project.id)
+        val initialOpenedPath = savedTabs.firstOrNull()
         _state.update {
             it.copy(
                 activeProject = project,
@@ -2121,6 +2231,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 workspaceFiles = emptyList(),
                 androidProjectDetected = false,
                 filesLoading = true,
+                openedFilePath = initialOpenedPath,
+                openedFileContent = null,
+                openEditorTabs = savedTabs,
+                fileContentLoading = initialOpenedPath != null,
                 projectTerminalLines = terminal.lines,
                 projectTerminalLiveOutput = "",
                 projectTerminalRunning = false,
@@ -2133,6 +2247,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 previewUrl = null,
                 pendingAttachments = emptyList(),
             )
+        }
+        if (initialOpenedPath != null) {
+            loadFileContent(project, initialOpenedPath)
         }
         refreshProjectFiles()
         viewModelScope.launch {
@@ -2191,6 +2308,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 workspaceFiles = emptyList(),
                 androidProjectDetected = false,
                 filesLoading = false,
+                openedFilePath = null,
+                openedFileContent = null,
+                openEditorTabs = emptyList(),
+                fileContentLoading = false,
                 isRunning = false,
                 activeSessionId = null,
                 pendingApproval = null,
@@ -3503,11 +3624,103 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openFile(entry: WorkspaceEntry) {
         if (entry.isDirectory) return
+        openFileByPath(entry.path)
+    }
+
+    fun openFileByPath(path: String) {
         val project = _state.value.activeProject ?: return
-        _state.update { it.copy(openedFilePath = entry.path, openedFileContent = null, fileContentLoading = true) }
+        val currentTabs = _state.value.openEditorTabs
+        val updatedTabs = if (path in currentTabs) currentTabs else currentTabs + path
+        preferences.setOpenEditorTabs(project.id, updatedTabs)
+        _state.update {
+            it.copy(
+                openEditorTabs = updatedTabs,
+                openedFilePath = path,
+                openedFileContent = null,
+                fileContentLoading = true,
+            )
+        }
+        loadFileContent(project, path)
+    }
+
+    fun selectEditorTab(path: String) {
+        if (_state.value.openedFilePath == path) return
+        val project = _state.value.activeProject ?: return
+        _state.update {
+            it.copy(
+                openedFilePath = path,
+                openedFileContent = null,
+                fileContentLoading = true,
+            )
+        }
+        loadFileContent(project, path)
+    }
+
+    fun closeEditorTab(path: String) {
+        val project = _state.value.activeProject ?: return
+        val currentTabs = _state.value.openEditorTabs
+        val updatedTabs = currentTabs.filter { it != path }
+        preferences.setOpenEditorTabs(project.id, updatedTabs)
+        if (_state.value.openedFilePath == path) {
+            val nextPath = updatedTabs.lastOrNull()
+            if (nextPath != null) {
+                _state.update {
+                    it.copy(
+                        openEditorTabs = updatedTabs,
+                        openedFilePath = nextPath,
+                        openedFileContent = null,
+                        fileContentLoading = true,
+                    )
+                }
+                loadFileContent(project, nextPath)
+            } else {
+                _state.update {
+                    it.copy(
+                        openEditorTabs = emptyList(),
+                        openedFilePath = null,
+                        openedFileContent = null,
+                        fileContentLoading = false,
+                    )
+                }
+            }
+        } else {
+            _state.update { it.copy(openEditorTabs = updatedTabs) }
+        }
+    }
+
+    fun closeOtherEditorTabs(keepPath: String) {
+        val project = _state.value.activeProject ?: return
+        val updatedTabs = listOf(keepPath)
+        preferences.setOpenEditorTabs(project.id, updatedTabs)
+        if (_state.value.openedFilePath != keepPath) {
+            selectEditorTab(keepPath)
+        }
+        _state.update { it.copy(openEditorTabs = updatedTabs) }
+    }
+
+    fun closeAllEditorTabs() {
+        val project = _state.value.activeProject
+        if (project != null) {
+            preferences.setOpenEditorTabs(project.id, emptyList())
+        }
+        _state.update {
+            it.copy(
+                openEditorTabs = emptyList(),
+                openedFilePath = null,
+                openedFileContent = null,
+                fileContentLoading = false,
+            )
+        }
+    }
+
+    fun closeFile() {
+        closeAllEditorTabs()
+    }
+
+    private fun loadFileContent(project: Project, path: String) {
         viewModelScope.launch {
             val content = withContext(Dispatchers.IO) {
-                val file = File(projectWorkspaceRoot(project), entry.path)
+                val file = File(projectWorkspaceRoot(project), path)
                 runCatching {
                     if (file.length() > 512_000L) {
                         file.inputStream().use { stream ->
@@ -3520,12 +3733,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }.getOrElse { "Could not read file: ${it.message}" }
             }
-            _state.update { it.copy(openedFileContent = content, fileContentLoading = false) }
+            if (_state.value.openedFilePath == path) {
+                _state.update { it.copy(openedFileContent = content, fileContentLoading = false) }
+            }
         }
-    }
-
-    fun closeFile() {
-        _state.update { it.copy(openedFilePath = null, openedFileContent = null, fileContentLoading = false) }
     }
 
     /**
@@ -3871,6 +4082,14 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                 currentTaskRequest = requestText,
             )
         }
+        sessionManager.recordSessionStart(
+            sessionId = UUID.randomUUID().toString(),
+            projectId = project.id,
+            projectTitle = project.name,
+            chatId = _state.value.activeChatId.orEmpty(),
+            prompt = requestText,
+            roadmap = _state.value.activeRoadmap,
+        )
         touchProject(project.id)
         persistMessages()
         val history = state.value.messages // includes all messages up to now
@@ -4321,6 +4540,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     }
                     val latestRoadmap = messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
                     val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
+                    sessionManager.recordSessionCompleted("Task completed successfully")
                     attachTaskDuration(stateWithResponse.copy(messages = messagesWithRoadmap), finishedAt).copy(
                         isRunning = false,
                         activeSessionId = null,
@@ -4336,6 +4556,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     )
                 }
                 is RuntimeEvent.SessionFailed -> {
+                    sessionManager.recordSessionFailed(event.reason)
                     val lastUserIndex = current.messages.indexOfLast { it.fromUser }
                     val hasResponseForLastUser = current.messages.indices.any {
                         it > lastUserIndex && !current.messages[it].fromUser && current.messages[it].text.isNotBlank()
@@ -4847,6 +5068,76 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     installedAgentVersions = installer.installedAgentVersions(),
                 )
             }
+        }
+    }
+
+    fun dismissInterruptedSession() {
+        sessionManager.clearActiveSession()
+        _state.update { it.copy(interruptedSession = null) }
+    }
+
+    fun resumeInterruptedSession() {
+        val session = _state.value.interruptedSession ?: return
+        val project = _state.value.projects.firstOrNull { it.id == session.projectId }
+        if (project != null) {
+            openProject(project)
+            if (session.chatId.isNotBlank()) {
+                switchChat(session.chatId)
+            }
+        }
+        _state.update { it.copy(interruptedSession = null) }
+    }
+
+    fun createWorkspaceCheckpoint(label: String): com.jarves.mh.workspace.WorkspaceCheckpoint? {
+        val project = _state.value.activeProject ?: return null
+        val workspace = projectWorkspaceRoot(project)
+        val ckpt = checkpointManager.createCheckpoint(project.id, workspace, label)
+        if (ckpt != null) {
+            _state.update { it.copy(toastMessage = "Checkpoint created: ${ckpt.label}") }
+        }
+        return ckpt
+    }
+
+    fun rollbackWorkspaceCheckpoint(checkpointId: String): Boolean {
+        val project = _state.value.activeProject ?: return false
+        val workspace = projectWorkspaceRoot(project)
+        val ok = checkpointManager.rollbackToCheckpoint(project.id, checkpointId, workspace)
+        if (ok) {
+            refreshProjectFiles()
+            _state.update { it.copy(toastMessage = "Rolled back to checkpoint") }
+        } else {
+            _state.update { it.copy(toastMessage = "Rollback failed") }
+        }
+        return ok
+    }
+
+    fun listWorkspaceCheckpoints(): List<com.jarves.mh.workspace.WorkspaceCheckpoint> {
+        val project = _state.value.activeProject ?: return emptyList()
+        return checkpointManager.listCheckpoints(project.id)
+    }
+
+    fun runAutonomousVerification() {
+        val project = _state.value.activeProject ?: return
+        val workspace = projectWorkspaceRoot(project)
+        val tool = com.jarves.mh.agent.AutonomousLoopEngine.detectBuildTool(workspace)
+        if (tool == null) {
+            _state.update { it.copy(toastMessage = "No recognized build tool (Gradle/npm/Cargo/Go/Python) found in project") }
+            return
+        }
+        _state.update { it.copy(toastMessage = "Running autonomous verification with ${tool.name}...") }
+        runProjectTerminalCommand(tool.verificationCommand)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        AppCrashLogger.log("MainViewModel.onCleared: cleaning up running processes and sessions")
+        runCatching {
+            projectTerminalProcess?.destroy()
+            terminalProcess?.destroy()
+            githubAuthProcess?.destroy()
+        }
+        if (_state.value.isRunning) {
+            sessionManager.recordSessionFailed("App process terminated unexpectedly")
         }
     }
 

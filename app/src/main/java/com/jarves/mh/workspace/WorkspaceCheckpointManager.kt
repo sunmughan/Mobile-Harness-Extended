@@ -1,0 +1,213 @@
+package com.jarves.mh.workspace
+
+import com.jarves.mh.AppCrashLogger
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
+
+data class WorkspaceCheckpoint(
+    val id: String,
+    val projectId: String,
+    val label: String,
+    val timestamp: Long,
+    val fileCount: Int,
+    val modifiedFiles: List<String> = emptyList(),
+) {
+    val formattedDate: String
+        get() = SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault()).format(Date(timestamp))
+}
+
+class WorkspaceCheckpointManager(private val filesDir: File) {
+
+    private fun checkpointsBaseDir(projectId: String): File =
+        File(filesDir, "checkpoints/$projectId/snapshots").apply { mkdirs() }
+
+    private fun indexFile(projectId: String): File =
+        File(checkpointsBaseDir(projectId), "checkpoints_index.json")
+
+    /**
+     * Creates a full workspace snapshot checkpoint with metadata.
+     */
+    fun createCheckpoint(projectId: String, workspaceDir: File, label: String): WorkspaceCheckpoint? {
+        return runCatching {
+            val id = "ckpt_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
+            val checkpointDir = File(checkpointsBaseDir(projectId), id).apply { mkdirs() }
+            val backupDir = File(checkpointDir, "files").apply { mkdirs() }
+
+            var fileCount = 0
+            val relativePaths = mutableListOf<String>()
+
+            val canonicalWorkspace = workspaceDir.canonicalFile
+            canonicalWorkspace.walkTopDown()
+                .filter { it.isFile && !isIgnored(it, canonicalWorkspace) }
+                .forEach { sourceFile ->
+                    val relPath = sourceFile.relativeTo(canonicalWorkspace).invariantSeparatorsPath
+                    val destFile = File(backupDir, relPath)
+                    destFile.parentFile?.mkdirs()
+                    sourceFile.copyTo(destFile, overwrite = true)
+                    fileCount++
+                    relativePaths.add(relPath)
+                }
+
+            val checkpoint = WorkspaceCheckpoint(
+                id = id,
+                projectId = projectId,
+                label = label.ifBlank { "Checkpoint: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}" },
+                timestamp = System.currentTimeMillis(),
+                fileCount = fileCount,
+                modifiedFiles = relativePaths.take(50),
+            )
+
+            // Write metadata
+            val metaFile = File(checkpointDir, "meta.json")
+            val json = JSONObject().apply {
+                put("id", checkpoint.id)
+                put("projectId", checkpoint.projectId)
+                put("label", checkpoint.label)
+                put("timestamp", checkpoint.timestamp)
+                put("fileCount", checkpoint.fileCount)
+                put("modifiedFiles", JSONArray(checkpoint.modifiedFiles))
+            }
+            metaFile.writeText(json.toString(2))
+
+            // Update index
+            val existing = listCheckpoints(projectId).toMutableList()
+            existing.add(0, checkpoint)
+            saveIndex(projectId, existing)
+
+            AppCrashLogger.checkpoint("WorkspaceCheckpointCreated", "Project $projectId: ${checkpoint.label} ($fileCount files)")
+            checkpoint
+        }.getOrElse {
+            AppCrashLogger.log("Failed to create checkpoint: ${it.message}")
+            null
+        }
+    }
+
+    /**
+     * Returns all saved checkpoints for a project, newest first.
+     */
+    fun listCheckpoints(projectId: String): List<WorkspaceCheckpoint> {
+        val file = indexFile(projectId)
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(file.readText())
+            val list = mutableListOf<WorkspaceCheckpoint>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val modifiedArr = obj.optJSONArray("modifiedFiles") ?: JSONArray()
+                val modifiedList = (0 until modifiedArr.length()).map { modifiedArr.getString(it) }
+                list.add(
+                    WorkspaceCheckpoint(
+                        id = obj.getString("id"),
+                        projectId = obj.getString("projectId"),
+                        label = obj.getString("label"),
+                        timestamp = obj.getLong("timestamp"),
+                        fileCount = obj.getInt("fileCount"),
+                        modifiedFiles = modifiedList,
+                    )
+                )
+            }
+            list.sortedByDescending { it.timestamp }
+        }.getOrElse { emptyList() }
+    }
+
+    /**
+     * Reverts the workspace directory to the exact state saved in this checkpoint.
+     */
+    fun rollbackToCheckpoint(projectId: String, checkpointId: String, workspaceDir: File): Boolean {
+        return runCatching {
+            val checkpointDir = File(checkpointsBaseDir(projectId), checkpointId)
+            val backupDir = File(checkpointDir, "files")
+            if (!backupDir.exists()) return false
+
+            val canonicalWorkspace = workspaceDir.canonicalFile
+
+            // Delete existing non-ignored files in workspace
+            canonicalWorkspace.walkTopDown()
+                .filter { it.isFile && !isIgnored(it, canonicalWorkspace) }
+                .forEach { it.delete() }
+
+            // Restore from backup
+            backupDir.walkTopDown()
+                .filter { it.isFile }
+                .forEach { sourceFile ->
+                    val relPath = sourceFile.relativeTo(backupDir).invariantSeparatorsPath
+                    val destFile = File(canonicalWorkspace, relPath)
+                    destFile.parentFile?.mkdirs()
+                    sourceFile.copyTo(destFile, overwrite = true)
+                }
+
+            AppCrashLogger.checkpoint("WorkspaceCheckpointRollback", "Project $projectId rolled back to $checkpointId")
+            true
+        }.getOrElse {
+            AppCrashLogger.log("Rollback failed: ${it.message}")
+            false
+        }
+    }
+
+    /**
+     * Removes an old checkpoint from disk and index.
+     */
+    fun deleteCheckpoint(projectId: String, checkpointId: String): Boolean {
+        return runCatching {
+            val dir = File(checkpointsBaseDir(projectId), checkpointId)
+            dir.deleteRecursively()
+            val remaining = listCheckpoints(projectId).filterNot { it.id == checkpointId }
+            saveIndex(projectId, remaining)
+            true
+        }.getOrElse { false }
+    }
+
+    /**
+     * Atomically writes file content using a temporary file and rename to prevent partial writes.
+     */
+    fun atomicWriteFile(targetFile: File, content: String): Boolean {
+        return runCatching {
+            targetFile.parentFile?.mkdirs()
+            val tempFile = File(targetFile.parentFile, ".${targetFile.name}.tmp_${System.currentTimeMillis()}")
+            FileOutputStream(tempFile).use { out ->
+                out.write(content.toByteArray(Charsets.UTF_8))
+                out.flush()
+                out.fd.sync()
+            }
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            tempFile.renameTo(targetFile)
+        }.getOrElse {
+            AppCrashLogger.log("Atomic file write failed for ${targetFile.path}: ${it.message}")
+            false
+        }
+    }
+
+    private fun saveIndex(projectId: String, checkpoints: List<WorkspaceCheckpoint>) {
+        val arr = JSONArray()
+        checkpoints.forEach { ck ->
+            arr.put(JSONObject().apply {
+                put("id", ck.id)
+                put("projectId", ck.projectId)
+                put("label", ck.label)
+                put("timestamp", ck.timestamp)
+                put("fileCount", ck.fileCount)
+                put("modifiedFiles", JSONArray(ck.modifiedFiles))
+            })
+        }
+        atomicWriteFile(indexFile(projectId), arr.toString(2))
+    }
+
+    private fun isIgnored(file: File, base: File): Boolean {
+        val rel = file.relativeTo(base).invariantSeparatorsPath
+        return rel.startsWith(".git/") ||
+            rel.startsWith(".idea/") ||
+            rel.startsWith(".gradle/") ||
+            rel.startsWith("build/") ||
+            rel.startsWith("node_modules/") ||
+            rel.startsWith(".agents/") ||
+            rel.startsWith("target/")
+    }
+}

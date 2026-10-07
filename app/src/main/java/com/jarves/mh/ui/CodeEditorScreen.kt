@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
@@ -81,6 +83,11 @@ fun CodeEditorScreen(
     filePath: String,
     content: String?,
     loading: Boolean,
+    openTabs: List<String> = listOf(filePath),
+    onSelectTab: (String) -> Unit = {},
+    onCloseTab: (String) -> Unit = {},
+    onCloseOtherTabs: (String) -> Unit = {},
+    onCloseAllTabs: () -> Unit = {},
     onClose: () -> Unit,
     onSave: suspend (String) -> Boolean,
 ) {
@@ -351,6 +358,22 @@ fun CodeEditorScreen(
                                 goToLineOpen = true
                             },
                         )
+                        if (openTabs.size > 1) {
+                            DropdownMenuItem(
+                                text = { Text("Close other tabs") },
+                                onClick = {
+                                    menuOpen = false
+                                    onCloseOtherTabs(filePath)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Close all tabs") },
+                                onClick = {
+                                    menuOpen = false
+                                    onCloseAllTabs()
+                                },
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -364,6 +387,64 @@ fun CodeEditorScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            if (openTabs.size > 1) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        openTabs.forEach { tabPath ->
+                            val isSelected = tabPath == filePath
+                            val fileName = tabPath.substringAfterLast('/')
+                            Surface(
+                                onClick = { onSelectTab(tabPath) },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+                                modifier = Modifier.height(32.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(start = 10.dp, end = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        text = fileName,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (isSelected && dirty) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onCloseTab(tabPath) },
+                                        modifier = Modifier.size(20.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Close tab",
+                                            modifier = Modifier.size(13.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if (searchOpen) {
                 Surface(
                     Modifier
