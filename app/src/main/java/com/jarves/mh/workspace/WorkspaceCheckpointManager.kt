@@ -212,4 +212,65 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
             rel.startsWith(".agents/") ||
             rel.startsWith("target/")
     }
+
+    /**
+     * Mirrors all workspaces in internal storage to an external backup directory to prevent data loss.
+     */
+    fun backupAllWorkspaces(externalBackupDir: File): Int {
+        return runCatching {
+            val workspacesDir = File(filesDir, "workspaces")
+            if (!workspacesDir.isDirectory) return 0
+            val targetDir = File(externalBackupDir, "workspaces_mirror").apply { mkdirs() }
+            var count = 0
+            workspacesDir.listFiles()?.filter { it.isDirectory }?.forEach { projDir ->
+                val destProj = File(targetDir, projDir.name).apply { mkdirs() }
+                projDir.walkTopDown()
+                    .filter { it.isFile && !isIgnored(it, projDir) }
+                    .forEach { file ->
+                        val rel = file.relativeTo(projDir).invariantSeparatorsPath
+                        val destFile = File(destProj, rel)
+                        destFile.parentFile?.mkdirs()
+                        file.copyTo(destFile, overwrite = true)
+                    }
+                count++
+            }
+            AppCrashLogger.checkpoint("WorkspacesBackupCompleted", "Mirrored $count workspaces to ${targetDir.path}")
+            count
+        }.getOrElse {
+            AppCrashLogger.log("Failed to mirror workspaces: ${it.message}")
+            0
+        }
+    }
+
+    /**
+     * Restores workspaces from external backup directory into internal storage.
+     */
+    fun restoreAllWorkspaces(externalBackupDir: File): Int {
+        return runCatching {
+            val sourceDir = File(externalBackupDir, "workspaces_mirror")
+            if (!sourceDir.isDirectory) return 0
+            val workspacesDir = File(filesDir, "workspaces").apply { mkdirs() }
+            var count = 0
+            sourceDir.listFiles()?.filter { it.isDirectory }?.forEach { projDir ->
+                val destProj = File(workspacesDir, projDir.name).apply { mkdirs() }
+                projDir.walkTopDown()
+                    .filter { it.isFile }
+                    .forEach { file ->
+                        val rel = file.relativeTo(projDir).invariantSeparatorsPath
+                        val destFile = File(destProj, rel)
+                        destFile.parentFile?.mkdirs()
+                        if (!destFile.exists()) {
+                            file.copyTo(destFile, overwrite = false)
+                        }
+                    }
+                count++
+            }
+            AppCrashLogger.checkpoint("WorkspacesRestoreCompleted", "Restored $count workspaces from ${sourceDir.path}")
+            count
+        }.getOrElse {
+            AppCrashLogger.log("Failed to restore workspaces: ${it.message}")
+            0
+        }
+    }
 }
+

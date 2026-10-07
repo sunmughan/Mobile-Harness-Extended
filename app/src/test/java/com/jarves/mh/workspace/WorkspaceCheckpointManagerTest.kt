@@ -75,4 +75,28 @@ class WorkspaceCheckpointManagerTest {
         assertTrue(target.exists())
         assertEquals("Safe atomic content", target.readText())
     }
+
+    @Test
+    fun testBackupAndRestoreWorkspaces() {
+        val filesDir = tempFolder.newFolder("filesDir4")
+        val externalDir = tempFolder.newFolder("externalBackups")
+        val workspacesDir = File(filesDir, "workspaces/proj-abc").apply { mkdirs() }
+        File(workspacesDir, "index.js").writeText("console.log('hello world');")
+
+        val manager = WorkspaceCheckpointManager(filesDir)
+        val backupCount = manager.backupAllWorkspaces(externalDir)
+        assertEquals(1, backupCount)
+        assertTrue(File(externalDir, "workspaces_mirror/proj-abc/index.js").exists())
+
+        // Wipe internal workspaces
+        workspacesDir.deleteRecursively()
+        assertEquals(false, File(filesDir, "workspaces/proj-abc/index.js").exists())
+
+        // Restore
+        val restoreCount = manager.restoreAllWorkspaces(externalDir)
+        assertEquals(1, restoreCount)
+        assertTrue(File(filesDir, "workspaces/proj-abc/index.js").exists())
+        assertEquals("console.log('hello world');", File(filesDir, "workspaces/proj-abc/index.js").readText())
+    }
 }
+

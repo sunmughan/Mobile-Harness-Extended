@@ -1280,6 +1280,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun backToSetup() {
+        _state.update {
+            it.copy(
+                startupStage = StartupStage.SETUP_REQUIRED,
+                startupError = null,
+                startupErrorIsOffline = false,
+                startupMessage = "Select tools and start setup",
+                startupProgress = 0f,
+                showDetailedSetupProgress = false,
+            )
+        }
+    }
+
     private fun resumeRuntimeSetupService() {
         val stacks = _state.value.selectedDevStacks.joinToString(",") { it.name }
         ContextCompat.startForegroundService(
@@ -5114,6 +5127,49 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     fun listWorkspaceCheckpoints(): List<com.jarves.mh.workspace.WorkspaceCheckpoint> {
         val project = _state.value.activeProject ?: return emptyList()
         return checkpointManager.listCheckpoints(project.id)
+    }
+
+    fun backupAllWorkspaces(): Int {
+        val app = getApplication<Application>()
+        val externalDir = app.getExternalFilesDir("backups") ?: File(app.filesDir, "backups")
+        val count = checkpointManager.backupAllWorkspaces(externalDir)
+        if (count > 0) {
+            _state.update { it.copy(toastMessage = "Backed up $count projects to external storage") }
+        } else {
+            _state.update { it.copy(toastMessage = "No projects to backup") }
+        }
+        return count
+    }
+
+    fun restoreAllWorkspaces(): Int {
+        val app = getApplication<Application>()
+        val externalDir = app.getExternalFilesDir("backups") ?: File(app.filesDir, "backups")
+        val count = checkpointManager.restoreAllWorkspaces(externalDir)
+        if (count > 0) {
+            reloadProjects()
+            _state.update { it.copy(toastMessage = "Restored $count projects from backup") }
+        } else {
+            _state.update { it.copy(toastMessage = "No backup projects found") }
+        }
+        return count
+    }
+
+    fun reloadProjects() {
+        val loaded = preferences.loadProjects().toMutableList()
+        val loadedIds = loaded.map { it.id }.toSet()
+        val workspacesDir = File(getApplication<Application>().filesDir, "workspaces")
+        workspacesDir.listFiles()?.filter { it.isDirectory && it.name !in loadedIds }?.forEach { dir ->
+            val p = Project(
+                id = dir.name,
+                name = dir.name.replace('-', ' ').replaceFirstChar { it.uppercase() },
+                description = "Restored workspace",
+                language = "General",
+                slug = projectSlug(dir.name),
+            )
+            loaded.add(p)
+        }
+        preferences.saveProjects(loaded)
+        _state.update { it.copy(projects = loaded) }
     }
 
     fun runAutonomousVerification() {

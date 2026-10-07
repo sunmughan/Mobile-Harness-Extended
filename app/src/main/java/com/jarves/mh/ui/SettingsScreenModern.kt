@@ -176,6 +176,8 @@ fun SettingsScreen(
     onOpenPrivacyPolicy: () -> Unit = {},
     authViewModel: AuthViewModel? = null,
     onNavigateToAuth: () -> Unit = {},
+    onBackupWorkspaces: () -> Unit = {},
+    onRestoreWorkspaces: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val runtimeInstaller = remember { RuntimeInstaller(context) }
@@ -570,6 +572,29 @@ fun SettingsScreen(
                         Icon(Icons.Default.DeleteSweep, null, Modifier.size(17.dp))
                         Spacer(Modifier.width(7.dp))
                         Text(if (terminalCleared) "Terminal history cleared" else "Clear terminal history")
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Text(
+                        "Workspace Data Protection & Rollback",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = onBackupWorkspaces,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Upload, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text("Backup all projects to storage")
+                    }
+                    OutlinedButton(
+                        onClick = onRestoreWorkspaces,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Download, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text("Restore projects from backup")
                     }
                     OutlinedButton(
                         onClick = { showReliabilityHelp = !showReliabilityHelp },

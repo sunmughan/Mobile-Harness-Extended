@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+
 data class AuthUiState(
     val isLoading: Boolean = false,
     val isGoogleLoading: Boolean = false,
@@ -28,10 +31,20 @@ data class AuthUiState(
     val showDeleteAccountDialog: Boolean = false,
 )
 
-class AuthViewModel(
+class AuthViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: AuthRepository = AuthRepositoryProvider.get(application),
 ) : AndroidViewModel(application) {
+
+    companion object {
+        fun provideFactory(application: Application): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    return AuthViewModel(application) as T
+                }
+            }
+    }
 
     val authState: StateFlow<AuthState> = repository.authState
         .stateIn(viewModelScope, SharingStarted.Eagerly, AuthState.Loading)

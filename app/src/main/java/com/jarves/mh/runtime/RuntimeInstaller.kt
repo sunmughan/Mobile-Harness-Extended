@@ -215,7 +215,12 @@ class RuntimeInstaller(private val context: Context) {
             coreToolsMarker.writeText(CORE_TOOLS_VERSION)
         }
 
-        val missingStacks = selectedStacks.filterNot(::isStackInstalled)
+        val eligibleStacks = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+            selectedStacks.filter { it in setOf(DevStack.WEB, DevStack.PYTHON, DevStack.ANDROID) }
+        } else {
+            selectedStacks
+        }
+        val missingStacks = eligibleStacks.filterNot(::isStackInstalled)
         missingStacks.forEachIndexed { index, stack ->
             val slice = 0.26f / maxOf(1, missingStacks.size)
             val from = 0.72f + index * slice
@@ -1278,8 +1283,9 @@ class RuntimeInstaller(private val context: Context) {
                 installAndroidToolchain(proot, from, to, onProgress)
             }
             DevStack.CPP -> {
-                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    "C/C++ tools are not bundled in this offline APK; use the online APK or install an offline toolchain bundle"
+                if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    onProgress(RuntimeInstallProgress("C/C++ tools are online-only (skipped in offline APK)", to))
+                    return
                 }
                 aptInstall(
                     proot,
@@ -1296,8 +1302,9 @@ class RuntimeInstaller(private val context: Context) {
                 if (verified) File(rootfs, ".pocket-cpp-tools-version").writeText("10.2")
             }
             DevStack.PHP -> {
-                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    "PHP tools are not bundled in this offline APK; use the online APK to install PHP and Composer"
+                if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    onProgress(RuntimeInstallProgress("PHP tools are online-only (skipped in offline APK)", to))
+                    return
                 }
                 runCatching { preparePhpRepository(proot, onProgress) }.onFailure {
                     File(rootfs, "etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list").delete()
@@ -1335,8 +1342,9 @@ class RuntimeInstaller(private val context: Context) {
                 if (verified) File(rootfs, ".pocket-php-tools-version").writeText("8.4")
             }
             DevStack.BROWSER -> {
-                check(!BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-                    "Browser tools are not bundled in this offline APK; use the online APK to install Chromium and Puppeteer"
+                if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                    onProgress(RuntimeInstallProgress("Browser tools are online-only (skipped in offline APK)", to))
+                    return
                 }
                 aptInstall(
                     proot,

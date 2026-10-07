@@ -40,6 +40,16 @@ object AndroidAppInstaller {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     setPackageSource(PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE)
                 }
+                // Allow version rollback / downgrade installations
+                runCatching {
+                    val method = javaClass.getMethod("setRequestDowngrade", Boolean::class.javaPrimitiveType)
+                    method.invoke(this, true)
+                }
+                runCatching {
+                    val field = javaClass.getField("installFlags")
+                    val flags = field.getInt(this)
+                    field.setInt(this, flags or 0x00000080) // PackageManager.INSTALL_REQUEST_DOWNGRADE
+                }
             }
         val sessionId = installer.createSession(params)
         try {

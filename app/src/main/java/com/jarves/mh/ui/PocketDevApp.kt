@@ -350,6 +350,7 @@ fun PocketDevApp(
             themeMode = state.themeMode,
             onToggleTheme = viewModel::toggleTheme,
             onRetry = viewModel::retryStartup,
+            onBackToSetup = viewModel::backToSetup,
         )
         state.startupStage == StartupStage.MODEL_SETUP && state.agentKind == AgentKind.ANTIGRAVITY ->
             AntigravityOnboardingScreen(
@@ -1244,11 +1245,12 @@ private fun RuntimeSetupPromptScreen(
                 ) {
                     Column {
                         DevStack.entries.forEachIndexed { index, stack ->
+                            val isOfflineUnbundled = BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP, DevStack.BROWSER)
                             DevStackChoiceRow(
                                 stack = stack,
-                                selected = stack == DevStack.WEB || stack in selectedStacks,
-                                locked = stack == DevStack.WEB,
-                                onClick = { onToggleStack(stack) },
+                                selected = !isOfflineUnbundled && (stack == DevStack.WEB || stack in selectedStacks),
+                                locked = stack == DevStack.WEB || isOfflineUnbundled,
+                                onClick = { if (!isOfflineUnbundled) onToggleStack(stack) },
                             )
                             if (index != DevStack.entries.lastIndex) {
                                 HorizontalDivider(modifier = Modifier.padding(start = 62.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -1343,6 +1345,7 @@ private fun setupTimeEstimate(selected: Set<DevStack>): String {
 private fun stackDownloadLabel(stack: DevStack): String = when {
     stack == DevStack.WEB -> " · included"
     BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.PYTHON, DevStack.ANDROID) -> " · included"
+    BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.CPP, DevStack.PHP, DevStack.BROWSER) -> " · Online only"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.PYTHON -> " · 55 MB"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.ANDROID -> " · 570 MB"
     else -> ""
@@ -2078,6 +2081,7 @@ private fun StartupErrorScreen(
     themeMode: AppThemeMode = AppThemeMode.DARK,
     onToggleTheme: () -> Unit = {},
     onRetry: () -> Unit,
+    onBackToSetup: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -2085,6 +2089,14 @@ private fun StartupErrorScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBackToSetup) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to setup",
+                        )
+                    }
+                },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
@@ -2183,6 +2195,12 @@ private fun StartupErrorScreen(
                 }
             } else {
                 Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+            }
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = onBackToSetup, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Change tools & setup options")
             }
         }
     }
@@ -2352,6 +2370,8 @@ private fun RootScreenHost(
                     onOpenPrivacyPolicy = { showPrivacyPolicy = true },
                     authViewModel = authViewModel,
                     onNavigateToAuth = onNavigateToAuth,
+                    onBackupWorkspaces = { viewModel.backupAllWorkspaces() },
+                    onRestoreWorkspaces = { viewModel.restoreAllWorkspaces() },
                 )
             }
         }
