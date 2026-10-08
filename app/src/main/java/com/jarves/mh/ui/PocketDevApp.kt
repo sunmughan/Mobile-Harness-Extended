@@ -4479,6 +4479,11 @@ private fun WorkspaceScreen(
     }
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
+    LaunchedEffect(state.previewUrl, state.previewReady) {
+        if (state.previewReady && !state.previewUrl.isNullOrBlank()) {
+            selectedTab = WorkspaceTab.PREVIEW
+        }
+    }
     var showChats by rememberSaveable { mutableStateOf(false) }
     var showCommandPalette by rememberSaveable { mutableStateOf(false) }
     val activeChat = state.projectChats.firstOrNull { it.id == state.activeChatId }

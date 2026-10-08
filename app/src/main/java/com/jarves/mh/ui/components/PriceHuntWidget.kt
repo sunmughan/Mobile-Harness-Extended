@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -62,9 +64,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarves.mh.ecommerce.BuyActionHandler
 import com.jarves.mh.ecommerce.DealRealityScorer
 import com.jarves.mh.ecommerce.ECommercePlatform
+import com.jarves.mh.ecommerce.PriceDropEvent
 import com.jarves.mh.ecommerce.PriceHuntController
+import com.jarves.mh.ecommerce.PriceWatchlistItem
+import com.jarves.mh.ecommerce.PriceWatchlistManager
 
 @Composable
 fun PriceHuntWidget(
@@ -361,6 +367,31 @@ fun PriceHuntWidget(
                     onDismiss = { PriceHuntController.dismissVerdict() },
                 )
             }
+
+            // Festive Deal Watchlist (Active Multi-Product Tracking)
+            val watchlistItems by PriceWatchlistManager.INSTANCE.items.collectAsState()
+            if (watchlistItems.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                WatchlistTray(
+                    items = watchlistItems,
+                    onOpenApp = { item ->
+                        BuyActionHandler.openOfficialApp(context, item.url, item.platform)
+                    },
+                    onOpenInBrowser = { item ->
+                        onNavigate(item.url)
+                    },
+                    onRemove = { item ->
+                        PriceWatchlistManager.INSTANCE.remove(item.id)
+                    },
+                    onTestAlert = { item ->
+                        PriceWatchlistManager.INSTANCE.recordPriceCheck(
+                            itemId = item.id,
+                            newPrice = (item.currentPrice * 0.90).toLong().coerceAtLeast(1L),
+                            context = context,
+                        )
+                    },
+                )
+            }
         }
     }
 }
@@ -373,8 +404,16 @@ private fun DealVerdictCard(
     onOpenTab: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val isAlert = verdict.alertTriggered
     val isWarning = verdict.inflationDetected
+    var isTracked by remember(extracted?.url) {
+        mutableStateOf(
+            extracted?.url?.let { url ->
+                PriceWatchlistManager.INSTANCE.items.value.any { it.url.equals(url, ignoreCase = true) }
+            } ?: false
+        )
+    }
 
     val containerColor = when {
         isAlert -> Color(0xFF1B5E20).copy(alpha = 0.12f)
@@ -528,19 +567,296 @@ private fun DealVerdictCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // Action: Open in Browser Tab
-            OutlinedButton(
-                onClick = onOpenTab,
+            // 1-Tap Action: Official App Instant Checkout (Flipkart / Amazon)
+            if (extracted != null && extracted.url.isNotBlank()) {
+                val platformColor = Color(extracted.platform.primaryColorHex)
+                Button(
+                    onClick = {
+                        BuyActionHandler.openOfficialApp(context, extracted.url, extracted.platform)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = platformColor),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = Color.White,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "⚡ Buy Now (${extracted.platform.displayName} App)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+            }
+
+            // Dual Action: Buy In-App (Chromium) & Track Price
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                OutlinedButton(
+                    onClick = onOpenTab,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("🛒 Buy In-App", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+
+                if (extracted != null && extracted.url.isNotBlank()) {
+                    Button(
+                        onClick = {
+                            PriceWatchlistManager.INSTANCE.addOrUpdate(
+                                url = extracted.url,
+                                title = extracted.title,
+                                price = extracted.currentPrice,
+                                mrp = extracted.mrp,
+                                targetPrice = targetPrice,
+                                platform = extracted.platform,
+                            )
+                            isTracked = true
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isTracked) Color(0xFF2E7D32) else MaterialTheme.colorScheme.secondary,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (isTracked) "✓ Tracking" else "🔔 Track Price",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WatchlistTray(
+    items: List<PriceWatchlistItem>,
+    onOpenApp: (PriceWatchlistItem) -> Unit,
+    onOpenInBrowser: (PriceWatchlistItem) -> Unit,
+    onRemove: (PriceWatchlistItem) -> Unit,
+    onTestAlert: (PriceWatchlistItem) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = "Festive Watchlist (${items.size})",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                ) {
+                    Text(
+                        text = "Jitter 25±10m anti-ban",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+
+            items.forEach { item ->
+                WatchlistItemRow(
+                    item = item,
+                    onOpenApp = { onOpenApp(item) },
+                    onOpenInBrowser = { onOpenInBrowser(item) },
+                    onRemove = { onRemove(item) },
+                    onTestAlert = { onTestAlert(item) },
                 )
-                Spacer(Modifier.width(6.dp))
-                Text("Open Product in Browser Tab", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WatchlistItemRow(
+    item: PriceWatchlistItem,
+    onOpenApp: () -> Unit,
+    onOpenInBrowser: () -> Unit,
+    onRemove: () -> Unit,
+    onTestAlert: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(item.platform.primaryColorHex),
+                ) {
+                    Text(
+                        text = item.platform.displayName,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (item.hasPriceDropped) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF2E7D32).copy(alpha = 0.15f),
+                        ) {
+                            Text(
+                                text = "📉 -₹${item.totalSavingsFromInitial}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2E7D32),
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onRemove,
+                        modifier = Modifier.size(22.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Remove",
+                            modifier = Modifier.size(15.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = item.title,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = "₹${DealRealityScorer.formatInr(item.currentPrice)}",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 14.sp,
+                        color = if (item.hasPriceDropped) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (item.targetPrice != null) {
+                        Text(
+                            text = "Target: ₹${DealRealityScorer.formatInr(item.targetPrice)}",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        onClick = onOpenApp,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(item.platform.primaryColorHex)),
+                    ) {
+                        Text("⚡ App", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+
+                    OutlinedButton(
+                        onClick = onOpenInBrowser,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text("🌐 In-App", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    IconButton(
+                        onClick = onTestAlert,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Test Alert Notification",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
         }
     }

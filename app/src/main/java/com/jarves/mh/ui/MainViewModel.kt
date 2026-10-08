@@ -2461,6 +2461,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun handleNotificationRoute(route: String?) {
         val normalized = route?.trim().orEmpty()
         if (normalized.isBlank()) return
+
+        if (normalized.startsWith("browser:") || normalized.startsWith("http://") || normalized.startsWith("https://")) {
+            val targetUrl = normalized.removePrefix("browser:").trim()
+            if (targetUrl.isNotBlank()) {
+                val hasProject = _state.value.activeProject != null
+                if (!hasProject) {
+                    val defaultProj = _state.value.projects.firstOrNull()
+                    if (defaultProj != null) {
+                        openProject(defaultProj)
+                    } else {
+                        createQuickProject()
+                    }
+                }
+                _state.update {
+                    it.copy(
+                        previewReady = true,
+                        previewUrl = targetUrl,
+                        workspaceVisible = true,
+                    )
+                }
+            }
+            return
+        }
+
         val segments = normalized.trim('/').split('/').filter(String::isNotBlank)
         val slug = segments.getOrNull(1).takeIf { segments.firstOrNull() == "project" }
         if (slug == null) return
