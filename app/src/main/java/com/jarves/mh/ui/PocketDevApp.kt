@@ -89,6 +89,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
@@ -335,6 +336,7 @@ fun PocketDevApp(
             onToggleStack = viewModel::toggleDevStack,
             onSelectAgent = viewModel::selectAgent,
             onDownload = viewModel::startRuntimeSetup,
+            onStartDealHunter = viewModel::startDealHunterMode,
         )
         state.startupStage == StartupStage.INSTALLING && state.showDetailedSetupProgress ->
             RuntimeInstallationScreen(
@@ -924,6 +926,7 @@ private fun RuntimeSetupPromptScreen(
     onToggleStack: (DevStack) -> Unit,
     onSelectAgent: (AgentKind) -> Unit = {},
     onDownload: () -> Unit,
+    onStartDealHunter: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activityManager = context.getSystemService(ActivityManager::class.java)
@@ -943,7 +946,7 @@ private fun RuntimeSetupPromptScreen(
     }
 
     if (currentStep > 0) {
-        BackHandler { currentStep = 0 }
+        BackHandler { currentStep-- }
     }
 
     Scaffold(
@@ -984,7 +987,7 @@ private fun RuntimeSetupPromptScreen(
                 },
                 navigationIcon = {
                     if (currentStep > 0) {
-                        IconButton(onClick = { currentStep = 0 }) {
+                        IconButton(onClick = { currentStep-- }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                         }
                     }
@@ -1011,7 +1014,159 @@ private fun RuntimeSetupPromptScreen(
             Spacer(Modifier.height(8.dp))
 
             if (currentStep == 0) {
-                // Step 0: Device Compatibility & Verification
+                // Step 0: Choose Your Experience (Persona Gateway)
+                Text(
+                    text = "CHOOSE YOUR MODE",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "How will you use Mobile Harness?",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Select your primary goal to start immediately. You can switch modes or install developer toolchains anytime from Settings.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.5.sp,
+                    lineHeight = 19.sp,
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                // Card 1: Festive Deal Hunter (Featured / Instant)
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFFF5722).copy(alpha = 0.08f),
+                    border = BorderStroke(1.5.dp, Color(0xFFFF5722)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = CircleShape, color = Color(0xFFFF5722), modifier = Modifier.size(28.dp)) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Bolt, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Festive Deal Hunter",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFFFF5722),
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF2E7D32).copy(alpha = 0.15f),
+                            ) {
+                                Text(
+                                    "INSTANT · NO DOWNLOAD",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32),
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Stealth Flipkart & Amazon price drop sniper, Akamai bot shield bypass, AI Deal Reality scoring (1-10), and live Chromium browser.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 16.sp,
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+                        Button(
+                            onClick = onStartDealHunter,
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)),
+                        ) {
+                            Text("Start Hunting Deals Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Card 2: Software Developer & Engineer
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp)) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Terminal, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Software Developer",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            ) {
+                                Text(
+                                    "FULL CODING IDE",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Complete Linux PRoot workspace, Node.js, Python, Git, touch code editor, universal Command Palette, and Autonomous AI Coding Agents.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 16.sp,
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedButton(
+                            onClick = { currentStep = 1 },
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Text("Set Up Coding Environment", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            } else if (currentStep == 1) {
+                // Step 1: Device Compatibility & Verification
                 Text(
                     text = "DEVICE CHECK",
                     color = MaterialTheme.colorScheme.primary,
@@ -1120,7 +1275,7 @@ private fun RuntimeSetupPromptScreen(
                 Spacer(Modifier.height(28.dp))
 
                 Button(
-                    onClick = { currentStep = 1 },
+                    onClick = { currentStep = 2 },
                     enabled = compatible,
                     modifier = Modifier
                         .fillMaxWidth()

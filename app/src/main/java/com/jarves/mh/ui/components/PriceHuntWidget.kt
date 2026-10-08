@@ -47,6 +47,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,6 +75,7 @@ fun PriceHuntWidget(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val state by PriceHuntController.state.collectAsState()
+    var showWizardDialog by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -186,6 +190,34 @@ fun PriceHuntWidget(
                         selectedContainerColor = Color(0xFFFF9900).copy(alpha = 0.18f),
                         selectedLabelColor = Color(0xFFE65100),
                     ),
+                )
+
+                Spacer(Modifier.weight(1f))
+
+                Button(
+                    onClick = { showWizardDialog = true },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722).copy(alpha = 0.15f)),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp),
+                ) {
+                    Text("🎯 Deal Wizard", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722))
+                }
+            }
+
+            if (showWizardDialog) {
+                DealFinderWizardDialog(
+                    onDismiss = { showWizardDialog = false },
+                    onSelectDeal = { deal ->
+                        PriceHuntController.updateUrl(deal.productUrl)
+                        PriceHuntController.updateTargetPrice(deal.currentPrice.toString())
+                        showWizardDialog = false
+                        PriceHuntController.executeScan(
+                            context = context,
+                            webView = webView,
+                            onNavigate = onNavigate,
+                        )
+                    },
                 )
             }
 
