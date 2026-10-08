@@ -144,10 +144,11 @@ object RoadmapParser {
             }
         }
         commitCurrentStep()
-
         if (steps.isEmpty()) {
             return null
         }
+
+        val allCompleted = steps.all { it.status == StepStatus.COMPLETED }
 
         return ActiveRoadmap(
             id = UUID.randomUUID().toString(),
@@ -156,7 +157,7 @@ object RoadmapParser {
             steps = steps,
             comments = emptyList(),
             rawMarkdown = markdown,
-            isApproved = false,
+            isApproved = allCompleted,
             mode = mode,
             createdAtMillis = System.currentTimeMillis(),
         )

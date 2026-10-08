@@ -381,6 +381,8 @@ fun RoadmapCard(
     modifier: Modifier = Modifier,
 ) {
     var isExpanded by remember { mutableStateOf(true) }
+    val isAllCompleted = roadmap.steps.isNotEmpty() && roadmap.steps.all { it.status == StepStatus.COMPLETED }
+    val isApproved = roadmap.isApproved || isAllCompleted
 
     Surface(
         modifier = modifier
@@ -390,7 +392,7 @@ fun RoadmapCard(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         border = BorderStroke(
             1.dp,
-            if (roadmap.isApproved) PocketGreen.copy(alpha = 0.6f) else PocketOrange.copy(alpha = 0.4f)
+            if (isAllCompleted || isApproved) PocketGreen.copy(alpha = 0.6f) else PocketOrange.copy(alpha = 0.4f)
         ),
     ) {
         Column(
@@ -409,10 +411,10 @@ fun RoadmapCard(
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(
-                        imageVector = if (roadmap.isApproved) Icons.Default.CheckCircle else Icons.Default.RocketLaunch,
+                        imageVector = if (isAllCompleted || isApproved) Icons.Default.CheckCircle else Icons.Default.RocketLaunch,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = if (roadmap.isApproved) PocketGreen else PocketOrange,
+                        tint = if (isAllCompleted || isApproved) PocketGreen else PocketOrange,
                     )
                     Text(
                         text = roadmap.title.ifBlank { "Implementation Roadmap" },
@@ -426,14 +428,18 @@ fun RoadmapCard(
 
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = if (roadmap.isApproved) PocketGreen.copy(alpha = 0.15f) else PocketOrange.copy(alpha = 0.15f),
+                    color = if (isAllCompleted || isApproved) PocketGreen.copy(alpha = 0.15f) else PocketOrange.copy(alpha = 0.15f),
                 ) {
                     Text(
-                        text = if (roadmap.isApproved) "Approved" else "Awaiting Approval",
+                        text = when {
+                            isAllCompleted -> "Completed"
+                            isApproved -> "Approved"
+                            else -> "Awaiting Approval"
+                        },
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (roadmap.isApproved) PocketGreen else PocketOrange,
+                        color = if (isAllCompleted || isApproved) PocketGreen else PocketOrange,
                     )
                 }
             }
@@ -479,65 +485,87 @@ fun RoadmapCard(
                 }
             }
 
-            // Action Buttons
+            // Action Buttons / Completion Status
             Spacer(Modifier.height(2.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(
-                    onClick = { onAddComment(null) },
-                    modifier = Modifier.height(34.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp),
-                    shape = RoundedCornerShape(10.dp),
+            if (isAllCompleted) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.AddComment,
+                        imageVector = Icons.Default.CheckCircle,
                         contentDescription = null,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(14.dp),
+                        tint = PocketGreen,
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("Add Note", fontSize = 11.sp)
+                    Text(
+                        "All steps completed",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PocketGreen,
+                    )
                 }
-
-                if (!roadmap.isApproved) {
-                    Button(
-                        onClick = onApproveAndBuild,
-                        modifier = Modifier.height(34.dp).weight(1f),
-                        contentPadding = PaddingValues(horizontal = 12.dp),
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = { onAddComment(null) },
+                        modifier = Modifier.height(34.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
                         shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                        ),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PlayArrow,
+                            imageVector = Icons.Default.AddComment,
                             contentDescription = null,
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(13.dp),
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Approve & Build", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Add Note", fontSize = 11.sp)
                     }
-                } else {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = PocketGreen,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "Approved & Building",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = PocketGreen,
-                        )
+
+                    if (!roadmap.isApproved) {
+                        Button(
+                            onClick = onApproveAndBuild,
+                            modifier = Modifier.height(34.dp).weight(1f),
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Approve & Build", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = PocketGreen,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "Approved & Building",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = PocketGreen,
+                            )
+                        }
                     }
                 }
             }
@@ -636,16 +664,18 @@ private fun RoadmapStepRow(
             }
         }
 
-        IconButton(
-            onClick = onAddComment,
-            modifier = Modifier.size(22.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.Comment,
-                contentDescription = "Comment on step",
-                modifier = Modifier.size(12.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (!isCompleted) {
+            IconButton(
+                onClick = onAddComment,
+                modifier = Modifier.size(22.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Comment,
+                    contentDescription = "Comment on step",
+                    modifier = Modifier.size(12.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

@@ -3524,8 +3524,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     appendLine("- [${c.author}]: ${c.text}")
                 }
             }
-            appendLine()
             appendLine("Start building now end-to-end. Implement code changes, build, verify, and complete all steps.")
+            appendLine("Once finished, report verification details and conclude directly. Do NOT output a new roadmap or ask the user to Approve & Build again.")
             appendLine("</execution_mode>")
         }
 
@@ -4190,6 +4190,7 @@ You are running in BUILD mode.
 Your objective: Directly understand the user request, plan internally, and immediately begin implementing all required changes end-to-end.
 - Read relevant files, edit code, execute build/test commands, verify changes, and report progress.
 - Once finished, summarize what was accomplished with full verification details.
+- Do NOT output future roadmaps, speculative checklists, or ask the user to 'Approve & Build' when the task is complete.
 </execution_mode>
 """.trimIndent()
             mode == ExecutionMode.UNIFIED -> """
@@ -4677,15 +4678,25 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     runtimeRecoveryStartedAtMillis = null
                     val segmentFinishedState = finishWorkSegment(current, finishedAt)
                     val stateWithResponse = ensureCompletionMessage(segmentFinishedState, totalDurationText)
+                    val completedActiveRoadmap = current.activeRoadmap?.let { rm ->
+                        if (rm.isApproved) {
+                            rm.copy(steps = rm.steps.map { if (it.status != StepStatus.SKIPPED) it.copy(status = StepStatus.COMPLETED) else it })
+                        } else {
+                            rm
+                        }
+                    }
                     val messagesWithRoadmap = stateWithResponse.messages.map { msg ->
-                        if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank()) {
+                        if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
+                            msg.copy(roadmap = completedActiveRoadmap)
+                        } else if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
+                            current.executionMode != ExecutionMode.BUILD && (current.activeRoadmap == null || !current.activeRoadmap.isApproved)) {
                             val parsed = RoadmapParser.parseFromText(msg.text, stateWithResponse.executionMode)
                             if (parsed != null) msg.copy(roadmap = parsed) else msg
                         } else {
                             msg
                         }
                     }
-                    val latestRoadmap = messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
+                    val latestRoadmap = completedActiveRoadmap ?: messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
                     val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
                     sessionManager.recordSessionCompleted("Task completed successfully")
                     attachTaskDuration(stateWithResponse.copy(messages = messagesWithRoadmap), finishedAt).copy(
@@ -4717,15 +4728,25 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                         } ?: "a few seconds"
                         runtimeRecoveryStartedAtMillis = null
                         val segmentFinishedState = finishWorkSegment(current, finishedAt)
+                        val completedActiveRoadmap = current.activeRoadmap?.let { rm ->
+                            if (rm.isApproved) {
+                                rm.copy(steps = rm.steps.map { if (it.status != StepStatus.SKIPPED) it.copy(status = StepStatus.COMPLETED) else it })
+                            } else {
+                                rm
+                            }
+                        }
                         val messagesWithRoadmap = segmentFinishedState.messages.map { msg ->
-                            if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank()) {
+                            if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
+                                msg.copy(roadmap = completedActiveRoadmap)
+                            } else if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
+                                current.executionMode != ExecutionMode.BUILD && (current.activeRoadmap == null || !current.activeRoadmap.isApproved)) {
                                 val parsed = RoadmapParser.parseFromText(msg.text, segmentFinishedState.executionMode)
                                 if (parsed != null) msg.copy(roadmap = parsed) else msg
                             } else {
                                 msg
                             }
                         }
-                        val latestRoadmap = messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
+                        val latestRoadmap = completedActiveRoadmap ?: messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
                         val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
                         attachTaskDuration(segmentFinishedState.copy(messages = messagesWithRoadmap), finishedAt).copy(
                             isRunning = false,
@@ -4959,8 +4980,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                         appendLine("   Files: ${step.filesAffected.joinToString(", ")}")
                     }
                 }
-                appendLine()
                 appendLine("Continue building now end-to-end. Implement remaining code changes, build, verify, and complete all steps.")
+                appendLine("Once finished, report verification details and conclude directly. Do NOT output a new roadmap or ask the user to Approve & Build again.")
                 appendLine("</execution_mode>")
             }
         } else {

@@ -85,6 +85,24 @@ class RoadmapParserTest {
     }
 
     @Test
+    fun testAllCompletedStepsMarkRoadmapApproved() {
+        val markdown = """
+            ### Implementation Roadmap
+            All tasks have been executed successfully:
+            
+            1. [x] Step 1: Create UI models
+            2. [x] Step 2: Implement ViewModels
+            3. [x] Step 3: Verify and run unit tests
+        """.trimIndent()
+
+        val roadmap = RoadmapParser.parseFromText(markdown, ExecutionMode.BUILD)
+        assertNotNull(roadmap)
+        assertTrue(roadmap!!.isApproved)
+        assertEquals(3, roadmap.steps.size)
+        assertTrue(roadmap.steps.all { it.status == StepStatus.COMPLETED })
+    }
+
+    @Test
     fun testEmptyReturnsNull() {
         assertNull(RoadmapParser.parseFromText(""))
         assertNull(RoadmapParser.parseFromText("   \n\n  "))
