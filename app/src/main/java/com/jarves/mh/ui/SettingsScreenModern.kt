@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -175,6 +176,12 @@ fun SettingsScreen(
     onSwitchAntigravityAccount: (String) -> Unit = {},
     onRemoveAntigravityAccount: (String) -> Unit = {},
     onToggleAntigravityAutoRoundRobin: (Boolean) -> Unit = {},
+    initialUpdateManifestUrl: String = "",
+    initialUpdateAuthToken: String = "",
+    onSetUpdateManifestUrl: (String) -> Unit = {},
+    onClearUpdateManifestUrl: () -> Unit = {},
+    onSetUpdateAuthToken: (String) -> Unit = {},
+    onCheckForUpdate: () -> Unit = {},
     initialDebugUpdateManifestUrl: String = "",
     onSetDebugUpdateManifestUrl: (String) -> Unit = {},
     onClearDebugUpdateManifestUrl: () -> Unit = {},
@@ -704,14 +711,21 @@ fun SettingsScreen(
                 }
             }
 
-            if (BuildConfig.DEBUG) {
-                item {
-                    DebugUpdateChannelSection(
-                        initialUrl = initialDebugUpdateManifestUrl,
-                        onSave = onSetDebugUpdateManifestUrl,
-                        onClear = onClearDebugUpdateManifestUrl,
-                    )
-                }
+            item {
+                AppUpdateChannelSection(
+                    initialUrl = initialUpdateManifestUrl.ifBlank { initialDebugUpdateManifestUrl },
+                    initialToken = initialUpdateAuthToken,
+                    onSave = { url, token ->
+                        onSetUpdateManifestUrl(url)
+                        onSetUpdateAuthToken(token)
+                    },
+                    onClear = {
+                        onClearUpdateManifestUrl()
+                        onSetUpdateAuthToken("")
+                        onClearDebugUpdateManifestUrl()
+                    },
+                    onCheckNow = onCheckForUpdate,
+                )
             }
 
             item {
@@ -1656,63 +1670,134 @@ private fun RuntimeInfoRow(label: String, value: String) {
 }
 
 @Composable
-private fun DebugUpdateChannelSection(
+private fun AppUpdateChannelSection(
     initialUrl: String,
-    onSave: (String) -> Unit,
+    initialToken: String,
+    onSave: (String, String) -> Unit,
     onClear: () -> Unit,
+    onCheckNow: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var url by rememberSaveable(initialUrl) { mutableStateOf(initialUrl) }
-    val isOverridden = initialUrl.isNotBlank()
+    var token by rememberSaveable(initialToken) { mutableStateOf(initialToken) }
+    val isOverridden = initialUrl.isNotBlank() || initialToken.isNotBlank()
+    val isOnline = BuildConfig.APP_VARIANT.equals("online", ignoreCase = true)
+
     SettingsAccordion(
-        title = "Update channel",
-        subtitle = if (isOverridden) "Overridden · debug only" else "Default GitHub release",
-        icon = Icons.Default.Tune,
+        title = "App updates & release channel",
+        subtitle = "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE}) · ${if (isOnline) "Online Edition" else "Offline Edition"}",
+        icon = Icons.Default.CloudDownload,
         expanded = expanded,
         onClick = { expanded = !expanded },
     ) {
-        Text(
-            "Debug builds only. Paste the temporary manifest URL from Cloudflare Tunnel, ngrok, or any HTTPS server hosting mobile-harness-update.json and a newer APK.",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("Manifest URL") },
-            placeholder = { Text("https://your-tunnel.example/mobile-harness-update.json") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Button(
-                onClick = { onSave(url) },
-                enabled = url.startsWith("https://"),
-                modifier = Modifier.weight(1f),
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Edition & Channel Details Banner
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (isOverridden) "Replace" else "Use & check")
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (isOnline) Color(0xFF2874F0) else Color(0xFF2E7D32),
+                            ) {
+                                Text(
+                                    text = if (isOnline) "ONLINE EDITION" else "OFFLINE EDITION",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            Text(
+                                text = "v${BuildConfig.VERSION_NAME}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (isOnline) {
+                                "Receives 'app-online-release.apk' updates (~85MB base, dynamic runtimes)."
+                            } else {
+                                "Receives 'app-offline-release.apk' updates (~880MB, fully bundled standalone runtimes)."
+                            },
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 14.sp,
+                        )
+                    }
+
+                    Button(
+                        onClick = onCheckNow,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp),
+                    ) {
+                        Text("Check now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
-            OutlinedButton(
-                onClick = onClear,
-                enabled = isOverridden,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Reset")
-            }
-        }
-        if (isOverridden) {
-            Spacer(Modifier.height(6.dp))
+
             Text(
-                "Current: $initialUrl",
+                "For private repositories or custom mirrors, specify your manifest/proxy endpoint and personal access token (PAT) below. Leave blank for default release channel.",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 15.sp,
             )
+
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("Update manifest / API URL (optional)") },
+                placeholder = { Text("https://api.github.com/repos/.../releases/latest") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("Private repository token (optional)") },
+                placeholder = { Text("github_pat_... or ghp_...") },
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { onSave(url, token) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (isOverridden) "Save & check" else "Apply")
+                }
+                OutlinedButton(
+                    onClick = {
+                        url = ""
+                        token = ""
+                        onClear()
+                    },
+                    enabled = isOverridden,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Reset default")
+                }
+            }
         }
     }
 }

@@ -144,6 +144,16 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("debug_update_manifest_url", "") ?: ""
         set(value) { preferences.edit().putString("debug_update_manifest_url", value).apply() }
 
+    /** Custom manifest URL or proxy endpoint override for in-app updates. */
+    var updateManifestUrlOverride: String
+        get() = preferences.getString("update_manifest_url_override", "") ?: ""
+        set(value) { preferences.edit().putString("update_manifest_url_override", value).apply() }
+
+    /** Optional Personal Access Token / Bearer token for accessing private GitHub repository releases. */
+    var updateAuthToken: String
+        get() = preferences.getString("update_auth_token", "") ?: ""
+        set(value) { preferences.edit().putString("update_auth_token", value).apply() }
+
     /** Development stacks the user picked during onboarding (names of DevStack). */
     var selectedDevStacks: Set<String>
         get() {

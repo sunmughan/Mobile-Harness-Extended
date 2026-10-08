@@ -335,8 +335,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var runtimeRecoveryAttempt = 0
     private var runtimeRecoveryStartedAtMillis: Long? = null
     private fun appUpdater(): AppUpdater = AppUpdater(
-        getApplication(),
-        if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else "",
+        context = getApplication(),
+        manifestUrlOverride = preferences.updateManifestUrlOverride.ifBlank {
+            if (BuildConfig.DEBUG) preferences.debugUpdateManifestUrl else ""
+        },
+        authToken = preferences.updateAuthToken,
     )
     @Volatile private var projectTerminalProcess: Process? = null
     @Volatile private var terminalProcess: Process? = null
@@ -1494,9 +1497,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update {
                     it.copy(appUpdate = update, appUpdateStatus = AppUpdateStatus.AVAILABLE, appUpdateError = null)
                 }
+            } else if (force) {
+                _state.update {
+                    it.copy(toastMessage = "Mobile Harness is up to date (${BuildConfig.APP_VARIANT} · v${BuildConfig.VERSION_NAME})")
+                }
             }
         }
     }
+
+    /** Set or update the in-app update channel / manifest URL. */
+    fun setUpdateManifestUrl(url: String) {
+        preferences.updateManifestUrlOverride = url.trim()
+        preferences.lastAppUpdateCheckMillis = 0L
+        checkForAppUpdate(force = true)
+    }
+
+    /** Reset the in-app update manifest URL to the default release channel. */
+    fun clearUpdateManifestUrl() {
+        preferences.updateManifestUrlOverride = ""
+        preferences.lastAppUpdateCheckMillis = 0L
+        checkForAppUpdate(force = true)
+    }
+
+    /** Set or update the private GitHub Personal Access Token or Deploy Token. */
+    fun setUpdateAuthToken(token: String) {
+        preferences.updateAuthToken = token.trim()
+        preferences.lastAppUpdateCheckMillis = 0L
+        checkForAppUpdate(force = true)
+    }
+
+    fun updateManifestUrl(): String = preferences.updateManifestUrlOverride
+    fun updateAuthToken(): String = preferences.updateAuthToken
 
     /** Debug builds only: persist a manifest URL override and re-check immediately. */
     fun setDebugUpdateManifestUrl(url: String) {
