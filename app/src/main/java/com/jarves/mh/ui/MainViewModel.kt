@@ -319,8 +319,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val editorCheckpoints = WorkspaceCheckpoints(application.filesDir)
     val sessionManager = com.jarves.mh.session.AgentSessionManager(application)
     val checkpointManager = com.jarves.mh.workspace.WorkspaceCheckpointManager(application.filesDir)
+    val runtimeHealthController = com.jarves.mh.runtime.RuntimeHealthController(application)
+    val agentSessionController = com.jarves.mh.session.AgentSessionController(application, sessionManager)
+    val terminalSessionController = com.jarves.mh.terminal.TerminalSessionController()
+    val projectWorkspaceController = com.jarves.mh.workspace.ProjectWorkspaceController(application)
+    val fileOperationsController = com.jarves.mh.workspace.FileOperationsController()
+    val projectMemoryStore = com.jarves.mh.runtime.ProjectMemoryStore(application.filesDir)
+    val agentOrchestrator = com.jarves.mh.session.AgentOrchestrator(checkpointManager, projectMemoryStore)
+    val permissionPolicyEngine = com.jarves.mh.security.PermissionPolicyEngine(application)
     private val projectIndex = ProjectIndex(application.filesDir)
-    private val contextEngine = ContextEngine(projectIndex)
+    private val contextEngine = ContextEngine(projectIndex, projectMemoryStore)
     private val runtimeRetryPolicy = RuntimeRetryPolicy()
     private var runtimeRecoveryJob: Job? = null
     private var runtimeRecoveryAttempt = 0
@@ -447,11 +455,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { vault.remove(LEGACY_GITHUB_TOKEN_KEY) }
         viewModelScope.launch { refreshGitHubConnection() }
         runCatching { RuntimeSetupController.restore(application) }
+        val storageHealth = runtimeHealthController.checkStorageHealth()
+        if (storageHealth is com.jarves.mh.runtime.StorageHealthResult.Critical) {
+            _state.update { it.copy(toastMessage = storageHealth.message) }
+        }
         val interrupted = sessionManager.checkInterruptedSession()
         if (interrupted != null) {
             _state.update { it.copy(interruptedSession = interrupted) }
         }
         viewModelScope.launch(Dispatchers.IO) {
+            runtimeHealthController.cleanupOrphanArtifacts()
+            com.jarves.mh.workspace.SafeFileOps.cleanStaleTempFiles(application.filesDir)
             for (write in transcriptWrites) {
                 preferences.saveMessages(write.projectId, write.chatId, write.messages)
             }
@@ -1079,6 +1093,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        val storage = runtimeHealthController.checkStorageHealth(com.jarves.mh.runtime.RuntimeHealthController.MIN_BUILD_STORAGE_BYTES)
+        if (storage is com.jarves.mh.runtime.StorageHealthResult.Critical) {
+            _state.update { it.copy(toastMessage = storage.message) }
+            return
+        }
         if (_state.value.isRunning) {
             _state.update { it.copy(toastMessage = "Wait for Claude to finish creating the project before building.") }
             return
@@ -1163,6 +1182,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         preferences.themeMode = mode.name.lowercase()
         _state.update { it.copy(themeMode = mode) }
     }
+
+    fun engageEmergencyKillSwitch(reason: String = "User requested emergency stop") {
+        permissionPolicyEngine.engageEmergencyKillSwitch(reason)
+    }
+
+    fun resetEmergencyKillSwitch() {
+        permissionPolicyEngine.resetEmergencyKillSwitch()
+    }
+
+    fun isEmergencyKillSwitchEngaged(): Boolean = permissionPolicyEngine.isEmergencyKillSwitchEngaged()
 
     fun getSavedApiKey(kind: ProviderKind): String = vault.get(kind.name).orEmpty()
 
@@ -1765,6 +1794,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { antigravityAuthController.logout() }
                 .onFailure { error -> _state.update { it.copy(toastMessage = error.message ?: "Could not sign out") } }
         }
+    }
+
+    fun startAntigravityAddAccount() {
+        if (_state.value.agentInstalling != null || _state.value.isRunning) return
+        lastOpenedAntigravityAuthUrl = null
+        viewModelScope.launch { antigravityAuthController.beginAddAccount() }
+    }
+
+    fun switchAntigravityAccount(email: String) {
+        val success = antigravityAuthController.activateAccount(email)
+        if (success) {
+            _state.update { it.copy(toastMessage = "Switched to $email") }
+        }
+    }
+
+    fun removeAntigravityAccount(email: String) {
+        viewModelScope.launch {
+            antigravityAuthController.removeAccount(email)
+            _state.update { it.copy(toastMessage = "Removed $email") }
+        }
+    }
+
+    fun toggleAntigravityAutoRoundRobin(enabled: Boolean) {
+        preferences.antigravityAutoRoundRobin = enabled
+        antigravityAuthController.setAutoRoundRobin(enabled)
     }
 
     fun setAntigravityModel(model: String) {
@@ -3730,6 +3784,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         closeAllEditorTabs()
     }
 
+    fun createFile(relativePath: String, initialContent: String = "") {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val result = fileOperationsController.createFile(root, relativePath, initialContent)
+        if (result.isSuccess) {
+            refreshProjectFiles()
+            openFileByPath(relativePath)
+        } else {
+            AppCrashLogger.log("Failed to create file: ${result.exceptionOrNull()?.message}")
+        }
+    }
+
+    fun createFolder(relativePath: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val result = fileOperationsController.createDirectory(root, relativePath)
+        if (result.isSuccess) {
+            refreshProjectFiles()
+        } else {
+            AppCrashLogger.log("Failed to create directory: ${result.exceptionOrNull()?.message}")
+        }
+    }
+
+    fun renameEntry(oldRelativePath: String, newRelativePath: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val result = fileOperationsController.renameEntry(root, oldRelativePath, newRelativePath)
+        if (result.isSuccess) {
+            val currentTabs = _state.value.openEditorTabs
+            if (oldRelativePath in currentTabs) {
+                val updatedTabs = currentTabs.map { if (it == oldRelativePath) newRelativePath else it }
+                preferences.setOpenEditorTabs(project.id, updatedTabs)
+                _state.update {
+                    it.copy(
+                        openEditorTabs = updatedTabs,
+                        openedFilePath = if (it.openedFilePath == oldRelativePath) newRelativePath else it.openedFilePath,
+                    )
+                }
+            }
+            refreshProjectFiles()
+        } else {
+            AppCrashLogger.log("Failed to rename: ${result.exceptionOrNull()?.message}")
+        }
+    }
+
+    fun deleteEntry(relativePath: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val result = fileOperationsController.deleteEntry(root, relativePath)
+        if (result.isSuccess) {
+            if (relativePath in _state.value.openEditorTabs) {
+                closeEditorTab(relativePath)
+            }
+            refreshProjectFiles()
+        } else {
+            AppCrashLogger.log("Failed to delete: ${result.exceptionOrNull()?.message}")
+        }
+    }
+
+    fun duplicateEntry(relativePath: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val result = fileOperationsController.duplicateEntry(root, relativePath)
+        if (result.isSuccess) {
+            val duplicate = result.getOrNull()
+            refreshProjectFiles()
+            if (duplicate != null) {
+                val rel = duplicate.relativeTo(root).invariantSeparatorsPath
+                openFileByPath(rel)
+            }
+        } else {
+            AppCrashLogger.log("Failed to duplicate: ${result.exceptionOrNull()?.message}")
+        }
+    }
+
     private fun loadFileContent(project: Project, path: String) {
         viewModelScope.launch {
             val content = withContext(Dispatchers.IO) {
@@ -3970,12 +4099,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "txt", "md", "markdown", "json", "jsonl", "csv", "tsv", "xml", "yaml", "yml", "log",
             "kt", "kts", "java", "py", "js", "mjs", "cjs", "ts", "tsx", "jsx", "html", "htm",
             "css", "scss", "sass", "less", "c", "cc", "cpp", "h", "hpp", "sh", "bash", "zsh",
-            "gradle", "properties", "toml", "ini", "conf", "sql",
+            "gradle", "properties", "toml", "ini", "conf", "sql", "pdf", "out", "err", "env",
         )
-        val supported = mimeType.startsWith("image/") ||
+        val isPdf = mimeType == "application/pdf" || extension == "pdf"
+        val isNoExtension = !displayName.contains('.') || extension.isBlank()
+        val isLogOrText = mimeType.startsWith("text/") || extension in supportedTextExtensions ||
+            isNoExtension || mimeType == "application/octet-stream" || mimeType.contains("log") || extension.contains("log")
+        val supported = mimeType.startsWith("image/") || isPdf ||
             mimeType.startsWith("text/") || mimeType == "application/json" || mimeType == "application/xml" ||
-            mimeType.endsWith("+json") || mimeType.endsWith("+xml") || extension in supportedTextExtensions
-        require(supported) { "Only images and text files are supported" }
+            mimeType.endsWith("+json") || mimeType.endsWith("+xml") || isLogOrText
+        require(supported) { "Only images, PDF documents, and text or log files are supported" }
         require(declaredSize <= MAX_ATTACHMENT_BYTES || declaredSize < 0) { "$displayName is larger than 25 MB" }
         val safeName = sanitizeAttachmentName(displayName)
         val root = projectWorkspaceRoot(project).canonicalFile
@@ -4366,6 +4499,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         val hasResponseAlready = _state.value.messages.indices.any {
             it > lastUserIdx && !_state.value.messages[it].fromUser && _state.value.messages[it].text.isNotBlank()
         }
+        if (event is RuntimeEvent.SessionFailed && retryAntigravityWithNextAccount(event)) return
         if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && retryWithNextApiKey(event)) return
         if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && recoverTransientRuntimeFailure(event)) return
         _state.update { current ->
@@ -4856,6 +4990,94 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         return "api key" in value || "authentication" in value || "user not found" in value ||
             "http 401" in value || "http 403" in value || "http 429" in value ||
             "expired" in value || "quota" in value || "rate limit" in value
+    }
+
+    private fun isAntigravityQuotaFailure(reason: String): Boolean {
+        val value = reason.lowercase()
+        return "quota" in value ||
+            "rate limit" in value ||
+            "ratelimit" in value ||
+            "resource_exhausted" in value ||
+            "resource exhausted" in value ||
+            "429" in value ||
+            "out of credits" in value ||
+            "credits" in value ||
+            "limit exceeded" in value ||
+            "exhausted" in value ||
+            "too many requests" in value ||
+            "60 minute" in value ||
+            "minute limit" in value ||
+            "hourly limit" in value ||
+            "hour limit" in value ||
+            "daily limit" in value ||
+            "day limit" in value ||
+            "weekly limit" in value ||
+            "week limit" in value ||
+            "usage limit" in value ||
+            "plan limit" in value ||
+            "account limit" in value ||
+            "capacity" in value ||
+            "overloaded" in value ||
+            "quota_exceeded" in value ||
+            "rate_limit_exceeded" in value ||
+            "reached your limit" in value ||
+            "hit your limit" in value ||
+            "exceeded your limit" in value ||
+            "exceeded your current quota" in value ||
+            "insufficient quota" in value ||
+            "free tier limit" in value ||
+            "tokens per minute" in value ||
+            "requests per minute" in value ||
+            "requests per day" in value ||
+            "requests per week" in value ||
+            "billing" in value ||
+            "credit balance" in value ||
+            "quota limit" in value
+    }
+
+    private fun retryAntigravityWithNextAccount(event: RuntimeEvent.SessionFailed): Boolean {
+        val current = _state.value
+        if (current.agentKind != AgentKind.ANTIGRAVITY) return false
+        if (!current.isRunning || current.activeSessionId != event.sessionId) return false
+        if (!antigravityAuthController.isAutoRoundRobin()) return false
+        if (!isAntigravityQuotaFailure(event.reason)) return false
+        val request = activeRuntimeRequest ?: return false
+
+        val currentEmail = antigravityAuthController.state.value.accountEmail.orEmpty()
+        antigravityAuthController.markCurrentAccountQuotaExhausted()
+        val nextEmail = antigravityAuthController.switchToNextAccount() ?: return false
+
+        // Clean up any trailing/interrupted assistant message chunk from the failed session
+        val cleanedMessages = _state.value.messages.let { msgs ->
+            val lastUserIdx = msgs.indexOfLast { it.fromUser }
+            if (lastUserIdx >= 0 && msgs.size > lastUserIdx + 1 && !msgs.last().fromUser) {
+                msgs.dropLast(1)
+            } else msgs
+        }
+
+        _state.update {
+            it.copy(
+                activeSessionId = null,
+                runtimeRecoveryStatus = null,
+                runtimeRecoveryAttempt = 0,
+                runtimeRecoveryCanResume = false,
+                messages = cleanedMessages,
+                toastMessage = if (currentEmail.isNotBlank()) "Account $currentEmail reached usage limit. Smartly switched to $nextEmail." else "Smartly switched to account $nextEmail.",
+                liveProcess = it.liveProcess + ActivityItem("Google account switched", "Auto round-robin to $nextEmail (quota/limit failover)", true),
+            )
+        }
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(300)
+            request.runtime.startSession(
+                request.project.id,
+                request.project.slug,
+                request.project.kind,
+                request.prompt,
+                request.history,
+                request.provider,
+            )
+        }
+        return true
     }
 
     fun refreshSkills() {

@@ -100,6 +100,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -271,6 +272,7 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
     SETTINGS("Settings", Icons.Default.Settings),
 }
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
+    HOME("Home", Icons.Default.Home),
     CHAT("Chat", Icons.Default.AutoAwesome),
     FILES("Files", Icons.Default.Folder),
     TERMINAL("Terminal", Icons.Default.Terminal),
@@ -436,6 +438,13 @@ fun PocketDevApp(
             onResumeInterruptedSession = viewModel::resumeInterruptedSession,
             onDismissInterruptedSession = viewModel::dismissInterruptedSession,
             onRunAutonomousVerification = viewModel::runAutonomousVerification,
+            onCreateFile = viewModel::createFile,
+            onCreateFolder = viewModel::createFolder,
+            onRenameFile = viewModel::renameEntry,
+            onDeleteFile = viewModel::deleteEntry,
+            onDuplicateFile = viewModel::duplicateEntry,
+            onOpenFileByPath = viewModel::openFileByPath,
+            workspaceDir = state.activeProject?.let { viewModel.projectWorkspaceController.projectWorkspaceRoot(it) },
         )
         else -> RootScreenHost(
             state = state,
@@ -2321,6 +2330,10 @@ private fun RootScreenHost(
                     onRefreshAntigravityModels = viewModel::refreshAntigravityModels,
                     onSetAntigravityModel = viewModel::setAntigravityModel,
                     onSetAntigravityEffort = viewModel::setAntigravityEffort,
+                    onStartAntigravityAddAccount = viewModel::startAntigravityAddAccount,
+                    onSwitchAntigravityAccount = viewModel::switchAntigravityAccount,
+                    onRemoveAntigravityAccount = viewModel::removeAntigravityAccount,
+                    onToggleAntigravityAutoRoundRobin = viewModel::toggleAntigravityAutoRoundRobin,
                 )
                 RootScreen.SKILLS -> SkillsScreen(
                     installed = state.skills,
@@ -2362,6 +2375,10 @@ private fun RootScreenHost(
                     onRefreshAntigravityModels = viewModel::refreshAntigravityModels,
                     onSetAntigravityModel = viewModel::setAntigravityModel,
                     onSetAntigravityEffort = viewModel::setAntigravityEffort,
+                    onStartAntigravityAddAccount = viewModel::startAntigravityAddAccount,
+                    onSwitchAntigravityAccount = viewModel::switchAntigravityAccount,
+                    onRemoveAntigravityAccount = viewModel::removeAntigravityAccount,
+                    onToggleAntigravityAutoRoundRobin = viewModel::toggleAntigravityAutoRoundRobin,
                     initialDebugUpdateManifestUrl = viewModel.debugUpdateManifestUrl(),
                     onSetDebugUpdateManifestUrl = viewModel::setDebugUpdateManifestUrl,
                     onClearDebugUpdateManifestUrl = viewModel::clearDebugUpdateManifestUrl,
@@ -4229,6 +4246,13 @@ private fun WorkspaceScreen(
     onResumeInterruptedSession: () -> Unit = {},
     onDismissInterruptedSession: () -> Unit = {},
     onRunAutonomousVerification: () -> Unit = {},
+    onCreateFile: (String) -> Unit = {},
+    onCreateFolder: (String) -> Unit = {},
+    onRenameFile: (String, String) -> Unit = { _, _ -> },
+    onDeleteFile: (String) -> Unit = {},
+    onDuplicateFile: (String) -> Unit = {},
+    onOpenFileByPath: (String) -> Unit = {},
+    workspaceDir: java.io.File? = null,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4326,6 +4350,10 @@ private fun WorkspaceScreen(
             onSave = { updatedContent ->
                 onSaveFile(state.openedFilePath, updatedContent)
             },
+            workspaceDir = workspaceDir,
+            onNavigateToFileLine = { path, _ ->
+                onOpenFileByPath(path)
+            },
         )
         return
     }
@@ -4400,108 +4428,115 @@ private fun WorkspaceScreen(
         topBar = {
             if (selectedTab != WorkspaceTab.PREVIEW) {
                 TopAppBar(
-                title = {
-                    Column(Modifier.fillMaxWidth()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.combinedClickable(
-                                onClick = {},
-                                onLongClick = {
-                                    Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
-                                },
-                            ),
-                        ) {
-                            Icon(
-                                Icons.Default.PhoneAndroid,
-                                contentDescription = "IDE",
-                                modifier = Modifier.size(19.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "IDE",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp,
-                                maxLines = 1,
-                            )
-                        }
-                        Text(
-                            activeChat?.title ?: "Chat",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                },
-                navigationIcon = {},
-                actions = {
-                    Row(
-                        modifier = Modifier.offset(y = (-7).dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        if (isAndroidProject) {
-                            IconButton(
-                                onClick = {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                                        !context.packageManager.canRequestPackageInstalls()) {
-                                        unknownAppsLauncher.launch(
-                                            Intent(
-                                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                                Uri.parse("package:${context.packageName}"),
-                                            ),
-                                        )
-                                    } else {
-                                        onBuildAndRunAndroid()
-                                    }
-                                },
-                                enabled = !state.androidBuildRunning && !state.isRunning && !state.projectTerminalRunning,
-                                modifier = Modifier.size(36.dp),
+                    title = {
+                        Column(Modifier.fillMaxWidth().padding(end = 4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.combinedClickable(
+                                        onClick = {},
+                                        onLongClick = {
+                                            Toast.makeText(context, state.activeProject?.name.orEmpty(), Toast.LENGTH_LONG).show()
+                                        },
+                                    ),
+                                ) {
+                                    Icon(
+                                        Icons.Default.PhoneAndroid,
+                                        contentDescription = "IDE",
+                                        modifier = Modifier.size(19.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "IDE",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 17.sp,
+                                        maxLines = 1,
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    if (isAndroidProject) {
+                                        IconButton(
+                                            onClick = {
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                                    !context.packageManager.canRequestPackageInstalls()) {
+                                                    unknownAppsLauncher.launch(
+                                                        Intent(
+                                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                                            Uri.parse("package:${context.packageName}"),
+                                                        ),
+                                                    )
+                                                } else {
+                                                    onBuildAndRunAndroid()
+                                                }
+                                            },
+                                            enabled = !state.androidBuildRunning && !state.isRunning && !state.projectTerminalRunning,
+                                            modifier = Modifier.size(36.dp),
+                                        ) {
+                                            if (state.androidBuildRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                            else Icon(Icons.Default.PlayArrow, "Build and run Android app", modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { showChats = true },
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(Icons.Default.History, "Project chats", modifier = Modifier.size(20.dp))
+                                    }
+                                    IconButton(
+                                        onClick = { showCommandPalette = true },
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(Icons.Default.MoreVert, "Command palette", modifier = Modifier.size(20.dp))
+                                    }
+                                    IconButton(
+                                        onClick = onBack,
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Projects", modifier = Modifier.size(20.dp))
+                                    }
+                                    if (state.isRunning) {
+                                        CircularProgressIndicator(
+                                            Modifier.padding(start = 2.dp, end = 4.dp).size(18.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                    }
+                                }
                             }
-                        }
-                        IconButton(
-                            onClick = { showChats = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(Icons.Default.History, "Project chats", modifier = Modifier.size(20.dp))
-                        }
-                        IconButton(
-                            onClick = { showCommandPalette = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(Icons.Default.MoreVert, "Command palette", modifier = Modifier.size(20.dp))
-                        }
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Projects", modifier = Modifier.size(20.dp))
-                        }
-                        if (state.isRunning) {
-                            CircularProgressIndicator(
-                                Modifier.padding(start = 2.dp, end = 4.dp).size(18.dp),
-                                strokeWidth = 2.dp,
+                            Text(
+                                activeChat?.title ?: "Chat",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 25.dp),
                             )
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                )
             }
         },
         bottomBar = {
             if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 WorkspaceTab.entries.filter { it != WorkspaceTab.CHANGES }.forEach { tab ->
                     NavigationBarItem(
-                        selected = selectedTab == tab,
+                        selected = tab != WorkspaceTab.HOME && selectedTab == tab,
                         onClick = {
-                            selectedTab = tab
-                            if (tab == WorkspaceTab.FILES) onRefreshFiles()
-                            if (tab == WorkspaceTab.TERMINAL) onTerminalOpened()
+                            if (tab == WorkspaceTab.HOME) {
+                                onBack()
+                            } else {
+                                selectedTab = tab
+                                if (tab == WorkspaceTab.FILES) onRefreshFiles()
+                                if (tab == WorkspaceTab.TERMINAL) onTerminalOpened()
+                            }
                         },
                         icon = { Icon(tab.icon, tab.label) },
                         label = { Text(tab.label, fontSize = 10.sp) },
@@ -4599,7 +4634,7 @@ private fun WorkspaceScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (selectedTab) {
-                WorkspaceTab.CHAT -> ChatTab(
+                WorkspaceTab.CHAT, WorkspaceTab.HOME -> ChatTab(
                     messages = state.messages,
                     approval = state.pendingApproval,
                     liveProcess = state.liveProcess,
@@ -4615,7 +4650,7 @@ private fun WorkspaceScreen(
                     workspaceFiles = state.workspaceFiles,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
-                        attachmentLauncher.launch(arrayOf("image/*", "text/*", "application/json", "application/xml"))
+                        attachmentLauncher.launch(arrayOf("*/*"))
                     },
                     onRemoveAttachment = onRemoveAttachment,
                     onOpenAttachment = onOpenAttachment,
@@ -4644,6 +4679,11 @@ private fun WorkspaceScreen(
                     },
                     onBindFolder = { bindFolderLauncher.launch(null) },
                     onSetProjectRootDirectory = onSetProjectRootDirectory,
+                    onCreateFile = onCreateFile,
+                    onCreateFolder = onCreateFolder,
+                    onRenameEntry = onRenameFile,
+                    onDeleteEntry = onDeleteFile,
+                    onDuplicateEntry = onDuplicateFile,
                 )
                 WorkspaceTab.TERMINAL -> TerminalScreen(
                     lines = state.projectTerminalLines,
@@ -4926,9 +4966,20 @@ private fun FilesTab(
     onExport: () -> Unit,
     onBindFolder: () -> Unit = {},
     onSetProjectRootDirectory: (String) -> Unit = {},
+    onCreateFile: (String) -> Unit = {},
+    onCreateFolder: (String) -> Unit = {},
+    onRenameEntry: (String, String) -> Unit = { _, _ -> },
+    onDeleteEntry: (String) -> Unit = {},
+    onDuplicateEntry: (String) -> Unit = {},
 ) {
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fileQuery by rememberSaveable { mutableStateOf("") }
+    var showCreateFileDialog by rememberSaveable { mutableStateOf(false) }
+    var showCreateFolderDialog by rememberSaveable { mutableStateOf(false) }
+    var targetParentDir by rememberSaveable { mutableStateOf<String?>(null) }
+    var entryToRename by remember { mutableStateOf<WorkspaceEntry?>(null) }
+    var entryToDelete by remember { mutableStateOf<WorkspaceEntry?>(null) }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     LaunchedEffect(files.map { it.path }) {
         val directories = files.asSequence().filter { it.isDirectory }.map { it.path }.toSet()
         expandedDirectories = expandedDirectories.filter { it in directories }
@@ -4972,6 +5023,12 @@ private fun FilesTab(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    IconButton(onClick = { targetParentDir = null; showCreateFileDialog = true }) {
+                        Icon(Icons.Default.Add, "New file")
+                    }
+                    IconButton(onClick = { targetParentDir = null; showCreateFolderDialog = true }) {
+                        Icon(Icons.Default.Folder, "New folder")
+                    }
                     if (expandedDirectories.isNotEmpty()) {
                         TextButton(onClick = { expandedDirectories = emptyList() }) {
                             Icon(Icons.Default.KeyboardArrowUp, null, Modifier.size(17.dp))
@@ -5122,19 +5179,73 @@ private fun FilesTab(
                 if (!entry.isDirectory) {
                     Spacer(Modifier.width(8.dp))
                     Text(formatFileSize(entry.sizeBytes), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
+                FileEntryContextMenu(
+                    entry = entry,
+                    onNewFileInDir = { dir ->
+                        targetParentDir = dir
+                        showCreateFileDialog = true
+                    },
+                    onNewFolderInDir = { dir ->
+                        targetParentDir = dir
+                        showCreateFolderDialog = true
+                    },
+                    onRename = { entryToRename = it },
+                    onDuplicate = { onDuplicateEntry(it.path) },
+                    onDelete = { entryToDelete = it },
+                    onCopyPath = { path ->
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(path))
+                    },
+                )
             }
             if (!entry.isDirectory) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), modifier = Modifier.padding(start = (entry.depth * 20 + 42).dp))
             }
         }
+    }
+
+    if (showCreateFileDialog) {
+        CreateFileDialog(
+            parentDirectory = targetParentDir,
+            onDismiss = { showCreateFileDialog = false },
+            onConfirm = { fullPath ->
+                showCreateFileDialog = false
+                onCreateFile(fullPath)
+            },
+        )
+    }
+
+    if (showCreateFolderDialog) {
+        CreateFolderDialog(
+            parentDirectory = targetParentDir,
+            onDismiss = { showCreateFolderDialog = false },
+            onConfirm = { fullPath ->
+                showCreateFolderDialog = false
+                onCreateFolder(fullPath)
+            },
+        )
+    }
+
+    entryToRename?.let { entry ->
+        RenameEntryDialog(
+            entry = entry,
+            onDismiss = { entryToRename = null },
+            onConfirm = { newRelativePath ->
+                entryToRename = null
+                onRenameEntry(entry.path, newRelativePath)
+            },
+        )
+    }
+
+    entryToDelete?.let { entry ->
+        DeleteEntryDialog(
+            entry = entry,
+            onDismiss = { entryToDelete = null },
+            onConfirm = {
+                entryToDelete = null
+                onDeleteEntry(entry.path)
+            },
+        )
     }
 }
 

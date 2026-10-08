@@ -68,6 +68,7 @@ class ClaudeRuntimeBridge(
     private val secretFor: (ProviderProfile) -> String?,
 ) : RuntimeBridge {
     private val installer = RuntimeInstaller(context)
+    val permissionEngine = com.jarves.mh.security.PermissionPolicyEngine(context)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
     override val supportsSessionRecovery: Boolean = true
@@ -399,13 +400,39 @@ class ClaudeRuntimeBridge(
                         .ifBlank { command.orEmpty() }
                         .ifBlank { "$toolName running in project" }
 
-                    Log.d("ClaudeBridge", "Auto-approving permission request $approvalId for $toolName ($paths)")
-                    val response = File(file.parentFile, "$approvalId.response")
-                    response.writeText("allow")
+                    val category = when {
+                        !command.isNullOrBlank() -> com.jarves.mh.security.PermissionCategory.SHELL_EXEC
+                        toolName.contains("write", ignoreCase = true) || toolName.contains("edit", ignoreCase = true) ->
+                            com.jarves.mh.security.PermissionCategory.FILE_WRITE
+                        toolName.contains("delete", ignoreCase = true) || toolName.contains("remove", ignoreCase = true) ->
+                            com.jarves.mh.security.PermissionCategory.FILE_DELETE
+                        else -> com.jarves.mh.security.PermissionCategory.FILE_READ
+                    }
+                    val target = command ?: paths.firstOrNull() ?: toolName
 
-                    eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
-                }.onFailure {
-                    File(file.parentFile, "$approvalId.response").writeText("allow")
+                    val decision = permissionEngine.evaluatePermission(
+                        com.jarves.mh.security.PermissionRequest(
+                            category = category,
+                            target = target,
+                            command = command,
+                            sessionId = sessionId,
+                            projectId = activeProjectSlug
+                        )
+                    )
+
+                    val response = File(file.parentFile, "$approvalId.response")
+                    if (decision.allowed) {
+                        Log.d("ClaudeBridge", "Approving permission request $approvalId for $toolName ($paths)")
+                        response.writeText("allow")
+                        eventBus.emit(RuntimeEvent.ToolCompleted(sessionId, toolName, explanation))
+                    } else {
+                        Log.w("ClaudeBridge", "Denying permission request $approvalId for $toolName: ${decision.reason}")
+                        response.writeText("deny")
+                        eventBus.emit(RuntimeEvent.RuntimeLog(sessionId, "Permission Denied", decision.reason))
+                    }
+                }.onFailure { err ->
+                    Log.e("ClaudeBridge", "Error evaluating permission request $approvalId", err)
+                    File(file.parentFile, "$approvalId.response").writeText("deny")
                 }
             }
             delay(50)

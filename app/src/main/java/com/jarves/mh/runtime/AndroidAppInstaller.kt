@@ -17,16 +17,27 @@ object AndroidAppInstaller {
         require(apk.isFile && apk.extension.equals("apk", ignoreCase = true) && apk.length() > 0L) {
             "A valid APK was not produced: ${apk.name}"
         }
-        if (isMiuiDevice()) {
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
-            context.startActivity(
-                Intent(Intent.ACTION_INSTALL_PACKAGE, uri).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                },
-            )
+        if (isCustomOemDevice() || !canUsePackageInstallerSession(context)) {
+            launchInstallerIntent(context, apk)
             return
         }
+        try {
+            installViaPackageInstaller(context, apk)
+        } catch (_: Throwable) {
+            launchInstallerIntent(context, apk)
+        }
+    }
+
+    fun launchInstallerIntent(context: Context, apk: File) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
+    private fun installViaPackageInstaller(context: Context, apk: File) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             .apply {
@@ -84,6 +95,13 @@ object AndroidAppInstaller {
 
     const val ACTION_INSTALL_RESULT = "com.jarves.mh.action.APK_INSTALL_RESULT"
 
-    private fun isMiuiDevice(): Boolean = android.os.Build.MANUFACTURER.lowercase() in
-        setOf("xiaomi", "redmi", "poco")
+    private fun canUsePackageInstallerSession(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
+        }
+        return true
+    }
+
+    private fun isCustomOemDevice(): Boolean = Build.MANUFACTURER.lowercase() in
+        setOf("xiaomi", "redmi", "poco", "oppo", "vivo", "realme", "oneplus", "transsion", "infinix", "tecno")
 }

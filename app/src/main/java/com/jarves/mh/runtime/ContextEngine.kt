@@ -10,7 +10,15 @@ data class ContextReference(
     val reason: String,
 )
 
-class ContextEngine(private val projectIndex: ProjectIndex) {
+/**
+ * AI Context Engine 2.0.
+ * Dynamically classifies user intent, ranks files by semantic and dependency relevance,
+ * incorporates project memory (architecture rules, error patterns), and manages token budgets.
+ */
+class ContextEngine(
+    private val projectIndex: ProjectIndex,
+    val memoryStore: ProjectMemoryStore? = null,
+) {
     companion object {
         private val CONVERSATIONAL_KEYWORDS = setOf(
             "yes", "no", "ok", "okay", "continue", "proceed", "go ahead",
@@ -33,55 +41,26 @@ class ContextEngine(private val projectIndex: ProjectIndex) {
         request: String,
         mentionedPaths: List<String> = emptyList(),
         maxReferences: Int = 12,
+        maxTokenBudget: Int = 3000,
     ): String {
+        if (isConversationalOrBrief(request) && mentionedPaths.isEmpty()) return ""
+
         val snapshot = projectIndex.ensureFresh(projectId, workspace)
-        val references = linkedMapOf<String, ContextReference>()
+        val intent = ContextRankingEngine.detectIntent(request)
+        val memories = memoryStore?.getMemories(projectId).orEmpty()
 
-        mentionedPaths.forEach { path ->
-            snapshot.files.firstOrNull { it.path == path }?.let { file ->
-                references[path] = ContextReference(
-                    path = file.path,
-                    language = file.language,
-                    symbols = file.symbols,
-                    imports = file.imports,
-                    reason = "Explicit @mention",
-                )
-            }
-        }
+        val ranked = ContextRankingEngine.rankFiles(
+            files = snapshot.files,
+            request = request,
+            mentionedPaths = mentionedPaths,
+            limit = maxReferences,
+        )
 
-        if (!isConversationalOrBrief(request)) {
-            projectIndex.search(snapshot, request, limit = maxReferences * 2)
-                .forEach { file ->
-                    if (references.size < maxReferences) {
-                        references.putIfAbsent(
-                            file.path,
-                            ContextReference(
-                                path = file.path,
-                                language = file.language,
-                                symbols = file.symbols,
-                                imports = file.imports,
-                                reason = "Relevance match",
-                            ),
-                        )
-                    }
-                }
-        }
-
-        if (references.isEmpty()) return ""
-
-        return buildString {
-            appendLine("<relevant_project_context>")
-            appendLine("The following workspace files were selected from the local project index. Use them as context pointers and inspect the actual files before editing.")
-            references.values.forEach { reference ->
-                appendLine("- " + reference.path + " [" + reference.language + "] — " + reference.reason)
-                if (reference.symbols.isNotEmpty()) {
-                    appendLine("  symbols: " + reference.symbols.take(8).joinToString(", "))
-                }
-                if (reference.imports.isNotEmpty()) {
-                    appendLine("  imports: " + reference.imports.take(5).joinToString(", "))
-                }
-            }
-            appendLine("</relevant_project_context>")
-        }
+        return ContextRankingEngine.compressContext(
+            intent = intent,
+            ranked = ranked,
+            memories = memories,
+            maxTokenBudget = maxTokenBudget,
+        )
     }
 }

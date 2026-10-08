@@ -164,28 +164,52 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
     }
 
     /**
-     * Atomically writes file content using a temporary file and rename to prevent partial writes.
+     * Atomically writes file content using SafeFileOps to prevent partial writes.
      */
-    fun atomicWriteFile(targetFile: File, content: String): Boolean {
-        return runCatching {
-            targetFile.parentFile?.mkdirs()
-            val tempFile = File(targetFile.parentFile, ".${targetFile.name}.tmp_${System.currentTimeMillis()}")
-            FileOutputStream(tempFile).use { out ->
-                out.write(content.toByteArray(Charsets.UTF_8))
-                out.flush()
-                out.fd.sync()
-            }
-            if (targetFile.exists()) {
-                targetFile.delete()
-            }
-            tempFile.renameTo(targetFile)
-        }.getOrElse {
-            AppCrashLogger.log("Atomic file write failed for ${targetFile.path}: ${it.message}")
-            false
-        }
-    }
+    fun atomicWriteFile(targetFile: File, content: String): Boolean = SafeFileOps.atomicWriteText(targetFile, content)
 
     fun writeSafely(targetFile: File, content: String): Boolean = atomicWriteFile(targetFile, content)
+
+    /**
+     * Verifies that a checkpoint's metadata and backup file trees are intact.
+     */
+    fun verifyCheckpointIntegrity(projectId: String, checkpointId: String): Boolean {
+        val checkpointDir = File(checkpointsBaseDir(projectId), checkpointId)
+        val metaFile = File(checkpointDir, "meta.json")
+        val backupDir = File(checkpointDir, "files")
+        if (!metaFile.isFile || !backupDir.isDirectory) return false
+        return runCatching {
+            val json = JSONObject(metaFile.readText())
+            json.getString("id") == checkpointId && json.getString("projectId") == projectId
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Inspects workspace for corrupted or truncated files (e.g. 0-byte source/build files or temp leftovers).
+     */
+    fun detectWorkspaceCorruption(workspaceDir: File): List<String> {
+        if (!workspaceDir.isDirectory) return listOf("Workspace directory does not exist: ${workspaceDir.path}")
+        val issues = mutableListOf<String>()
+        val canonicalWorkspace = workspaceDir.canonicalFile
+        canonicalWorkspace.walkTopDown()
+            .filter { it.isFile && !isIgnored(it, canonicalWorkspace) }
+            .forEach { file ->
+                val rel = file.relativeTo(canonicalWorkspace).invariantSeparatorsPath
+                if (file.name.contains(".tmp_")) {
+                    issues.add("Stale temporary file left by crashed process: $rel")
+                } else if (file.length() == 0L && (file.extension in setOf("kt", "java", "json", "gradle", "kts", "xml", "py", "js", "ts"))) {
+                    issues.add("Potentially truncated empty source file: $rel")
+                }
+            }
+        return issues
+    }
+
+    /**
+     * Validates that the workspace baseline directory is accessible and readable.
+     */
+    fun verifyWorkspaceBaseline(workspaceDir: File): Boolean {
+        return workspaceDir.exists() && workspaceDir.isDirectory && workspaceDir.canRead() && workspaceDir.canWrite()
+    }
 
     private fun saveIndex(projectId: String, checkpoints: List<WorkspaceCheckpoint>) {
         val arr = JSONArray()
@@ -199,7 +223,7 @@ class WorkspaceCheckpointManager(private val filesDir: File) {
                 put("modifiedFiles", JSONArray(ck.modifiedFiles))
             })
         }
-        atomicWriteFile(indexFile(projectId), arr.toString(2))
+        SafeFileOps.atomicWriteText(indexFile(projectId), arr.toString(2))
     }
 
     private fun isIgnored(file: File, base: File): Boolean {

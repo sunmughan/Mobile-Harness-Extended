@@ -31,10 +31,223 @@ class AntigravityAuthController(
     @Volatile private var process: Process? = null
     @Volatile private var codeSubmitted = false
 
+    private val prefs = context.getSharedPreferences("antigravity_auth_store", Context.MODE_PRIVATE)
+
+    private fun accountsDir() = File(
+        context.filesDir,
+        "runtime/ubuntu/root/.gemini/antigravity-cli/accounts",
+    ).apply { mkdirs() }
+
+    private fun accountCredentialFile(email: String) = File(
+        accountsDir(),
+        "${sanitizeEmail(email)}/antigravity-oauth-token",
+    )
+
+    private fun sanitizeEmail(email: String): String =
+        email.lowercase().replace(Regex("[^a-z0-9._-]"), "_")
+
+    fun getSavedAccounts(): List<AntigravityAccount> {
+        val raw = prefs.getString("accounts_json", "[]") ?: "[]"
+        return runCatching {
+            val array = org.json.JSONArray(raw)
+            (0 until array.length()).map { i ->
+                val obj = array.getJSONObject(i)
+                AntigravityAccount(
+                    email = obj.getString("email"),
+                    isActive = obj.optBoolean("isActive", false),
+                    isQuotaExhausted = obj.optBoolean("isQuotaExhausted", false),
+                    quotaExhaustedAt = obj.optLong("quotaExhaustedAt", 0L),
+                    lastUsedAt = obj.optLong("lastUsedAt", 0L),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun saveAccounts(accounts: List<AntigravityAccount>) {
+        val array = org.json.JSONArray()
+        accounts.forEach { acc ->
+            val obj = org.json.JSONObject()
+                .put("email", acc.email)
+                .put("isActive", acc.isActive)
+                .put("isQuotaExhausted", acc.isQuotaExhausted)
+                .put("quotaExhaustedAt", acc.quotaExhaustedAt)
+                .put("lastUsedAt", acc.lastUsedAt)
+            array.put(obj)
+        }
+        prefs.edit().putString("accounts_json", array.toString()).apply()
+        mutableState.value = mutableState.value.copy(accounts = accounts)
+    }
+
+    fun isAutoRoundRobin(): Boolean = prefs.getBoolean("auto_round_robin", true)
+
+    fun setAutoRoundRobin(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_round_robin", enabled).apply()
+        mutableState.value = mutableState.value.copy(autoRoundRobin = enabled)
+    }
+
+    fun recordSignedInAccount(email: String) {
+        val cred = officialCredentialFile()
+        if (cred.isFile) {
+            val target = accountCredentialFile(email).apply { parentFile?.mkdirs() }
+            runCatching { cred.copyTo(target, overwrite = true) }
+        }
+        val currentAccounts = getSavedAccounts().toMutableList()
+        val index = currentAccounts.indexOfFirst { it.email.equals(email, ignoreCase = true) }
+        val updated = AntigravityAccount(
+            email = email,
+            isActive = true,
+            isQuotaExhausted = false,
+            lastUsedAt = System.currentTimeMillis(),
+        )
+        val newAccounts = currentAccounts.map { it.copy(isActive = false) }.toMutableList()
+        if (index >= 0) {
+            newAccounts[index] = updated
+        } else {
+            newAccounts.add(updated)
+        }
+        saveAccounts(newAccounts)
+    }
+
+    companion object {
+        const val HOURLY_LIMIT_COOLDOWN_MS = 60 * 60 * 1000L // 60-minute limit cooldown window
+    }
+
+    fun isCredentialValid(file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        return runCatching {
+            val text = file.readText().trim()
+            text.isNotBlank() && (text.startsWith("{") || text.length >= 10)
+        }.getOrDefault(false)
+    }
+
+    fun activateAccount(email: String): Boolean {
+        val cred = accountCredentialFile(email)
+        if (!isCredentialValid(cred)) return false
+        val active = officialCredentialFile().apply { parentFile?.mkdirs() }
+        try {
+            cred.copyTo(active, overwrite = true)
+            if (!active.isFile || active.length() <= 0L) return false
+        } catch (_: Throwable) {
+            return false
+        }
+        val currentAccounts = getSavedAccounts()
+        val updated = currentAccounts.map {
+            it.copy(
+                isActive = it.email.equals(email, ignoreCase = true),
+                lastUsedAt = if (it.email.equals(email, ignoreCase = true)) System.currentTimeMillis() else it.lastUsedAt,
+            )
+        }
+        saveAccounts(updated)
+        onSignedInChanged(true, email)
+        mutableState.value = mutableState.value.copy(
+            status = AntigravityAuthStatus.SIGNED_IN,
+            message = "Connected as $email",
+            accountEmail = email,
+            accounts = updated,
+        )
+        return true
+    }
+
+    fun switchToNextAccount(): String? {
+        val accounts = getSavedAccounts()
+        if (accounts.size <= 1) return null
+        val activeIndex = accounts.indexOfFirst { it.isActive }
+        val now = System.currentTimeMillis()
+
+        val candidatesInOrder = (1 until accounts.size).map { offset ->
+            val index = (if (activeIndex >= 0) activeIndex + offset else offset) % accounts.size
+            accounts[index]
+        }
+
+        // 1. Prioritize account not marked exhausted with valid tested credentials
+        for (candidate in candidatesInOrder) {
+            val credFile = accountCredentialFile(candidate.email)
+            if (!candidate.isQuotaExhausted && isCredentialValid(credFile)) {
+                if (activateAccount(candidate.email)) return candidate.email
+            }
+        }
+
+        // 2. Prioritize account whose limit was hit >= 60 minutes ago (60-minute limit reset window)
+        for (candidate in candidatesInOrder) {
+            val credFile = accountCredentialFile(candidate.email)
+            if (candidate.isQuotaExhausted && candidate.quotaExhaustedAt > 0 &&
+                (now - candidate.quotaExhaustedAt >= HOURLY_LIMIT_COOLDOWN_MS) &&
+                isCredentialValid(credFile)
+            ) {
+                if (activateAccount(candidate.email)) return candidate.email
+            }
+        }
+
+        // 3. If all accounts are marked exhausted, try candidate with oldest exhaustion time
+        // (longest cooldown, most likely to have reset daily/weekly limits), tested with valid credentials
+        val candidatesByCooldown = candidatesInOrder
+            .filter { isCredentialValid(accountCredentialFile(it.email)) }
+            .sortedBy { it.quotaExhaustedAt }
+
+        for (candidate in candidatesByCooldown) {
+            if (activateAccount(candidate.email)) return candidate.email
+        }
+
+        return null
+    }
+
+    fun markCurrentAccountQuotaExhausted() {
+        val current = mutableState.value.accountEmail ?: return
+        val accounts = getSavedAccounts()
+        val updated = accounts.map {
+            if (it.email.equals(current, ignoreCase = true)) {
+                it.copy(isQuotaExhausted = true, quotaExhaustedAt = System.currentTimeMillis())
+            } else it
+        }
+        saveAccounts(updated)
+    }
+
+    suspend fun beginAddAccount() = withContext(Dispatchers.IO) {
+        val currentEmail = mutableState.value.accountEmail
+        if (!currentEmail.isNullOrBlank() && officialCredentialFile().isFile) {
+            val target = accountCredentialFile(currentEmail).apply { parentFile?.mkdirs() }
+            runCatching { officialCredentialFile().copyTo(target, overwrite = true) }
+        }
+        officialCredentialFile().delete()
+        beginLogin()
+    }
+
+    suspend fun removeAccount(email: String) = withContext(Dispatchers.IO) {
+        val folder = File(accountsDir(), sanitizeEmail(email))
+        if (folder.isDirectory) folder.deleteRecursively()
+        val remaining = getSavedAccounts().filter { !it.email.equals(email, ignoreCase = true) }
+        saveAccounts(remaining)
+        if (mutableState.value.accountEmail.equals(email, ignoreCase = true)) {
+            val next = remaining.firstOrNull()
+            if (next != null) {
+                activateAccount(next.email)
+            } else {
+                logout()
+            }
+        }
+    }
+
     init {
         // Remove output left by an app/process crash before starting a new OAuth flow.
         authOutput.delete()
         logoutOutput.delete()
+        val existing = getSavedAccounts()
+        val accounts = if (existing.isEmpty() && initialAccountEmail.isNotBlank() && officialCredentialFile().isFile) {
+            val seeded = AntigravityAccount(
+                email = initialAccountEmail,
+                isActive = true,
+                lastUsedAt = System.currentTimeMillis(),
+            )
+            runCatching {
+                val target = accountCredentialFile(initialAccountEmail).apply { parentFile?.mkdirs() }
+                officialCredentialFile().copyTo(target, overwrite = true)
+            }
+            listOf(seeded).also { saveAccounts(it) }
+        } else existing
+        mutableState.value = mutableState.value.copy(
+            accounts = accounts,
+            autoRoundRobin = isAutoRoundRobin(),
+        )
     }
 
     private fun officialCredentialFile() = File(
@@ -150,8 +363,11 @@ class AntigravityAuthController(
                 if (isSignedInScreen(clean)) {
                     val email = extractSignedInEmail(clean)
                     onSignedInChanged(true, email)
-                    mutableState.value = AntigravityAuthState(
-                        AntigravityAuthStatus.SIGNED_IN,
+                    if (email != null) {
+                        recordSignedInAccount(email)
+                    }
+                    mutableState.value = mutableState.value.copy(
+                        status = AntigravityAuthStatus.SIGNED_IN,
                         message = email?.let { "Connected as $it" } ?: "Google account connected",
                         accountEmail = email,
                     )
@@ -275,9 +491,13 @@ class AntigravityAuthController(
             }
             check(!hasOfficialCredential()) { "Antigravity logout did not complete." }
             onSignedInChanged(false, null)
-            mutableState.value = AntigravityAuthState(AntigravityAuthStatus.SIGNED_OUT, message = "Signed out")
+            mutableState.value = mutableState.value.copy(
+                status = AntigravityAuthStatus.SIGNED_OUT,
+                message = "Signed out",
+                accountEmail = null,
+            )
         } catch (error: Throwable) {
-            mutableState.value = AntigravityAuthState(
+            mutableState.value = mutableState.value.copy(
                 status = AntigravityAuthStatus.SIGNED_IN,
                 message = error.message?.take(240) ?: "Could not log out of Antigravity",
                 accountEmail = previousEmail,
@@ -291,12 +511,12 @@ class AntigravityAuthController(
 
     fun cancel() {
         process?.destroy()
-        mutableState.value = AntigravityAuthState(AntigravityAuthStatus.SIGNED_OUT)
+        mutableState.value = mutableState.value.copy(status = AntigravityAuthStatus.SIGNED_OUT)
     }
 
     fun invalidateSession(message: String) {
         onSignedInChanged(false, null)
-        mutableState.value = AntigravityAuthState(AntigravityAuthStatus.ERROR, message = message)
+        mutableState.value = mutableState.value.copy(status = AntigravityAuthStatus.ERROR, message = message)
     }
 }
 

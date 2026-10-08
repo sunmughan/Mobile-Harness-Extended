@@ -5,6 +5,7 @@ import com.jarves.mh.AppCrashLogger
 import com.jarves.mh.model.ActiveRoadmap
 import com.jarves.mh.model.RoadmapStep
 import com.jarves.mh.model.StepStatus
+import com.jarves.mh.workspace.SafeFileOps
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -30,10 +31,12 @@ data class PersistedAgentSession(
     val summary: String? = null,
 )
 
-class AgentSessionManager(private val context: Context) {
+class AgentSessionManager(private val baseSessionsDir: File) {
+
+    constructor(context: Context) : this(File(context.filesDir, "agent_sessions"))
 
     private val sessionsDir: File
-        get() = File(context.filesDir, "agent_sessions").apply { mkdirs() }
+        get() = baseSessionsDir.apply { mkdirs() }
 
     private val activeSessionFile: File
         get() = File(sessionsDir, "active_session.json")
@@ -124,22 +127,85 @@ class AgentSessionManager(private val context: Context) {
     fun checkInterruptedSession(): PersistedAgentSession? = detectInterruptedSession()
 
     /**
+     * Marks session as cancelled by user.
+     */
+    fun recordSessionCancelled() {
+        val current = readActiveSession() ?: return
+        val cancelled = current.copy(
+            updatedAt = System.currentTimeMillis(),
+            status = AgentSessionStatus.INTERRUPTED,
+            summary = "Cancelled by user",
+        )
+        archiveSession(cancelled)
+        activeSessionFile.delete()
+        AppCrashLogger.checkpoint("AgentSessionCancelled", "Session ${current.sessionId}")
+    }
+
+    /**
+     * Marks session as timed out.
+     */
+    fun recordSessionTimeout(timeoutMs: Long) {
+        val current = readActiveSession() ?: return
+        val timeoutMinutes = timeoutMs / 60_000
+        val timedOut = current.copy(
+            updatedAt = System.currentTimeMillis(),
+            status = AgentSessionStatus.FAILED,
+            summary = "Session timed out after $timeoutMinutes minutes",
+        )
+        archiveSession(timedOut)
+        activeSessionFile.delete()
+        AppCrashLogger.checkpoint("AgentSessionTimeout", "Session ${current.sessionId}")
+    }
+
+    /**
      * Clears the current active session file.
      */
     fun clearActiveSession() {
         activeSessionFile.delete()
     }
 
+    /**
+     * Lists all archived historical sessions, newest first.
+     */
+    fun listSessionHistory(): List<PersistedAgentSession> {
+        val historyDir = File(sessionsDir, "history")
+        if (!historyDir.isDirectory) return emptyList()
+        val files = historyDir.listFiles() ?: return emptyList()
+        val list = mutableListOf<PersistedAgentSession>()
+        for (file in files) {
+            if (file.isFile && file.name.startsWith("session_") && file.extension == "json") {
+                val content = SafeFileOps.safeReadText(file) ?: continue
+                val session = runCatching { deserializeSession(JSONObject(content)) }.getOrNull()
+                if (session != null) {
+                    list.add(session)
+                }
+            }
+        }
+        return list.sortedByDescending { it.updatedAt }
+    }
+
+    /**
+     * Prunes session history older than [retentionDays].
+     */
+    fun cleanupOldSessions(retentionDays: Int = 14): Int {
+        val historyDir = File(sessionsDir, "history")
+        if (!historyDir.isDirectory) return 0
+        val cutoff = System.currentTimeMillis() - (retentionDays.toLong() * 24 * 60 * 60 * 1000L)
+        var cleaned = 0
+        runCatching {
+            historyDir.listFiles()?.forEach { file ->
+                if (file.lastModified() < cutoff) {
+                    if (file.delete()) cleaned++
+                }
+            }
+        }
+        return cleaned
+    }
+
     private fun writeActiveSession(session: PersistedAgentSession) {
         runCatching {
             val json = serializeSession(session)
-            val temp = File(sessionsDir, "active_session.tmp")
-            FileOutputStream(temp).use { out ->
-                out.write(json.toString(2).toByteArray(Charsets.UTF_8))
-                out.flush()
-                out.fd.sync()
-            }
-            temp.renameTo(activeSessionFile)
+            SafeFileOps.atomicWriteText(activeSessionFile, json.toString(2))
         }.onFailure {
             AppCrashLogger.log("Failed to write active session: ${it.message}")
         }
@@ -148,7 +214,8 @@ class AgentSessionManager(private val context: Context) {
     private fun readActiveSession(): PersistedAgentSession? {
         if (!activeSessionFile.exists()) return null
         return runCatching {
-            val json = JSONObject(activeSessionFile.readText())
+            val content = SafeFileOps.safeReadText(activeSessionFile) ?: return null
+            val json = JSONObject(content)
             deserializeSession(json)
         }.getOrNull()
     }
@@ -158,7 +225,7 @@ class AgentSessionManager(private val context: Context) {
             val historyDir = File(sessionsDir, "history").apply { mkdirs() }
             val archiveFile = File(historyDir, "session_${session.sessionId}.json")
             val json = serializeSession(session)
-            archiveFile.writeText(json.toString(2))
+            SafeFileOps.atomicWriteText(archiveFile, json.toString(2))
         }
     }
 

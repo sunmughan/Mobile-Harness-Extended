@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
@@ -143,7 +144,7 @@ import com.jarves.mh.auth.ui.ChangePasswordDialog
 import com.jarves.mh.auth.ui.DeleteAccountDialog
 import com.jarves.mh.auth.ui.EditDisplayNameDialog
 
-private enum class SettingsSection { ACCOUNT, APPEARANCE, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL }
+private enum class SettingsSection { ACCOUNT, APPEARANCE, GOOGLE_ACCOUNTS, TOOLS, RUNTIME, ENVIRONMENT, CONTRIBUTORS, UPDATE_CHANNEL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,6 +171,10 @@ fun SettingsScreen(
     onRefreshAntigravityModels: () -> Unit = {},
     onSetAntigravityModel: (String) -> Unit = {},
     onSetAntigravityEffort: (String) -> Unit = {},
+    onStartAntigravityAddAccount: () -> Unit = {},
+    onSwitchAntigravityAccount: (String) -> Unit = {},
+    onRemoveAntigravityAccount: (String) -> Unit = {},
+    onToggleAntigravityAutoRoundRobin: (Boolean) -> Unit = {},
     initialDebugUpdateManifestUrl: String = "",
     onSetDebugUpdateManifestUrl: (String) -> Unit = {},
     onClearDebugUpdateManifestUrl: () -> Unit = {},
@@ -353,6 +358,39 @@ fun SettingsScreen(
             }
 
             item {
+                val accountCount = state.antigravityAuth.accounts.size
+                SettingsAccordion(
+                    title = "Google accounts (Antigravity)",
+                    subtitle = if (accountCount > 0) "$accountCount connected · ${if (state.antigravityAuth.autoRoundRobin) "Auto round-robin on" else "Manual switch"}"
+                    else if (state.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN) "1 account connected"
+                    else "Connect multiple Google accounts for quota round-robin",
+                    icon = Icons.Default.SmartToy,
+                    expanded = expanded == SettingsSection.GOOGLE_ACCOUNTS,
+                    onClick = { toggle(SettingsSection.GOOGLE_ACCOUNTS) },
+                ) {
+                    var antigravityCode by rememberSaveable { mutableStateOf("") }
+                    AntigravityConnectionSettings(
+                        state = state,
+                        code = antigravityCode,
+                        onCode = { antigravityCode = it },
+                        onStartLogin = onStartAntigravityLogin,
+                        onSubmitCode = {
+                            onSubmitAntigravityCode(antigravityCode)
+                            antigravityCode = ""
+                        },
+                        onLogout = onLogoutAntigravity,
+                        onRefreshModels = onRefreshAntigravityModels,
+                        onSetModel = onSetAntigravityModel,
+                        onSetEffort = onSetAntigravityEffort,
+                        onStartAddAccount = onStartAntigravityAddAccount,
+                        onSwitchAccount = onSwitchAntigravityAccount,
+                        onRemoveAccount = onRemoveAntigravityAccount,
+                        onToggleAutoRoundRobin = onToggleAntigravityAutoRoundRobin,
+                    )
+                }
+            }
+
+            item {
                 val installedCount = state.installedDevStacks.count { it != DevStack.WEB }
                 SettingsAccordion(
                     title = "Developer tools",
@@ -396,9 +434,17 @@ fun SettingsScreen(
                         val installed = stack in state.installedDevStacks
                         val installing = state.devStackInstalling == stack
                         val removing = installing && state.devStackRemoving
-                        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f, fill = false),
+                                ) {
                                     Text(stack.label, fontWeight = FontWeight.SemiBold)
                                     if (installed) {
                                         val versionBadge = when (stack) {
@@ -423,28 +469,51 @@ fun SettingsScreen(
                                         }
                                     }
                                 }
-                                Text(stack.installsSummary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            when {
-                                removing -> Text("Removing…", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                installing -> Text("${(state.devStackProgress * 100).toInt()}%", color = PocketOrange, fontWeight = FontWeight.Bold)
-                                installed && stack == DevStack.WEB -> Text("Included", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                installed -> {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        if (stack != DevStack.WEB) {
-                                            TextButton(
-                                                onClick = { onUpdateDevStack(stack) },
-                                                enabled = state.devStackInstalling == null,
-                                            ) { Text("Update", color = PocketOrange) }
-                                        }
-                                        TextButton(
-                                            onClick = { stackPendingRemoval = stack },
-                                            enabled = state.devStackInstalling == null,
-                                        ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                                when {
+                                    removing -> Text("Removing…", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    installing -> Text("${(state.devStackProgress * 100).toInt()}%", color = PocketOrange, fontWeight = FontWeight.Bold)
+                                    installed && stack == DevStack.WEB -> Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                                    ) {
+                                        Text(
+                                            "Included",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
                                     }
+                                    installed -> {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (stack != DevStack.WEB) {
+                                                TextButton(
+                                                    onClick = { onUpdateDevStack(stack) },
+                                                    enabled = state.devStackInstalling == null,
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                ) { Text("Update", color = PocketOrange, fontSize = 12.sp) }
+                                            }
+                                            TextButton(
+                                                onClick = { stackPendingRemoval = stack },
+                                                enabled = state.devStackInstalling == null,
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                            ) { Text("Remove", color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                                        }
+                                    }
+                                    else -> OutlinedButton(
+                                        onClick = { onInstallDevStack(stack) },
+                                        enabled = state.devStackInstalling == null,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    ) { Text("Add", fontSize = 12.sp) }
                                 }
-                                else -> OutlinedButton(onClick = { onInstallDevStack(stack) }, enabled = state.devStackInstalling == null) { Text("Add") }
                             }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                stack.installsSummary,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 16.sp,
+                            )
                         }
                         if (installing) {
                             Spacer(Modifier.height(4.dp))
@@ -840,9 +909,9 @@ private fun EnvironmentUpdateCenter() {
                 Text("Runtime resources", fontWeight = FontWeight.SemiBold)
                 Text("Core Linux tooling is included. Optional development stacks are shown from the actual installed runtime state.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 listOf(
-                    "Ubuntu 20.04 ARM64" to "Included core runtime",
-                    "Node.js + npm" to "Included core tooling",
-                    "Git + OpenSSL + curl + GNU coreutils" to "Included core tooling",
+                    "Ubuntu 20.04 ARM64" to "Included",
+                    "Node.js + npm" to "Included",
+                    "Git + OpenSSL + curl + GNU coreutils" to "Included",
                 ).forEach { (label, detail) ->
                     RuntimeInfoRow(label, detail)
                 }
@@ -850,7 +919,7 @@ private fun EnvironmentUpdateCenter() {
                     val installed = stack in installedStacks
                     RuntimeInfoRow(
                         stack.label,
-                        if (installed) "Installed" else if (stack == DevStack.WEB) "Included core tooling" else "Available · manage in Developer tools",
+                        if (installed) "Installed" else if (stack == DevStack.WEB) "Included" else "Available",
                     )
                 }
             }
@@ -1026,6 +1095,10 @@ private fun AntigravityConnectionSettings(
     onRefreshModels: () -> Unit,
     onSetModel: (String) -> Unit,
     onSetEffort: (String) -> Unit,
+    onStartAddAccount: () -> Unit = {},
+    onSwitchAccount: (String) -> Unit = {},
+    onRemoveAccount: (String) -> Unit = {},
+    onToggleAutoRoundRobin: (Boolean) -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     val auth = state.antigravityAuth
@@ -1037,14 +1110,186 @@ private fun AntigravityConnectionSettings(
             Text("Official Antigravity CLI", fontWeight = FontWeight.SemiBold)
             Text(
                 auth.message ?: if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
-                    auth.accountEmail?.let { "Connected as $it" } ?: "Google account connected"
+                    auth.accountEmail?.let { "Active account: $it" } ?: "Google account connected"
                 } else "Sign in using Google's browser flow.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (auth.accounts.isNotEmpty()) {
+                Text(
+                    "Connected Google Accounts (${auth.accounts.size})",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    auth.accounts.forEach { account ->
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (account.isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                            else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                1.dp,
+                                if (account.isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .background(
+                                                if (account.isActive) Color(0xFF34A853).copy(alpha = 0.15f)
+                                                else MaterialTheme.colorScheme.surfaceVariant,
+                                                CircleShape,
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "G",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (account.isActive) Color(0xFF34A853) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            account.email,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (account.isActive) FontWeight.SemiBold else FontWeight.Normal,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            if (account.isActive) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFF34A853).copy(alpha = 0.15f),
+                                                ) {
+                                                    Text(
+                                                        "Active",
+                                                        fontSize = 10.sp,
+                                                        color = Color(0xFF2E9D72),
+                                                        fontWeight = FontWeight.Medium,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    )
+                                                }
+                                            }
+                                            if (account.isQuotaExhausted) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                                ) {
+                                                    Text(
+                                                        "Quota Limit Hit",
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.error,
+                                                        fontWeight = FontWeight.Medium,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    if (!account.isActive) {
+                                        TextButton(
+                                            onClick = { onSwitchAccount(account.email) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        ) {
+                                            Text("Use", fontSize = 11.sp, color = PocketOrange)
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { onRemoveAccount(account.email) },
+                                        modifier = Modifier.size(28.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Remove account",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Auto round-robin accounts", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Automatically switch to next connected Google account when quota or rate limit is reached",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = auth.autoRoundRobin,
+                            onCheckedChange = onToggleAutoRoundRobin,
+                        )
+                    }
+                }
+            }
+
             when (auth.status) {
-                AntigravityAuthStatus.SIGNED_IN -> OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                    Text("Log out of Antigravity")
+                AntigravityAuthStatus.SIGNED_IN -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = onStartAddAccount,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Google Account", fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = onLogout,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Sign out all", fontSize = 12.sp)
+                        }
+                    }
                 }
                 AntigravityAuthStatus.STARTING, AntigravityAuthStatus.COMPLETING -> {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -1373,9 +1618,40 @@ private fun ModernThemeChoice(title: String, icon: ImageVector, selected: Boolea
 
 @Composable
 private fun RuntimeInfoRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-        Text(value, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            Modifier.weight(1f, fill = false).padding(end = 8.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = when {
+                value.startsWith("Installed") -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                value.startsWith("Included") -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            },
+        ) {
+            Text(
+                value,
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.sp,
+                color = when {
+                    value.startsWith("Installed") -> MaterialTheme.colorScheme.primary
+                    value.startsWith("Included") -> MaterialTheme.colorScheme.onSecondaryContainer
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            )
+        }
     }
 }
 

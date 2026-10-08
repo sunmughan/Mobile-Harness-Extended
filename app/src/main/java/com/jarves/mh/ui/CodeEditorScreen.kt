@@ -1,5 +1,8 @@
 package com.jarves.mh.ui
 
+import com.jarves.mh.runtime.SemanticCodeEngine
+import java.io.File
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -74,7 +77,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.max
 
-private data class EditorSymbol(val name: String, val line: Int, val offset: Int)
+private data class EditorSymbol(val name: String, val line: Int, val offset: Int, val kind: String = "DECLARATION")
 private data class BracketPair(val cursor: Int, val match: Int)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,6 +93,8 @@ fun CodeEditorScreen(
     onCloseAllTabs: () -> Unit = {},
     onClose: () -> Unit,
     onSave: suspend (String) -> Boolean,
+    workspaceDir: File? = null,
+    onNavigateToFileLine: ((String, Int) -> Unit)? = null,
 ) {
     val source = content.orEmpty()
     val readOnly = loading || source.contains("[File truncated — too large to display fully]")
@@ -100,6 +105,8 @@ fun CodeEditorScreen(
     var wordWrap by rememberSaveable(filePath) { mutableStateOf(true) }
     var outlineOpen by rememberSaveable(filePath) { mutableStateOf(false) }
     var goToLineOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var globalSearchOpen by rememberSaveable(filePath) { mutableStateOf(false) }
+    var commandPaletteOpen by rememberSaveable(filePath) { mutableStateOf(false) }
     var find by rememberSaveable(filePath) { mutableStateOf("") }
     var replace by rememberSaveable(filePath) { mutableStateOf("") }
     var lineInput by rememberSaveable(filePath) { mutableStateOf("") }
@@ -119,7 +126,7 @@ fun CodeEditorScreen(
     val dirty = value.text != savedText
     val lines = remember(value.text) { value.text.split('\n') }
     val lineNumbers = remember(lines.size) { (1..max(1, lines.size)).joinToString("\n") }
-    val symbols = remember(value.text) { extractEditorSymbols(value.text) }
+    val symbols = remember(value.text, filePath) { extractEditorSymbols(value.text, filePath) }
 
     fun goToLine(line: Int) {
         val target = line.coerceIn(1, max(1, lines.size))
@@ -252,13 +259,29 @@ fun CodeEditorScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Column(Modifier.fillMaxWidth()) {
-                                    Text(symbol.name)
-                                    Text(
-                                        "Line " + symbol.line,
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(symbol.name)
+                                        Text(
+                                            "Line " + symbol.line,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                    ) {
+                                        Text(
+                                            symbol.kind.lowercase(),
+                                            Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -291,6 +314,49 @@ fun CodeEditorScreen(
                 ) { Text("Go") }
             },
             dismissButton = { TextButton(onClick = { goToLineOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (commandPaletteOpen) {
+        CommandPalette(
+            hasActiveEditor = true,
+            onDismiss = { commandPaletteOpen = false },
+            onActionSelected = { actionId ->
+                when (actionId) {
+                    "save_file" -> {
+                        val textToSave = value.text
+                        scope.launch {
+                            saving = true
+                            if (onSave(textToSave)) savedText = textToSave
+                            saving = false
+                        }
+                    }
+                    "find_in_file" -> searchOpen = true
+                    "global_search" -> globalSearchOpen = true
+                    "goto_line" -> goToLineOpen = true
+                    "symbol_outline" -> outlineOpen = true
+                    "toggle_word_wrap" -> wordWrap = !wordWrap
+                    "close_tab" -> onCloseTab(filePath)
+                    "close_other_tabs" -> onCloseOtherTabs(filePath)
+                    "close_all_tabs" -> onCloseAllTabs()
+                }
+            },
+        )
+    }
+
+    if (globalSearchOpen && workspaceDir != null) {
+        GlobalSearchDialog(
+            workspaceDir = workspaceDir,
+            initialQuery = find,
+            onDismiss = { globalSearchOpen = false },
+            onNavigateToMatch = { path, line ->
+                globalSearchOpen = false
+                if (path == filePath) {
+                    goToLine(line)
+                } else {
+                    onNavigateToFileLine?.invoke(path, line)
+                }
+            },
         )
     }
 
@@ -340,6 +406,22 @@ fun CodeEditorScreen(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Command palette") },
+                            onClick = {
+                                menuOpen = false
+                                commandPaletteOpen = true
+                            },
+                        )
+                        if (workspaceDir != null) {
+                            DropdownMenuItem(
+                                text = { Text("Project search & replace") },
+                                onClick = {
+                                    menuOpen = false
+                                    globalSearchOpen = true
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(if (wordWrap) "Word wrap: On" else "Word wrap: Off") },
                             onClick = { wordWrap = !wordWrap; menuOpen = false },
@@ -510,7 +592,7 @@ fun CodeEditorScreen(
                 }
             }
 
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (loading) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 } else {
@@ -573,6 +655,16 @@ fun CodeEditorScreen(
                 }
             }
 
+            if (!readOnly) {
+                CodingToolbar(
+                    value = value,
+                    onValueChange = {
+                        value = it
+                        bracketPair = findBracketPair(it.text, it.selection.start)
+                    },
+                )
+            }
+
             Text(
                 statusText(value, dirty, bracketPair),
                 Modifier
@@ -603,7 +695,13 @@ private fun statusText(value: TextFieldValue, dirty: Boolean, bracketPair: Brack
     }
 }
 
-private fun extractEditorSymbols(text: String): List<EditorSymbol> {
+private fun extractEditorSymbols(text: String, filePath: String): List<EditorSymbol> {
+    val semantic = SemanticCodeEngine.parseFile(filePath, text)
+    if (semantic.symbols.isNotEmpty()) {
+        return semantic.symbols.map {
+            EditorSymbol(it.name, it.line, it.characterOffset, it.kind.name)
+        }
+    }
     val patterns = listOf(
         Regex("^\\s*(?:data\\s+|enum\\s+)?(?:class|interface|object)\\s+([A-Za-z_][A-Za-z0-9_]*)"),
         Regex("^\\s*(?:suspend\\s+)?fun\\s+([A-Za-z_][A-Za-z0-9_]*)"),
@@ -616,7 +714,7 @@ private fun extractEditorSymbols(text: String): List<EditorSymbol> {
         patterns.asSequence()
             .mapNotNull { it.find(line)?.groupValues?.getOrNull(1) }
             .firstOrNull()
-            ?.let { result += EditorSymbol(it, index + 1, offset) }
+            ?.let { result += EditorSymbol(it, index + 1, offset, "DECLARATION") }
         offset += line.length + 1
     }
     return result

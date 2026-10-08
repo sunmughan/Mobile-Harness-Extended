@@ -33,9 +33,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -66,6 +68,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -176,6 +179,10 @@ fun AgentScreen(
     onRefreshAntigravityModels: () -> Unit = {},
     onSetAntigravityModel: (String) -> Unit = {},
     onSetAntigravityEffort: (String) -> Unit = {},
+    onStartAntigravityAddAccount: () -> Unit = {},
+    onSwitchAntigravityAccount: (String) -> Unit = {},
+    onRemoveAntigravityAccount: (String) -> Unit = {},
+    onToggleAntigravityAutoRoundRobin: (Boolean) -> Unit = {},
 ) {
     LaunchedEffect(Unit) { onRefreshInstalledAgents() }
     val scope = rememberCoroutineScope()
@@ -977,6 +984,10 @@ fun AgentScreen(
                         onOpenModelSheet = { showAntigravityModelSheet = true },
                         onSetEffort = onSetAntigravityEffort,
                         onTest = onPing,
+                        onStartAddAccount = onStartAntigravityAddAccount,
+                        onSwitchAccount = onSwitchAntigravityAccount,
+                        onRemoveAccount = onRemoveAntigravityAccount,
+                        onToggleAutoRoundRobin = onToggleAntigravityAutoRoundRobin,
                     )
                 } else {
                     AgentProviderCard(
@@ -1170,6 +1181,10 @@ private fun AgentAntigravityCard(
     onOpenModelSheet: () -> Unit,
     onSetEffort: (String) -> Unit,
     onTest: () -> Unit,
+    onStartAddAccount: () -> Unit = {},
+    onSwitchAccount: (String) -> Unit = {},
+    onRemoveAccount: (String) -> Unit = {},
+    onToggleAutoRoundRobin: (Boolean) -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     val auth = state.antigravityAuth
@@ -1185,50 +1200,204 @@ private fun AgentAntigravityCard(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Google account", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            // Google Account Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .background(Color(0xFF34A853).copy(alpha = 0.14f), RoundedCornerShape(10.dp))
-                        .border(1.dp, Color(0xFF34A853).copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center,
+
+            // Multiple Connected Google Accounts List
+            if (auth.accounts.isNotEmpty()) {
+                Text(
+                    "Connected Google Accounts (${auth.accounts.size})",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("G", color = Color(0xFF34A853), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    auth.accounts.forEach { account ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (account.isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (account.isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .background(
+                                                if (account.isActive) Color(0xFF34A853).copy(alpha = 0.15f)
+                                                else MaterialTheme.colorScheme.surfaceVariant,
+                                                CircleShape,
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "G",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (account.isActive) Color(0xFF34A853) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            account.email,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (account.isActive) FontWeight.SemiBold else FontWeight.Normal,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            if (account.isActive) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFF34A853).copy(alpha = 0.15f),
+                                                ) {
+                                                    Text(
+                                                        "Active",
+                                                        fontSize = 10.sp,
+                                                        color = Color(0xFF2E9D72),
+                                                        fontWeight = FontWeight.Medium,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    )
+                                                }
+                                            }
+                                            if (account.isQuotaExhausted) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                                ) {
+                                                    Text(
+                                                        "Quota Limit Hit",
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.error,
+                                                        fontWeight = FontWeight.Medium,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    if (!account.isActive) {
+                                        TextButton(
+                                            onClick = { onSwitchAccount(account.email) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        ) {
+                                            Text("Use", fontSize = 11.sp, color = PocketOrange)
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { onRemoveAccount(account.email) },
+                                        modifier = Modifier.size(28.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Remove account",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    val email = auth.accountEmail
-                    Text(
-                        email ?: if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected" else "Not signed in",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected with Google" else "Required for Antigravity",
-                        fontSize = 11.sp,
-                        color = if (auth.status == AntigravityAuthStatus.SIGNED_IN) Color(0xFF2E9D72) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
-                    Text(
-                        "Disconnect",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
                         modifier = Modifier
-                            .clickable { onLogout() }
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                    )
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Auto round-robin accounts", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Automatically switch to next connected Google account when quota or rate limit is reached",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = auth.autoRoundRobin,
+                            onCheckedChange = onToggleAutoRoundRobin,
+                        )
+                    }
+                }
+            } else {
+                // Fallback Single Account Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(Color(0xFF34A853).copy(alpha = 0.14f), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFF34A853).copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("G", color = Color(0xFF34A853), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        val email = auth.accountEmail
+                        Text(
+                            email ?: if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected" else "Not signed in",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected with Google" else "Required for Antigravity",
+                            fontSize = 11.sp,
+                            color = if (auth.status == AntigravityAuthStatus.SIGNED_IN) Color(0xFF2E9D72) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
+                        Text(
+                            "Disconnect",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .clickable { onLogout() }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                        )
+                    }
                 }
             }
 
-            // Authentication actions if not signed in
+            // Authentication actions
             when (auth.status) {
                 AntigravityAuthStatus.STARTING, AntigravityAuthStatus.COMPLETING -> {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -1269,7 +1438,29 @@ private fun AgentAntigravityCard(
                         Text(if (auth.status == AntigravityAuthStatus.ERROR) "Reconnect with Google" else "Sign in with Google")
                     }
                 }
-                AntigravityAuthStatus.SIGNED_IN -> {}
+                AntigravityAuthStatus.SIGNED_IN -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = onStartAddAccount,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Google Account", fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = onLogout,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text("Sign out all", fontSize = 12.sp)
+                        }
+                    }
+                }
             }
 
             if (auth.status == AntigravityAuthStatus.SIGNED_IN) {

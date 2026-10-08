@@ -67,13 +67,16 @@ class ProjectIndex(private val filesDir: File) {
                 val relative = file.relativeTo(root).invariantSeparatorsPath
                 val text = runCatching { file.readText() }.getOrNull()
                 if (text != null && !looksBinary(text)) {
+                    val semantic = SemanticCodeEngine.parseFile(relative, text)
+                    val combinedSymbols = (semantic.symbols.map { it.name } + extractSymbols(text)).distinct().take(MAX_SYMBOLS_PER_FILE)
+                    val combinedImports = (semantic.rawImports + extractImports(text)).distinct().take(MAX_IMPORTS_PER_FILE)
                     indexed += IndexedFile(
                         path = relative,
-                        language = languageFor(relative),
+                        language = semantic.language,
                         sizeBytes = file.length(),
                         lastModified = file.lastModified(),
-                        symbols = extractSymbols(text).take(MAX_SYMBOLS_PER_FILE),
-                        imports = extractImports(text).take(MAX_IMPORTS_PER_FILE),
+                        symbols = combinedSymbols,
+                        imports = combinedImports,
                     )
                 }
             }

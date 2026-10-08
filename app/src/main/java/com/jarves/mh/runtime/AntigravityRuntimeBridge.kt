@@ -24,11 +24,21 @@ import org.json.JSONObject
 
 enum class AntigravityAuthStatus { SIGNED_OUT, STARTING, AWAITING_CODE, COMPLETING, SIGNED_IN, ERROR }
 
+data class AntigravityAccount(
+    val email: String,
+    val isActive: Boolean = false,
+    val isQuotaExhausted: Boolean = false,
+    val quotaExhaustedAt: Long = 0L,
+    val lastUsedAt: Long = 0L,
+)
+
 data class AntigravityAuthState(
     val status: AntigravityAuthStatus = AntigravityAuthStatus.SIGNED_OUT,
     val authorizationUrl: String? = null,
     val message: String? = null,
     val accountEmail: String? = null,
+    val accounts: List<AntigravityAccount> = emptyList(),
+    val autoRoundRobin: Boolean = true,
 )
 
 internal sealed interface AntigravityParsedEvent {

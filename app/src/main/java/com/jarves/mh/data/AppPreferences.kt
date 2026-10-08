@@ -63,6 +63,14 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("agent_antigravity_account_email", "") ?: ""
         set(value) { preferences.edit().putString("agent_antigravity_account_email", value).apply() }
 
+    var antigravityAutoRoundRobin: Boolean
+        get() = preferences.getBoolean("agent_antigravity_auto_round_robin", true)
+        set(value) { preferences.edit().putBoolean("agent_antigravity_auto_round_robin", value).apply() }
+
+    var antigravityAccountsJson: String
+        get() = preferences.getString("agent_antigravity_accounts_json", "[]") ?: "[]"
+        set(value) { preferences.edit().putString("agent_antigravity_accounts_json", value).apply() }
+
     var githubLogin: String
         get() = preferences.getString("github_login", "") ?: ""
         set(value) { preferences.edit().putString("github_login", value).apply() }
