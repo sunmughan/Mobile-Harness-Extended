@@ -4907,47 +4907,201 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     }
 
     fun resumeInterruptedTask() {
-        val request = activeRuntimeRequest ?: lastInterruptedRequest ?: buildResumeRequestFallback() ?: return
-        activeRuntimeRequest = request
-        lastInterruptedRequest = request
-        runtimeRecoveryJob?.cancel()
-        runtimeRecoveryAttempt = 0
-        runtimeRecoveryStartedAtMillis = null
-        _state.update { it.copy(
-            isRunning = true,
-            activeSessionId = null,
-            runtimeRecoveryStatus = "Reconnecting…",
-            runtimeRecoveryCanResume = false,
-            liveProcess = it.liveProcess + ActivityItem("Resuming task", "Reconnecting to the preserved provider session."),
-        ) }
-        viewModelScope.launch {
-            runCatching {
-                request.runtime.startSession(request.project.id, request.project.slug, request.project.kind, request.prompt, request.history, request.provider)
-            }.onFailure { error ->
-                val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
-                _state.update { state ->
-                    state.copy(
-                        isRunning = false,
-                        activeSessionId = null,
-                        runtimeRecoveryStatus = "Waiting for network",
-                        runtimeRecoveryCanResume = true,
-                        liveProcess = state.liveProcess + ActivityItem("Resume failed", failureReason),
-                    )
-                }
-            }
-        }
+        val prompt = activeRuntimeRequest?.prompt
+            ?: lastInterruptedRequest?.prompt
+            ?: _state.value.currentTaskRequest
+            ?: _state.value.messages.lastOrNull { it.fromUser }?.text
+            ?: return
+        resumeTaskExecution(prompt = prompt, roadmap = _state.value.activeRoadmap)
     }
 
-    private fun buildResumeRequestFallback(): RuntimeRetryRequest? {
-        val project = _state.value.activeProject ?: return null
-        val lastUserMessage = _state.value.messages.lastOrNull { it.fromUser } ?: return null
-        return RuntimeRetryRequest(
-            runtime = activeRuntime(),
-            project = project,
-            prompt = lastUserMessage.text,
-            history = _state.value.messages.dropLast(1),
-            provider = _state.value.provider,
+    private fun resumeTaskExecution(prompt: String, roadmap: ActiveRoadmap? = null) {
+        val current = _state.value
+        val project = current.activeProject ?: return
+        if (current.isRunning) return
+
+        runtimeRecoveryJob?.cancel()
+        runtimeRecoveryJob = null
+        runtimeRecoveryAttempt = 0
+        runtimeRecoveryStartedAtMillis = null
+
+        val lastUserMsg = current.messages.lastOrNull { it.fromUser }
+        val resumePrompt = prompt.ifBlank {
+            current.currentTaskRequest ?: lastUserMsg?.text.orEmpty()
+        }
+        if (resumePrompt.isBlank()) return
+
+        // Strip trailing stopped/error messages so chat resumes cleanly
+        val cleanedMessages = current.messages.filterNot { msg ->
+            !msg.fromUser && msg.text.contains("Task stopped", ignoreCase = true)
+        }
+
+        val targetRoadmap = roadmap ?: current.activeRoadmap
+        val isRoadmapBuild = targetRoadmap != null && targetRoadmap.isApproved &&
+            targetRoadmap.steps.any { it.status == StepStatus.PENDING || it.status == StepStatus.IN_PROGRESS }
+
+        val effectivePrompt = if (isRoadmapBuild && !resumePrompt.contains("<execution_mode")) {
+            buildString {
+                appendLine("<execution_mode name=\"UNIFIED_BUILD\">")
+                appendLine("Resuming previously interrupted roadmap execution.")
+                appendLine("Roadmap Title: ${targetRoadmap.title}")
+                if (targetRoadmap.summary.isNotBlank()) {
+                    appendLine("Summary: ${targetRoadmap.summary}")
+                }
+                appendLine("Steps to execute:")
+                targetRoadmap.steps.forEachIndexed { idx, step ->
+                    val statusMark = if (step.status == StepStatus.COMPLETED) "[x]" else "[ ]"
+                    appendLine("${idx + 1}. $statusMark ${step.title}")
+                    if (step.description.isNotBlank()) {
+                        appendLine("   Details: ${step.description}")
+                    }
+                    if (step.filesAffected.isNotEmpty()) {
+                        appendLine("   Files: ${step.filesAffected.joinToString(", ")}")
+                    }
+                }
+                appendLine()
+                appendLine("Continue building now end-to-end. Implement remaining code changes, build, verify, and complete all steps.")
+                appendLine("</execution_mode>")
+            }
+        } else {
+            resumePrompt
+        }
+
+        val startedAt = System.currentTimeMillis()
+        val thinkItem = ActivityItem("Think", "Resuming task: " + requestPlanningSummary(effectivePrompt, current.agentKind), false)
+        val initialScratchpad = deriveScratchpadItems(targetRoadmap, listOf(thinkItem), true)
+
+        _state.update { state ->
+            state.copy(
+                messages = cleanedMessages,
+                isRunning = true,
+                liveThinking = true,
+                activeSessionId = null,
+                runtimeRecoveryStatus = null,
+                runtimeRecoveryAttempt = 0,
+                runtimeRecoveryCanResume = false,
+                interruptedSession = null,
+                liveProcess = listOf(thinkItem),
+                scratchpadItems = initialScratchpad,
+                activeThinkingBlockId = null,
+                taskStartedAtMillis = startedAt,
+                taskFinishedAtMillis = null,
+                workSegmentStartedAtMillis = startedAt,
+                currentTaskRequest = effectivePrompt,
+                activity = listOf(ActivityItem("Resuming task", "Reconnecting and continuing work…", false)) + state.activity,
+            )
+        }
+
+        sessionManager.recordSessionStart(
+            sessionId = UUID.randomUUID().toString(),
+            projectId = project.id,
+            projectTitle = project.name,
+            chatId = _state.value.activeChatId.orEmpty(),
+            prompt = effectivePrompt,
+            roadmap = targetRoadmap,
         )
+        touchProject(project.id)
+        persistMessages(includeLiveProcess = true)
+
+        val mode = _state.value.executionMode
+        val modeInstruction = when {
+            mode == ExecutionMode.PLAN -> """
+<execution_mode name="PLAN">
+You are running in PLAN mode.
+Your objective: Inspect the project workspace and formulate a comprehensive, actionable execution plan without making any changes to files or code yet.
+</execution_mode>
+""".trimIndent()
+            mode == ExecutionMode.BUILD -> """
+<execution_mode name="BUILD">
+You are running in BUILD mode.
+Your objective: Directly understand the user request, plan internally, and immediately begin implementing all required changes end-to-end.
+- Read relevant files, edit code, execute build/test commands, verify changes, and report progress.
+- Once finished, summarize what was accomplished with full verification details.
+</execution_mode>
+""".trimIndent()
+            mode == ExecutionMode.UNIFIED -> """
+<execution_mode name="UNIFIED">
+You are running in UNIFIED mode (Phase 1: Roadmap & Planning).
+Your objective: Analyze the request and workspace, formulate the plan, and provide an interactive roadmap for user review and approval before any implementation begins.
+</execution_mode>
+""".trimIndent()
+            else -> ""
+        }
+
+        val attachments = lastUserMsg?.attachments.orEmpty()
+        val mentionedPaths = resolveMentionedWorkspacePaths(effectivePrompt, project)
+
+        val runtimePrompt = buildString {
+            appendLine(effectivePrompt)
+            if (modeInstruction.isNotBlank() && !effectivePrompt.contains("<execution_mode")) {
+                appendLine()
+                appendLine(modeInstruction)
+            }
+            if (mentionedPaths.isNotEmpty() && !effectivePrompt.contains("<mentioned_files>")) {
+                appendLine()
+                appendLine("<mentioned_files>")
+                appendLine("The user explicitly referenced these workspace files with @mentions. Inspect the referenced files before deciding what to change; they are context pointers, not permission to modify other files.")
+                mentionedPaths.forEach { relativePath ->
+                    appendLine("- " + projectGuestRoot(project) + "/" + relativePath)
+                }
+                appendLine("</mentioned_files>")
+            }
+            if (attachments.isNotEmpty() && !effectivePrompt.contains("<attached_files>")) {
+                appendLine()
+                appendLine("<attached_files>")
+                attachments.forEach { attachment ->
+                    appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+                }
+                appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
+                appendLine("</attached_files>")
+            }
+            val skillContext = skillManager.buildPromptContext(_state.value.agentKind)
+            if (skillContext.isNotBlank() && !effectivePrompt.contains(skillContext.take(30))) {
+                appendLine()
+                appendLine(skillContext)
+            }
+        }
+
+        viewModelScope.launch {
+            val workspace = withContext(Dispatchers.IO) {
+                val root = projectWorkspaceRoot(project)
+                skillManager.syncToWorkspace(root)
+                root
+            }
+            val enrichedPrompt = withContext(Dispatchers.IO) {
+                val context = contextEngine.buildPromptContext(
+                    projectId = project.id,
+                    workspace = workspace,
+                    request = effectivePrompt,
+                    mentionedPaths = mentionedPaths,
+                    maxReferences = 12,
+                )
+                if (context.isBlank()) runtimePrompt else runtimePrompt + "\n\n" + context
+            }
+            val runtime = activeRuntime()
+            val request = RuntimeRetryRequest(
+                runtime = runtime,
+                project = project,
+                prompt = enrichedPrompt,
+                history = cleanedMessages,
+                provider = _state.value.provider,
+            )
+            activeRuntimeRequest = request
+            lastInterruptedRequest = request
+            runCatching {
+                runtime.startSession(
+                    project.id,
+                    project.slug,
+                    project.kind,
+                    enrichedPrompt,
+                    cleanedMessages,
+                    _state.value.provider,
+                )
+            }.onFailure { error ->
+                val failureReason = RuntimeFailureClassifier.friendlyNetworkErrorMessage(error.message.orEmpty())
+                onRuntimeEvent(RuntimeEvent.SessionFailed(UUID.randomUUID().toString(), failureReason))
+            }
+        }
     }
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
@@ -5313,14 +5467,20 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
 
     fun resumeInterruptedSession() {
         val session = _state.value.interruptedSession ?: return
-        val project = _state.value.projects.firstOrNull { it.id == session.projectId }
-        if (project != null) {
-            openProject(project)
-            if (session.chatId.isNotBlank()) {
-                switchChat(session.chatId)
-            }
+        val project = _state.value.projects.firstOrNull { it.id == session.projectId } ?: return
+        openProject(project)
+        if (session.chatId.isNotBlank()) {
+            switchChat(session.chatId)
         }
         _state.update { it.copy(interruptedSession = null) }
+        sessionManager.clearActiveSession()
+
+        val prompt = session.initialPrompt.ifBlank {
+            _state.value.messages.lastOrNull { it.fromUser }?.text.orEmpty()
+        }
+        if (prompt.isNotBlank()) {
+            resumeTaskExecution(prompt = prompt, roadmap = session.activeRoadmap)
+        }
     }
 
     fun createWorkspaceCheckpoint(label: String): com.jarves.mh.workspace.WorkspaceCheckpoint? {

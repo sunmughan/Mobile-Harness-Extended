@@ -5597,8 +5597,10 @@ private fun ChatTab(
                     }
                 }
 
+                var isMultiLine by remember { mutableStateOf(false) }
+
                 Surface(
-                    shape = RoundedCornerShape(26.dp),
+                    shape = RoundedCornerShape(if (isMultiLine) 20.dp else 26.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(
                         width = 1.dp,
@@ -5606,157 +5608,317 @@ private fun ChatTab(
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    var isMultiLine by remember { mutableStateOf(false) }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                        verticalAlignment = if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically,
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(1.dp),
-                            modifier = Modifier.align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically),
+                    if (isMultiLine) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                         ) {
-                            IconButton(
-                                onClick = onAttach,
-                                enabled = pendingAttachments.size < 5,
-                                modifier = Modifier.size(34.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AttachFile,
-                                    contentDescription = "Attach files",
-                                    modifier = Modifier.size(19.dp),
-                                    tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            BasicTextField(
+                                value = prompt,
+                                onValueChange = {
+                                    prompt = it
+                                    updateMentionQuery(it)
+                                    if (it.isEmpty()) {
+                                        isMultiLine = false
+                                    }
+                                },
+                                onTextLayout = { textLayoutResult ->
+                                    isMultiLine = prompt.contains('\n') || textLayoutResult.lineCount > 1
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                                    .heightIn(min = 40.dp, max = 150.dp),
+                                textStyle = TextStyle(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 15.sp,
+                                    lineHeight = 20.sp,
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                                decorationBox = { innerTextField ->
+                                    Box(contentAlignment = Alignment.CenterStart) {
+                                        if (prompt.isEmpty()) {
+                                            Text(
+                                                text = "${executionMode.title} with ${agentKind.title}…",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 15.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                },
+                            )
 
-                            IconButton(
-                                onClick = { showWorkspaceControls = !showWorkspaceControls },
-                                modifier = Modifier.size(34.dp),
+                            Spacer(Modifier.height(4.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                val rotation by animateFloatAsState(
-                                    targetValue = if (showWorkspaceControls) 180f else 0f,
-                                    label = "workspace_controls_rotation",
-                                )
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Tune,
-                                        contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
-                                        modifier = Modifier
-                                            .size(19.dp)
-                                            .graphicsLayer { rotationZ = rotation },
-                                        tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .align(Alignment.TopEnd)
-                                                .background(PocketOrange, CircleShape),
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(1.dp),
+                                ) {
+                                    IconButton(
+                                        onClick = onAttach,
+                                        enabled = pendingAttachments.size < 5,
+                                        modifier = Modifier.size(34.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AttachFile,
+                                            contentDescription = "Attach files",
+                                            modifier = Modifier.size(19.dp),
+                                            tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { showWorkspaceControls = !showWorkspaceControls },
+                                        modifier = Modifier.size(34.dp),
+                                    ) {
+                                        val rotation by animateFloatAsState(
+                                            targetValue = if (showWorkspaceControls) 180f else 0f,
+                                            label = "workspace_controls_rotation",
+                                        )
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Tune,
+                                                contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
+                                                modifier = Modifier
+                                                    .size(19.dp)
+                                                    .graphicsLayer { rotationZ = rotation },
+                                                tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(6.dp)
+                                                        .align(Alignment.TopEnd)
+                                                        .background(PocketOrange, CircleShape),
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    IconButton(
+                                        onClick = onStartVoiceInput,
+                                        modifier = Modifier.size(34.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Mic,
+                                            contentDescription = "Voice input",
+                                            modifier = Modifier.size(19.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }
-                            }
 
-                            IconButton(
-                                onClick = onStartVoiceInput,
-                                modifier = Modifier.size(34.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Voice input",
-                                    modifier = Modifier.size(19.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                if (isRunning) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .background(
+                                                color = MaterialTheme.colorScheme.error,
+                                                shape = CircleShape,
+                                            )
+                                            .clickable(onClick = onStop),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Stop,
+                                            contentDescription = "Stop AI task",
+                                            tint = MaterialTheme.colorScheme.onError,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .background(
+                                                color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                                shape = CircleShape,
+                                            )
+                                            .clickable(
+                                                enabled = canSend,
+                                                onClick = {
+                                                    if (canSend) {
+                                                        onSend(prompt)
+                                                        prompt = ""
+                                                        mentionQuery = null
+                                                        isMultiLine = false
+                                                    }
+                                                },
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowUpward,
+                                            contentDescription = "Send",
+                                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(19.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
-
-                        BasicTextField(
-                            value = prompt,
-                            onValueChange = {
-                                prompt = it
-                                updateMentionQuery(it)
-                            },
-                            onTextLayout = { textLayoutResult ->
-                                isMultiLine = textLayoutResult.lineCount > 1
-                            },
+                    } else {
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 4.dp, vertical = 10.dp)
-                                .heightIn(min = 20.dp, max = 130.dp),
-                            textStyle = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                            decorationBox = { innerTextField ->
-                                Box(contentAlignment = Alignment.CenterStart) {
-                                    if (prompt.isEmpty()) {
-                                        Text(
-                                            text = "${executionMode.title} with ${agentKind.title}…",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 15.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    innerTextField()
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            ) {
+                                IconButton(
+                                    onClick = onAttach,
+                                    enabled = pendingAttachments.size < 5,
+                                    modifier = Modifier.size(34.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AttachFile,
+                                        contentDescription = "Attach files",
+                                        modifier = Modifier.size(19.dp),
+                                        tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
-                            },
-                        )
 
-                        Spacer(Modifier.width(4.dp))
-
-                        if (isRunning) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.error,
-                                        shape = CircleShape,
+                                IconButton(
+                                    onClick = { showWorkspaceControls = !showWorkspaceControls },
+                                    modifier = Modifier.size(34.dp),
+                                ) {
+                                    val rotation by animateFloatAsState(
+                                        targetValue = if (showWorkspaceControls) 180f else 0f,
+                                        label = "workspace_controls_rotation",
                                     )
-                                    .clickable(onClick = onStop),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Stop,
-                                    contentDescription = "Stop AI task",
-                                    tint = MaterialTheme.colorScheme.onError,
-                                    modifier = Modifier.size(18.dp),
-                                )
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Tune,
+                                            contentDescription = if (showWorkspaceControls) "Hide mode & scratchpad" else "Show mode & scratchpad",
+                                            modifier = Modifier
+                                                .size(19.dp)
+                                                .graphicsLayer { rotationZ = rotation },
+                                            tint = if (showWorkspaceControls) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        if (scratchpadItems.isNotEmpty() && !showWorkspaceControls) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .align(Alignment.TopEnd)
+                                                    .background(PocketOrange, CircleShape),
+                                            )
+                                        }
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = onStartVoiceInput,
+                                    modifier = Modifier.size(34.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Mic,
+                                        contentDescription = "Voice input",
+                                        modifier = Modifier.size(19.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
-                        } else {
-                            Box(
+
+                            BasicTextField(
+                                value = prompt,
+                                onValueChange = {
+                                    prompt = it
+                                    updateMentionQuery(it)
+                                    if (it.isEmpty()) {
+                                        isMultiLine = false
+                                    }
+                                },
+                                onTextLayout = { textLayoutResult ->
+                                    isMultiLine = prompt.contains('\n') || textLayoutResult.lineCount > 1
+                                },
                                 modifier = Modifier
-                                    .size(38.dp)
-                                    .align(if (isMultiLine) Alignment.Bottom else Alignment.CenterVertically)
-                                    .background(
-                                        color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = CircleShape,
+                                    .weight(1f)
+                                    .padding(horizontal = 4.dp, vertical = 10.dp)
+                                    .heightIn(min = 20.dp, max = 130.dp),
+                                textStyle = TextStyle(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 15.sp,
+                                    lineHeight = 20.sp,
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                                decorationBox = { innerTextField ->
+                                    Box(contentAlignment = Alignment.CenterStart) {
+                                        if (prompt.isEmpty()) {
+                                            Text(
+                                                text = "${executionMode.title} with ${agentKind.title}…",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 15.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                },
+                            )
+
+                            Spacer(Modifier.width(4.dp))
+
+                            if (isRunning) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.error,
+                                            shape = CircleShape,
+                                        )
+                                        .clickable(onClick = onStop),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Stop,
+                                        contentDescription = "Stop AI task",
+                                        tint = MaterialTheme.colorScheme.onError,
+                                        modifier = Modifier.size(18.dp),
                                     )
-                                    .clickable(
-                                        enabled = canSend,
-                                        onClick = {
-                                            if (canSend) {
-                                                onSend(prompt)
-                                                prompt = ""
-                                                mentionQuery = null
-                                                isMultiLine = false
-                                            }
-                                        },
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowUpward,
-                                    contentDescription = "Send",
-                                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(19.dp),
-                                )
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(
+                                            color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = CircleShape,
+                                        )
+                                        .clickable(
+                                            enabled = canSend,
+                                            onClick = {
+                                                if (canSend) {
+                                                    onSend(prompt)
+                                                    prompt = ""
+                                                    mentionQuery = null
+                                                    isMultiLine = false
+                                                }
+                                            },
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowUpward,
+                                        contentDescription = "Send",
+                                        tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(19.dp),
+                                    )
+                                }
                             }
                         }
                     }
