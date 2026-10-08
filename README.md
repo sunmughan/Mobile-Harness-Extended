@@ -406,6 +406,7 @@ Mobile Harness allows downloading optional developer packs on demand to conserve
 * **PHP Development**: PHP 8.4 runtime via Ondřej PHP PPA for Ubuntu 20.04 ARM64, official latest-stable Composer, and database extensions.
 * **C / C++ Compiler Suite**: GCC/G++, Clang, Make, and CMake for native tool compilation.
 * **Browser Automation (Chromium & Puppeteer)**: Chromium browser, `puppeteer-core`, and `pocket-browser` CLI with Chrome DevTools Protocol (CDP) on port 9222. Includes real-time viewport inspection in the dual-mode Preview tab.
+* **Big Billion Days & Festival Deal Sniper**: In-app stealth e-commerce price drop sniper and deal verification engine for Flipkart and Amazon India. Integrates Akamai bot shield bypass via authenticated Chromium sessions, resource-blocking acceleration (<1.5s page loads), anti-ban jitter scheduling (25 ± 10 min), and AI Deal Reality scoring (1–10) with automatic push notifications when target price drops occur.
 
 > *Note: Kernel-level virtualization technologies such as Docker, KVM, systemd services, and nested hardware emulators are not supported under PRoot.*
 

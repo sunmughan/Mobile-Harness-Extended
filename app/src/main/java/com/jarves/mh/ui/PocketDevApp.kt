@@ -238,6 +238,9 @@ import com.jarves.mh.runtime.NotificationCoordinator
 import com.jarves.mh.runtime.RuntimeSetupService
 import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.AntigravityAuthStatus
+import com.jarves.mh.ecommerce.PriceHuntController
+import com.jarves.mh.ecommerce.PriceHuntWebInterceptor
+import com.jarves.mh.ui.components.PriceHuntWidget
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -7208,47 +7211,50 @@ private fun PreviewTab(ready: Boolean, url: String?) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                // Big Billion Days & Festival Deal Sniper Widget (Full-Width)
+                PriceHuntWidget(
+                    webView = webView,
+                    onNavigate = { navigateTo(it) },
+                )
+
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(52.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Language,
                             contentDescription = null,
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(28.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
-                Spacer(Modifier.height(16.dp))
                 Text(
                     text = "Chromium Browser & Preview",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(6.dp))
                 Text(
                     text = "Multiple tabs, Desktop view, DevTools inspection, and online/local web navigation.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     textAlign = TextAlign.Center,
-                    lineHeight = 18.sp,
+                    lineHeight = 16.sp,
                 )
-                Spacer(Modifier.height(20.dp))
                 Text(
                     text = "Quick shortcuts:",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -7260,7 +7266,6 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -7303,6 +7308,15 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                             }
                         }
                         webViewClient = object : WebViewClient() {
+                            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                                val sniperActive = PriceHuntController.state.value.isScanning ||
+                                    PriceHuntController.state.value.isAutoTracking
+                                if (PriceHuntWebInterceptor.shouldBlockRequest(request, sniperActive)) {
+                                    return PriceHuntWebInterceptor.createEmptyResponse()
+                                }
+                                return super.shouldInterceptRequest(view, request)
+                            }
+
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val target = request?.url ?: return false
                                 val scheme = target.scheme?.lowercase()
