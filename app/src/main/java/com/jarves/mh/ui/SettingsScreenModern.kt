@@ -408,9 +408,8 @@ fun SettingsScreen(
                     onClick = { toggle(SettingsSection.TOOLS) },
                 ) {
                     Text("Node.js, npm, Git, and Claude Code are included.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -429,53 +428,57 @@ fun SettingsScreen(
                         )
                     }
                     if (state.autoUpdatingToolsOrSkills) {
-                        Spacer(Modifier.height(4.dp))
                         LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth().height(4.dp),
                             color = PocketOrange,
                         )
                     }
-                    Spacer(Modifier.height(6.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    Spacer(Modifier.height(6.dp))
                     DevStack.entries.forEachIndexed { index, stack ->
                         val installed = stack in state.installedDevStacks
                         val installing = state.devStackInstalling == stack
                         val removing = installing && state.devStackRemoving
-                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Column(Modifier.fillMaxWidth()) {
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.weight(1f, fill = false),
-                                ) {
-                                    Text(stack.label, fontWeight = FontWeight.SemiBold)
-                                    if (installed) {
-                                        val versionBadge = when (stack) {
-                                            DevStack.WEB -> "v24"
-                                            DevStack.PYTHON -> installedEnvVersions["python"]?.substringBefore(" (pip")?.let { "v$it" } ?: "v2026.09.2"
-                                            DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
-                                            DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
-                                            DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
-                                            DevStack.BROWSER -> installedEnvVersions["browser"]?.let { "v$it" } ?: "v1.0"
-                                        }
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                        ) {
-                                            Text(
-                                                versionBadge,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                            )
+                                Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(stack.label, fontWeight = FontWeight.SemiBold)
+                                        if (installed) {
+                                            val versionBadge = when (stack) {
+                                                DevStack.WEB -> "v24"
+                                                DevStack.PYTHON -> installedEnvVersions["python"]?.substringBefore(" (pip")?.let { "v$it" } ?: "v2026.09.2"
+                                                DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
+                                                DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
+                                                DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
+                                                DevStack.BROWSER -> installedEnvVersions["browser"]?.let { "v$it" } ?: "v1.0"
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                            ) {
+                                                Text(
+                                                    versionBadge,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                )
+                                            }
                                         }
                                     }
+                                    Text(
+                                        stack.installsSummary,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
                                 when {
                                     removing -> Text("Removing…", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -493,7 +496,7 @@ fun SettingsScreen(
                                         )
                                     }
                                     installed -> {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                             if (stack != DevStack.WEB) {
                                                 TextButton(
                                                     onClick = { onUpdateDevStack(stack) },
@@ -515,67 +518,59 @@ fun SettingsScreen(
                                     ) { Text("Add", fontSize = 12.sp) }
                                 }
                             }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                stack.installsSummary,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 16.sp,
-                            )
-                        }
-                        if (installing) {
-                            Spacer(Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { state.devStackProgress.coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth().height(7.dp),
-                                color = PocketOrange,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            )
-                            Spacer(Modifier.height(9.dp))
-                            state.devStackBytes?.let { (downloaded, total) ->
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                ) {
-                                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text(
-                                                "${formatTransferMb(downloaded)} of ${formatTransferMb(total)}",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontFamily = FontFamily.Monospace,
-                                            )
-                                            state.devStackBytesPerSecond?.takeIf { it > 0L }?.let { speed ->
+                            if (installing) {
+                                Spacer(Modifier.height(6.dp))
+                                LinearProgressIndicator(
+                                    progress = { state.devStackProgress.coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth().height(7.dp),
+                                    color = PocketOrange,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                state.devStackBytes?.let { (downloaded, total) ->
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    ) {
+                                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Text(
-                                                    "${formatTransferSpeed(speed)} · ${formatTransferEta(downloaded, total, speed)} left",
-                                                    fontSize = 11.sp,
-                                                    color = PocketOrange,
+                                                    "${formatTransferMb(downloaded)} of ${formatTransferMb(total)}",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
                                                     fontFamily = FontFamily.Monospace,
                                                 )
+                                                state.devStackBytesPerSecond?.takeIf { it > 0L }?.let { speed ->
+                                                    Text(
+                                                        "${formatTransferSpeed(speed)} · ${formatTransferEta(downloaded, total, speed)} left",
+                                                        fontSize = 11.sp,
+                                                        color = PocketOrange,
+                                                        fontFamily = FontFamily.Monospace,
+                                                    )
+                                                }
                                             }
+                                            Text(
+                                                state.devStackMessage ?: "Downloading…",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
                                         }
-                                        Text(
-                                            state.devStackMessage ?: "Downloading…",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
                                     }
-                                }
-                            } ?: Text(
-                                state.devStackMessage ?: "Processing…",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                                } ?: Text(
+                                    state.devStackMessage ?: "Processing…",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                         if (index != DevStack.entries.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                     state.devStackMessage?.takeIf { state.devStackInstalling == null && it.isNotBlank() }?.let { statusMsg ->
-                        Spacer(Modifier.height(8.dp))
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = if (statusMsg.contains("could not", ignoreCase = true) || statusMsg.contains("failed", ignoreCase = true))
@@ -1238,6 +1233,20 @@ private fun AntigravityConnectionSettings(
                                                     )
                                                 }
                                             }
+                                            if (account.isAuthExpired) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFFE65100).copy(alpha = 0.12f),
+                                                ) {
+                                                    Text(
+                                                        "Session Expired",
+                                                        fontSize = 10.sp,
+                                                        color = Color(0xFFE65100),
+                                                        fontWeight = FontWeight.Medium,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    )
+                                                }
+                                            }
                                             if (account.isQuotaExhausted) {
                                                 Surface(
                                                     shape = RoundedCornerShape(4.dp),
@@ -1259,7 +1268,14 @@ private fun AntigravityConnectionSettings(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
-                                    if (!account.isActive) {
+                                    if (account.isAuthExpired) {
+                                        TextButton(
+                                            onClick = onStartAddAccount,
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        ) {
+                                            Text("Reconnect", fontSize = 11.sp, color = Color(0xFFE65100))
+                                        }
+                                    } else if (!account.isActive) {
                                         TextButton(
                                             onClick = { onSwitchAccount(account.email) },
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),

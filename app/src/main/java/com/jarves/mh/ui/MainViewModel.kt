@@ -4597,15 +4597,15 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     }
 
     private fun onRuntimeEvent(event: RuntimeEvent) {
-        if (event is RuntimeEvent.SessionFailed && _state.value.agentKind == AgentKind.ANTIGRAVITY &&
-            (event.reason.contains("sign-in", true) || event.reason.contains("authentication", true))) {
-            antigravityAuthController.invalidateSession(event.reason)
-        }
         val lastUserIdx = _state.value.messages.indexOfLast { it.fromUser }
         val hasResponseAlready = _state.value.messages.indices.any {
             it > lastUserIdx && !_state.value.messages[it].fromUser && _state.value.messages[it].text.isNotBlank()
         }
         if (event is RuntimeEvent.SessionFailed && retryAntigravityWithNextAccount(event)) return
+        if (event is RuntimeEvent.SessionFailed && _state.value.agentKind == AgentKind.ANTIGRAVITY &&
+            (event.reason.contains("sign-in", true) || event.reason.contains("authentication", true) || event.reason.contains("401", true))) {
+            antigravityAuthController.invalidateSession(event.reason)
+        }
         if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && retryWithNextApiKey(event)) return
         if (event is RuntimeEvent.SessionFailed && !hasResponseAlready && recoverTransientRuntimeFailure(event)) return
         _state.update { current ->
@@ -4891,11 +4891,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                             activeSessionId = null,
                             pendingApproval = null,
                             scratchpadItems = scratchpad,
-                            toastMessage = event.reason.takeIf { reason ->
-                                reason.contains("user not found", true) ||
-                                    reason.contains("API key", true) ||
-                                    reason.contains("authentication", true)
-                            },
+                            toastMessage = sanitizeSessionFailedToast(event.reason),
                             activity = listOf(ActivityItem("Task stopped", event.reason)) + current.activity,
                             taskFinishedAtMillis = finishedAt,
                             currentTaskRequest = null,
@@ -5294,6 +5290,39 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             "expired" in value || "quota" in value || "rate limit" in value
     }
 
+    private fun sanitizeSessionFailedToast(reason: String): String? {
+        val value = reason.lowercase()
+        return when {
+            "unauthenticated" in value || "401" in value || "invalid authentication credentials" in value ||
+                "oauth 2 access token" in value || "token expired" in value ->
+                "Google session expired (401). Reconnect your account in Settings → Google accounts."
+            "user not found" in value ->
+                "Account not found. Please sign in again."
+            "api key" in value ->
+                "API key authentication error. Check credentials in Settings."
+            "out of credits" in value || "quota" in value || "429" in value ->
+                "Usage quota limit reached. Auto-switching or check plan limits."
+            "authentication" in value || "sign-in" in value ->
+                "Authentication failed. Reconnect your account in Settings."
+            else -> null
+        }
+    }
+
+    private fun isAntigravityAuthFailure(reason: String): Boolean {
+        val value = reason.lowercase()
+        return "unauthenticated" in value ||
+            "401" in value ||
+            "invalid authentication credentials" in value ||
+            "oauth 2 access token" in value ||
+            "login cookie" in value ||
+            "authentication required" in value ||
+            "authentication failed" in value ||
+            "auth expired" in value ||
+            "sign-in" in value ||
+            "not signed in" in value ||
+            "token expired" in value
+    }
+
     private fun isAntigravityQuotaFailure(reason: String): Boolean {
         val value = reason.lowercase()
         return "quota" in value ||
@@ -5337,16 +5366,25 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             "quota limit" in value
     }
 
+    private fun isAntigravityFailoverEligible(reason: String): Boolean {
+        return isAntigravityQuotaFailure(reason) || isAntigravityAuthFailure(reason)
+    }
+
     private fun retryAntigravityWithNextAccount(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
         if (current.agentKind != AgentKind.ANTIGRAVITY) return false
         if (!current.isRunning || current.activeSessionId != event.sessionId) return false
         if (!antigravityAuthController.isAutoRoundRobin()) return false
-        if (!isAntigravityQuotaFailure(event.reason)) return false
+        if (!isAntigravityFailoverEligible(event.reason)) return false
         val request = activeRuntimeRequest ?: return false
 
         val currentEmail = antigravityAuthController.state.value.accountEmail.orEmpty()
-        antigravityAuthController.markCurrentAccountQuotaExhausted()
+        val isAuthError = isAntigravityAuthFailure(event.reason)
+        if (isAuthError) {
+            antigravityAuthController.markCurrentAccountAuthExpired()
+        } else {
+            antigravityAuthController.markCurrentAccountQuotaExhausted()
+        }
         val nextEmail = antigravityAuthController.switchToNextAccount() ?: return false
 
         // Clean up any trailing/interrupted assistant message chunk from the failed session
@@ -5357,6 +5395,8 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             } else msgs
         }
 
+        val reasonLabel = if (isAuthError) "session expired" else "usage limit reached"
+        val failoverLabel = if (isAuthError) "auth expired failover" else "quota limit failover"
         _state.update {
             it.copy(
                 activeSessionId = null,
@@ -5364,8 +5404,8 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
                 runtimeRecoveryAttempt = 0,
                 runtimeRecoveryCanResume = false,
                 messages = cleanedMessages,
-                toastMessage = if (currentEmail.isNotBlank()) "Account $currentEmail reached usage limit. Smartly switched to $nextEmail." else "Smartly switched to account $nextEmail.",
-                liveProcess = it.liveProcess + ActivityItem("Google account switched", "Auto round-robin to $nextEmail (quota/limit failover)", true),
+                toastMessage = if (currentEmail.isNotBlank()) "Account $currentEmail $reasonLabel. Smartly switched to $nextEmail." else "Smartly switched to account $nextEmail.",
+                liveProcess = it.liveProcess + ActivityItem("Google account switched", "Auto round-robin to $nextEmail ($failoverLabel)", true),
             )
         }
         viewModelScope.launch {

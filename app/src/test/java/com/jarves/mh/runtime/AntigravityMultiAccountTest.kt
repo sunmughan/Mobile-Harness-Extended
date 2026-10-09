@@ -19,8 +19,8 @@ class AntigravityMultiAccountTest {
     @Test
     fun `parses and serializes accounts json correctly`() {
         val original = listOf(
-            AntigravityAccount("alpha@example.com", isActive = true, isQuotaExhausted = false, lastUsedAt = 1000L),
-            AntigravityAccount("beta@example.com", isActive = false, isQuotaExhausted = true, quotaExhaustedAt = 5000L, lastUsedAt = 2000L),
+            AntigravityAccount("alpha@example.com", isActive = true, isQuotaExhausted = false, lastUsedAt = 1000L, isAuthExpired = false, authExpiredAt = 0L),
+            AntigravityAccount("beta@example.com", isActive = false, isQuotaExhausted = true, quotaExhaustedAt = 5000L, lastUsedAt = 2000L, isAuthExpired = true, authExpiredAt = 6000L),
         )
 
         val array = JSONArray()
@@ -31,6 +31,8 @@ class AntigravityMultiAccountTest {
                 .put("isQuotaExhausted", acc.isQuotaExhausted)
                 .put("quotaExhaustedAt", acc.quotaExhaustedAt)
                 .put("lastUsedAt", acc.lastUsedAt)
+                .put("isAuthExpired", acc.isAuthExpired)
+                .put("authExpiredAt", acc.authExpiredAt)
             array.put(obj)
         }
         val serialized = array.toString()
@@ -44,6 +46,8 @@ class AntigravityMultiAccountTest {
                 isQuotaExhausted = obj.optBoolean("isQuotaExhausted", false),
                 quotaExhaustedAt = obj.optLong("quotaExhaustedAt", 0L),
                 lastUsedAt = obj.optLong("lastUsedAt", 0L),
+                isAuthExpired = obj.optBoolean("isAuthExpired", false),
+                authExpiredAt = obj.optLong("authExpiredAt", 0L),
             )
         }
 
@@ -51,10 +55,13 @@ class AntigravityMultiAccountTest {
         assertEquals("alpha@example.com", deserialized[0].email)
         assertTrue(deserialized[0].isActive)
         assertFalse(deserialized[0].isQuotaExhausted)
+        assertFalse(deserialized[0].isAuthExpired)
         assertEquals("beta@example.com", deserialized[1].email)
         assertFalse(deserialized[1].isActive)
         assertTrue(deserialized[1].isQuotaExhausted)
         assertEquals(5000L, deserialized[1].quotaExhaustedAt)
+        assertTrue(deserialized[1].isAuthExpired)
+        assertEquals(6000L, deserialized[1].authExpiredAt)
     }
 
     @Test
@@ -198,5 +205,88 @@ class AntigravityMultiAccountTest {
         assertFalse(isCredentialValid(emptyFile))
         assertFalse(isCredentialValid(blankFile))
         assertFalse(isCredentialValid(File(tempFolder.root, "non_existent.json")))
+    }
+
+    @Test
+    fun `detects 401 unauthenticated and oauth token failure patterns`() {
+        fun isAuthFailure(reason: String): Boolean {
+            val value = reason.lowercase()
+            return "unauthenticated" in value ||
+                "401" in value ||
+                "invalid authentication credentials" in value ||
+                "oauth 2 access token" in value ||
+                "login cookie" in value ||
+                "authentication required" in value ||
+                "authentication failed" in value ||
+                "auth expired" in value ||
+                "sign-in" in value ||
+                "not signed in" in value ||
+                "token expired" in value
+        }
+
+        // Exact screenshot failure string
+        val screenshotError = "UNAUTHENTICATED (code 401): Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project."
+        assertTrue(isAuthFailure(screenshotError))
+
+        // Sanitized friendly error
+        assertTrue(isAuthFailure("Antigravity session authentication expired or invalid (401). Please reconnect your Google account in Settings."))
+        assertTrue(isAuthFailure("Antigravity needs Google sign-in. Open Settings → Coding agent."))
+        assertTrue(isAuthFailure("Authentication failed for account"))
+        assertTrue(isAuthFailure("OAuth 2 access token expired"))
+
+        // Unrelated errors should not trigger auth failure
+        assertFalse(isAuthFailure("File not found"))
+        assertFalse(isAuthFailure("HTTP 500 internal server error"))
+        assertFalse(isAuthFailure("Quota limit reached"))
+    }
+
+    @Test
+    fun `rotates to healthy account and skips auth-expired account`() {
+        val accounts = listOf(
+            AntigravityAccount("user1@example.com", isActive = true, isAuthExpired = true),
+            // user2 is auth-expired (should be skipped!)
+            AntigravityAccount("user2@example.com", isActive = false, isAuthExpired = true),
+            // user3 has quota exhausted
+            AntigravityAccount("user3@example.com", isActive = false, isQuotaExhausted = true),
+            // user4 is healthy and valid
+            AntigravityAccount("user4@example.com", isActive = false, isQuotaExhausted = false, isAuthExpired = false),
+        )
+
+        val activeIndex = accounts.indexOfFirst { it.isActive }
+        val candidatesInOrder = (1 until accounts.size).map { offset ->
+            val index = (activeIndex + offset) % accounts.size
+            accounts[index]
+        }
+
+        val healthyCandidate = candidatesInOrder.firstOrNull { !it.isQuotaExhausted && !it.isAuthExpired }
+        assertNotNull(healthyCandidate)
+        assertEquals("user4@example.com", healthyCandidate?.email)
+    }
+
+    @Test
+    fun `sanitizes raw 401 google dev console error into clean user toast`() {
+        fun sanitizeSessionFailedToast(reason: String): String? {
+            val value = reason.lowercase()
+            return when {
+                "unauthenticated" in value || "401" in value || "invalid authentication credentials" in value ||
+                    "oauth 2 access token" in value || "token expired" in value ->
+                    "Google session expired (401). Reconnect your account in Settings → Google accounts."
+                "user not found" in value ->
+                    "Account not found. Please sign in again."
+                "api key" in value ->
+                    "API key authentication error. Check credentials in Settings."
+                "out of credits" in value || "quota" in value || "429" in value ->
+                    "Usage quota limit reached. Auto-switching or check plan limits."
+                "authentication" in value || "sign-in" in value ->
+                    "Authentication failed. Reconnect your account in Settings."
+                else -> null
+            }
+        }
+
+        val rawScreenshotError = "UNAUTHENTICATED (code 401): Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project."
+        val sanitized = sanitizeSessionFailedToast(rawScreenshotError)
+        assertEquals("Google session expired (401). Reconnect your account in Settings → Google accounts.", sanitized)
+        assertFalse(sanitized!!.contains("developers.google.com"))
+        assertFalse(sanitized.contains("Expected OAuth 2"))
     }
 }

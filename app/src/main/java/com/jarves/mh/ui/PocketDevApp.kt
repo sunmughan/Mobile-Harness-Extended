@@ -11,11 +11,13 @@ import android.os.Build
 import android.os.PowerManager
 import android.net.Uri
 import android.provider.Settings
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.webkit.WebChromeClient
 import android.widget.Toast
 import com.jarves.mh.BuildConfig
 import com.jarves.mh.R
@@ -4934,7 +4936,14 @@ private fun WorkspaceScreen(
                     onKeepFileChange,
                     onOpenFile = onOpenFile,
                 )
-                WorkspaceTab.PREVIEW -> PreviewTab(state.previewReady, state.previewUrl)
+                WorkspaceTab.PREVIEW -> PreviewTab(
+                    ready = state.previewReady,
+                    url = state.previewUrl,
+                    onHuntWithAgent = { agentPrompt ->
+                        selectedTab = WorkspaceTab.CHAT
+                        onSend(agentPrompt)
+                    },
+                )
                 }
             }
         }
@@ -6329,6 +6338,10 @@ private fun MessageBubble(
     onAddRoadmapComment: (stepId: String?) -> Unit = {},
     onApproveAndBuildRoadmap: () -> Unit = {},
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    var copied by remember { mutableStateOf(false) }
+
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         Surface(
             color = if (message.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
@@ -6340,13 +6353,13 @@ private fun MessageBubble(
                     if (message.fromUser) {
                         MarkdownText(
                             markdown = message.text,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
+                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     } else {
                         MarkdownText(
                             markdown = message.text,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
+                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 4.dp),
                             color = MaterialTheme.colorScheme.onSurface,
                             onRunCode = onRunInTerminal,
                         )
@@ -6360,17 +6373,9 @@ private fun MessageBubble(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
-                if (!message.fromUser && message.workedMillis > 0L) {
-                    Text(
-                        text = "Worked for ${formatDuration((message.workedMillis / 1_000L).coerceAtLeast(1L))}",
-                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                    )
-                }
                 if (message.attachments.isNotEmpty()) {
                     Column(
-                        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         message.attachments.forEach { attachment ->
@@ -6378,7 +6383,45 @@ private fun MessageBubble(
                         }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
+
+                // Action bar: worked duration (if assistant) + 1-Tap Copy button (for prompt or response)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 8.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    if (!message.fromUser && message.workedMillis > 0L) {
+                        Text(
+                            text = "Worked for ${formatDuration((message.workedMillis / 1_000L).coerceAtLeast(1L))}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                        )
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
+
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(message.text))
+                            copied = true
+                            val label = if (message.fromUser) "Prompt copied to clipboard" else "Response copied to clipboard"
+                            Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                            contentDescription = if (message.fromUser) "Copy prompt" else "Copy response",
+                            tint = if (copied) PocketGreen
+                            else if (message.fromUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
             }
         }
     }
@@ -6632,10 +6675,16 @@ private data class BrowserBookmark(
 
 private const val DESKTOP_USER_AGENT =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+private const val MOBILE_CHROME_USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PreviewTab(ready: Boolean, url: String?) {
+private fun PreviewTab(
+    ready: Boolean,
+    url: String?,
+    onHuntWithAgent: ((String) -> Unit)? = null,
+) {
     val context = LocalContext.current
 
     // Multi-tab state
@@ -6659,6 +6708,7 @@ private fun PreviewTab(ready: Boolean, url: String?) {
     var loading by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     val canGoBack = remember { mutableStateOf(false) }
+    var lastLoadedUrl by remember(activeTabId) { mutableStateOf<String?>(null) }
 
     // UI overlays & sheets
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -6736,7 +6786,7 @@ private fun PreviewTab(ready: Boolean, url: String?) {
             if (it.id == activeTabId) it.copy(isDesktopMode = newDesktop) else it
         }
         webView?.settings?.let { s ->
-            s.userAgentString = if (newDesktop) DESKTOP_USER_AGENT else null
+            s.userAgentString = if (newDesktop) DESKTOP_USER_AGENT else MOBILE_CHROME_USER_AGENT
             s.useWideViewPort = true
             s.loadWithOverviewMode = true
         }
@@ -7275,6 +7325,7 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                 PriceHuntWidget(
                     webView = webView,
                     onNavigate = { navigateTo(it) },
+                    onHuntWithAgent = onHuntWithAgent,
                 )
 
                 Surface(
@@ -7338,8 +7389,10 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                 factory = { ctx ->
                     WebView(ctx).apply {
                         webView = this
+                        PriceHuntController.attachWebView(this)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
                         settings.allowFileAccess = true
                         settings.allowContentAccess = true
                         settings.loadWithOverviewMode = true
@@ -7347,10 +7400,17 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                         settings.setSupportZoom(true)
                         settings.builtInZoomControls = true
                         settings.displayZoomControls = false
+                        settings.javaScriptCanOpenWindowsAutomatically = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-                        if (currentTab.isDesktopMode) {
-                            settings.userAgentString = DESKTOP_USER_AGENT
-                        }
+                        val initialUserAgent = if (currentTab.isDesktopMode) DESKTOP_USER_AGENT else MOBILE_CHROME_USER_AGENT
+                        settings.userAgentString = initialUserAgent
+
+                        val cookieManager = CookieManager.getInstance()
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
 
                         setFindListener { activeMatchOrdinal, numberOfMatches, _ ->
                             findMatchCurrent = activeMatchOrdinal + 1
@@ -7366,7 +7426,8 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                                 val sniperActive = PriceHuntController.state.value.isScanning ||
                                     PriceHuntController.state.value.isAutoTracking
-                                if (PriceHuntWebInterceptor.shouldBlockRequest(request, sniperActive)) {
+                                // Only block annoying trackers; never block page UI assets (SVGs, WebP, fonts) so e-commerce pages render cleanly
+                                if (PriceHuntWebInterceptor.shouldBlockRequest(request, sniperActive, blockMedia = false)) {
                                     return PriceHuntWebInterceptor.createEmptyResponse()
                                 }
                                 return super.shouldInterceptRequest(view, request)
@@ -7376,9 +7437,11 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                                 val target = request?.url ?: return false
                                 val scheme = target.scheme?.lowercase()
                                 if (scheme == "http" || scheme == "https" || scheme == "about") {
-                                    address = target.toString()
+                                    val targetStr = target.toString()
+                                    address = targetStr
+                                    lastLoadedUrl = targetStr
                                     tabs = tabs.map {
-                                        if (it.id == activeTabId) it.copy(url = target.toString(), activeUrl = target.toString()) else it
+                                        if (it.id == activeTabId) it.copy(url = targetStr, activeUrl = targetStr) else it
                                     }
                                     return false
                                 }
@@ -7395,6 +7458,7 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                                 super.onPageFinished(view, finishedUrl)
                                 if (!finishedUrl.isNullOrBlank() && finishedUrl != "about:blank") {
                                     address = finishedUrl
+                                    lastLoadedUrl = finishedUrl
                                     val title = view?.title.orEmpty().ifBlank { finishedUrl }
                                     tabs = tabs.map {
                                         if (it.id == activeTabId) it.copy(
@@ -7410,19 +7474,26 @@ private fun PreviewTab(ready: Boolean, url: String?) {
                                     }
                                 }
                                 canGoBack.value = view?.canGoBack() == true
+                                if (view != null) {
+                                    PriceHuntController.onPageLoaded(context, view)
+                                }
                             }
                         }
+                        lastLoadedUrl = targetUrl
                         loadUrl(targetUrl)
                     }
                 },
                 update = { current ->
                     webView = current
-                    if (currentTab.isDesktopMode && current.settings.userAgentString != DESKTOP_USER_AGENT) {
-                        current.settings.userAgentString = DESKTOP_USER_AGENT
-                    } else if (!currentTab.isDesktopMode && current.settings.userAgentString != null) {
-                        current.settings.userAgentString = null
+                    PriceHuntController.attachWebView(current)
+                    val desiredUserAgent = if (currentTab.isDesktopMode) DESKTOP_USER_AGENT else MOBILE_CHROME_USER_AGENT
+                    if (current.settings.userAgentString != desiredUserAgent) {
+                        current.settings.userAgentString = desiredUserAgent
                     }
-                    if (current.url != targetUrl) current.loadUrl(targetUrl)
+                    if (targetUrl != lastLoadedUrl) {
+                        lastLoadedUrl = targetUrl
+                        current.loadUrl(targetUrl)
+                    }
                 },
                 modifier = Modifier.fillMaxSize(),
             )

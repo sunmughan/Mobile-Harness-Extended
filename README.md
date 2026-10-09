@@ -10,7 +10,7 @@
 
   <br />
 
-  [![Release v2.2.1](https://img.shields.io/badge/Release-v2.2.1-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v2.2.1)
+  [![Release v2.2.2](https://img.shields.io/badge/Release-v2.2.2-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v2.2.2)
   [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#system-requirements)
   [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#system-requirements)
   [![MIT License](https://img.shields.io/badge/License-MIT-8B7CF6?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
@@ -18,8 +18,8 @@
 
   <br />
 
-  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.1/app-online-release.apk) &nbsp;•&nbsp;
-  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.1/app-offline-release.apk) &nbsp;•&nbsp;
+  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-online-release.apk) &nbsp;•&nbsp;
+  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-offline-release.apk) &nbsp;•&nbsp;
   [**Watch Walkthrough (3 min)**](https://youtu.be/QzAau52Z7yQ) &nbsp;•&nbsp;
   [**Quickstart Guide**](#quickstart) &nbsp;•&nbsp;
   [**Architecture**](#architecture) &nbsp;•&nbsp;
@@ -28,9 +28,11 @@
 </div>
 
 > [!NOTE]
-> **Current development status (October 2026):** Mobile Harness Extended **v2.2.1** (versionCode `29`) is the latest verified production release.
+> **Current development status (October 2026):** Mobile Harness Extended **v2.2.2** (versionCode `30`) is the latest verified production release.
 > 
 > Major advancements in this release:
+> - **Antigravity Multi-Account 401 Session Failover**: Sanitized Google OAuth token expiration and 401 unauthenticated errors, automatic zero-downtime round-robin failover to valid accounts without interrupting running agent tasks, and intuitive "Session Expired" badge with one-tap "Reconnect" in Settings.
+> - **Developer Tools Settings Redesign (Equal Gaps)**: Eliminated compounding vertical spacers and manual paddings to enforce strictly equal 10dp element gaps across switches, dividers, and toolchain cards with a balanced two-line layout.
 > - **Modernized RTL-Safe Compose Icons & Clean Diagnostics**: Modernized all vector icons to `Icons.AutoMirrored.Filled.*` and upgraded `WifiLock` to `WIFI_MODE_FULL_LOW_LATENCY` on Android 10+ (API 29+).
 > - **Stealth Deal Sniper & Anti-Sponsored Card Filtering**: Injected DOM filtering in `PriceScraperEngine` to ignore sponsored carousel cards, parse deal countdown badges, and normalize price ranges.
 > - **Process-Level AppScope Background Resilience**: Background tasks and agent loops execute on process-level `AppScope`, ensuring tasks never pause or terminate when switching to recent apps or under OS memory pressure.
@@ -80,7 +82,7 @@
       <h3>Online Edition</h3>
       <p><strong>~87.2 MiB · Core bundled</strong></p>
       <p>Lightweight APK. Downloads verified runtime packages (Python, Android SDK, Claude, Antigravity, DeepSeek) on demand.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.1/app-online-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-online-release.apk">
         <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
       </a>
     </td>
@@ -88,7 +90,7 @@
       <h3>Offline Edition</h3>
       <p><strong>~847.3 MiB · Everything included</strong></p>
       <p>Completely self-contained. Pre-bundles all ARM64 runtimes (Core, Python, Android, Claude, DeepSeek, Antigravity) for zero-network setup.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.1/app-offline-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-offline-release.apk">
         <img src="https://img.shields.io/badge/Download-Offline_APK-5B8DEF?style=for-the-badge&logo=android&logoColor=white" alt="Download Offline APK" />
       </a>
     </td>
@@ -96,7 +98,7 @@
 </table>
 
 <p align="center">
-  <strong>ARM64 Android 9+ · Release v2.2.1</strong><br />
+  <strong>ARM64 Android 9+ · Release v2.2.2</strong><br />
   <sub>Direct APK installation · No root required · No USB or wireless ADB pairing · Permanent Codeair signature</sub>
 </p>
 
@@ -218,7 +220,7 @@ Download the latest signed release APK from [GitHub Releases](https://github.com
 
 ```text
 Target Architecture : ARM64 (arm64-v8a)
-Package Version     : v2.2.1
+Package Version     : v2.2.2
 Minimum OS Level    : Android 9.0 (API 28)
 ```
 

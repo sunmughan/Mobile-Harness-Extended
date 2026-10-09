@@ -34,18 +34,27 @@ object PriceHuntWebInterceptor {
     )
 
     /**
-     * Checks if a web resource request should be blocked to save bandwidth and accelerate extraction.
+     * Checks if a web resource request should be blocked.
+     * During interactive browsing, media (images, fonts, SVGs) are preserved by default
+     * so modern single-page apps (Flipkart, Amazon) render and hydrate properly.
+     * Heavy media is only dropped when blockMedia is explicitly requested (e.g. background headless scraping).
      */
-    fun shouldBlockRequest(request: WebResourceRequest?, isSniperActive: Boolean): Boolean {
+    fun shouldBlockRequest(
+        request: WebResourceRequest?,
+        isSniperActive: Boolean,
+        blockMedia: Boolean = false,
+    ): Boolean {
         if (!isSniperActive || request == null) return false
         val uri = request.url ?: return false
         val path = uri.path?.lowercase().orEmpty()
         val host = uri.host?.lowercase().orEmpty()
 
-        // Block media/image/font extensions
-        for (ext in BLOCKED_EXTENSIONS) {
-            if (path.endsWith(ext) || path.contains("$ext?")) {
-                return true
+        // Block media/image/font extensions only if blockMedia is enabled
+        if (blockMedia) {
+            for (ext in BLOCKED_EXTENSIONS) {
+                if (path.endsWith(ext) || path.contains("$ext?")) {
+                    return true
+                }
             }
         }
 

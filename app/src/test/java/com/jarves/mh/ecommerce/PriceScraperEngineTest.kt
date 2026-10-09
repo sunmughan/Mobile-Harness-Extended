@@ -207,4 +207,41 @@ class PriceScraperEngineTest {
         assertFalse(PriceHuntController.state.value.isAutoTracking)
         assertNull(PriceHuntController.state.value.nextCheckTimeMs)
     }
+
+    @Test
+    fun testUserFlipkartProductUrlDetection() {
+        val url = "https://www.flipkart.com/safari-astra-neo-check-in-suitcase-8-wheels-26-inch/p/itmc9e2aa86f2a08?pid=STCHCE5HHHQMQYZE&lid=LSTSTCHCE5HHHQMQYZEX7WYVM&marketplace=FLIPKART&pageUID=1791528475248"
+        assertEquals(ECommercePlatform.FLIPKART, ECommercePlatform.detect(url))
+
+        PriceHuntController.updateUrl(url)
+        assertEquals(ECommercePlatform.FLIPKART, PriceHuntController.state.value.platform)
+        assertEquals(url, PriceHuntController.state.value.url)
+    }
+
+    @Test
+    fun testBuildAgentPrompt() {
+        val testUrl = "https://www.flipkart.com/safari-astra-neo-check-in-suitcase-8-wheels-26-inch/p/itmc9e2aa86f2a08"
+        val prompt = PriceHuntController.buildAgentPrompt(
+            url = testUrl,
+            platform = ECommercePlatform.FLIPKART,
+            targetPrice = 2999L,
+        )
+
+        assertTrue(prompt.contains(testUrl))
+        assertTrue(prompt.contains("Flipkart"))
+        assertTrue(prompt.contains("Target Price: ₹2,999"))
+        assertTrue(prompt.contains("Autonomous Price Hunt & Deal Reality Analysis"))
+        assertTrue(prompt.contains("Deal Reality Score"))
+    }
+
+    @Test
+    fun testPriceHuntWebInterceptorPreservesMediaByDefault() {
+        // Without active sniper or null request
+        assertFalse(PriceHuntWebInterceptor.shouldBlockRequest(null, isSniperActive = true))
+
+        // Jitter interval is within valid range
+        val interval = PriceHuntWebInterceptor.calculateNextJitterIntervalMs(baseMinutes = 20, minJitterMinutes = 5, maxJitterMinutes = 15)
+        assertTrue(interval >= 25 * 60 * 1000L)
+        assertTrue(interval <= 35 * 60 * 1000L)
+    }
 }

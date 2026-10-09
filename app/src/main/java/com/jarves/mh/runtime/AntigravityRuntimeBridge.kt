@@ -30,6 +30,8 @@ data class AntigravityAccount(
     val isQuotaExhausted: Boolean = false,
     val quotaExhaustedAt: Long = 0L,
     val lastUsedAt: Long = 0L,
+    val isAuthExpired: Boolean = false,
+    val authExpiredAt: Long = 0L,
 )
 
 data class AntigravityAuthState(
@@ -584,10 +586,16 @@ class AntigravityRuntimeBridge(
         return when {
             RuntimeFailureClassifier.isTransientNetworkFailure(value) ->
                 RuntimeFailureClassifier.friendlyNetworkErrorMessage(value)
-            value.contains("authentication required", true) ||
+            value.contains("unauthenticated", true) ||
+                value.contains("code 401", true) ||
+                value.contains("invalid authentication credentials", true) ||
+                value.contains("oauth 2 access token", true) ||
+                value.contains("login cookie", true) ||
+                value.contains("token expired", true) ||
+                value.contains("authentication required", true) ||
                 value.contains("authentication failed", true) ||
                 value.contains("not signed in", true) ->
-                "Antigravity needs Google sign-in. Open Settings → Coding agent."
+                "Antigravity session authentication expired or invalid (401). Please reconnect your Google account in Settings."
             value.contains("out of credits", true) || value.contains("quota", true) ->
                 "Your Antigravity account is out of credits. Check the account plan or wait for credits to reset."
             value.contains("timed out", true) || value.contains("timeout", true) ->

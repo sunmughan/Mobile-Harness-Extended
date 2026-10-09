@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -77,6 +79,7 @@ import com.jarves.mh.ecommerce.PriceWatchlistManager
 fun PriceHuntWidget(
     webView: WebView?,
     onNavigate: (String) -> Unit,
+    onHuntWithAgent: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -294,8 +297,36 @@ fun PriceHuntWidget(
 
             Spacer(Modifier.height(10.dp))
 
-            // Snipe Action Button
+            // Primary: Hunt with Antigravity AI (Gemini Agent)
             Button(
+                onClick = {
+                    val prompt = PriceHuntController.buildAgentPrompt(
+                        url = state.url,
+                        platform = state.platform,
+                        targetPrice = state.targetPrice,
+                    )
+                    onHuntWithAgent?.invoke(prompt)
+                },
+                enabled = state.url.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                ),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("⚡ Hunt with Antigravity AI", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Secondary: In-Browser Live Sniper
+            OutlinedButton(
                 onClick = {
                     PriceHuntController.executeScan(
                         context = context,
@@ -305,19 +336,20 @@ fun PriceHuntWidget(
                 },
                 enabled = !state.isScanning && state.url.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF2E7D32),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFF2E7D32),
                 ),
+                border = BorderStroke(1.dp, Color(0xFF2E7D32)),
                 shape = RoundedCornerShape(10.dp),
             ) {
                 if (state.isScanning) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
-                        color = Color.White,
+                        color = Color(0xFF2E7D32),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Stealth Sniping...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Sniping in Browser...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 } else {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.TrendingDown,
@@ -325,7 +357,7 @@ fun PriceHuntWidget(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Snipe Price & Verify Deal", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Snipe Live in Browser", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 

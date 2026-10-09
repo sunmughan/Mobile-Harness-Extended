@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
 import com.jarves.mh.runtime.NotificationCoordinator
+import java.lang.ref.WeakReference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,6 +83,57 @@ object PriceHuntController {
         }
     }
 
+    private var attachedWebView: WeakReference<WebView>? = null
+
+    fun attachWebView(view: WebView?) {
+        attachedWebView = view?.let { WeakReference(it) }
+    }
+
+    /**
+     * Builds a detailed autonomous price-hunting instruction prompt for Antigravity AI (Gemini).
+     */
+    fun buildAgentPrompt(
+        url: String = _state.value.url,
+        platform: ECommercePlatform = _state.value.platform,
+        targetPrice: Long? = _state.value.targetPrice,
+    ): String {
+        val cleanUrl = url.trim()
+        val targetSnippet = if (targetPrice != null && targetPrice > 0L) {
+            "Target Price: ₹${DealRealityScorer.formatInr(targetPrice)}"
+        } else {
+            "Target Price: Best available deal"
+        }
+        return """
+        Autonomous Price Hunt & Deal Reality Analysis:
+        Product URL: $cleanUrl
+        Platform: ${platform.displayName}
+        $targetSnippet
+
+        Please execute an autonomous deal investigation:
+        1. Access the product URL directly (via browser automation, curl, or DOM inspection).
+        2. Extract verified live selling price, listed MRP, and claimed discount percentage.
+        3. Cross-reference historical festival pricing: determine if MRP was artificially marked up before the sale.
+        4. Inspect seller credibility, rating, and all applicable instant bank card offers.
+        5. Deliver an actionable AI Deal Verdict:
+           - Deal Reality Score (0 to 100)
+           - Genuine Discount vs Fake/Inflated Markup verdict
+           - Final recommendation: BUY NOW, WAIT FOR LOWER PRICE, or AVOID.
+        """.trimIndent()
+    }
+
+    /**
+     * Called when the active browser tab finishes loading a product page.
+     * Immediately triggers DOM extraction without relying on arbitrary delays.
+     */
+    fun onPageLoaded(context: Context, webView: WebView) {
+        val current = _state.value
+        if (!current.isScanning) return
+        val targetUrl = current.url.trim()
+        val platform = current.platform
+        attachWebView(webView)
+        runExtractionSteps(context, webView, targetUrl, platform)
+    }
+
     /**
      * Executes the in-browser stealth DOM extraction.
      */
@@ -101,27 +153,30 @@ object PriceHuntController {
             it.copy(
                 platform = platform,
                 isScanning = true,
-                scanStep = "Initializing stealth session (Bypassing Akamai/Bot shields)...",
+                scanStep = "Navigating to product page in browser...",
                 errorMessage = null,
             )
         }
 
         PriceHuntWebInterceptor.persistSessionCookies()
+        webView?.let { attachWebView(it) }
+        val currentView = webView ?: attachedWebView?.get()
 
         // If webView is already active and viewing this URL, extract DOM immediately
-        if (webView != null && webView.url?.contains(platform.domainSnippet) == true) {
-            runExtractionSteps(context, webView, targetUrl, platform)
+        if (currentView != null && currentView.url?.contains(platform.domainSnippet) == true) {
+            runExtractionSteps(context, currentView, targetUrl, platform)
         } else {
-            // Navigate the browser tab to the product page with interceptor active
+            // Navigate the browser tab to the product page
             onNavigate(targetUrl)
             _state.update {
-                it.copy(scanStep = "Loading product page with resource optimization (Skipping heavy media)...")
+                it.copy(scanStep = "Loading product page and preparing DOM extraction...")
             }
-            // Allow page to mount and trigger extraction
+            // Allow page to mount and trigger extraction fallback if onPageFinished is delayed
             mainHandler.postDelayed({
-                webView?.let { runExtractionSteps(context, it, targetUrl, platform) }
+                val activeView = webView ?: attachedWebView?.get()
+                activeView?.let { runExtractionSteps(context, it, targetUrl, platform) }
                     ?: runFallbackSimulatedExtraction(context, targetUrl, platform)
-            }, 2500L)
+            }, 3500L)
         }
     }
 
