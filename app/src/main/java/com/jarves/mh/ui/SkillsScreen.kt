@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
@@ -92,20 +95,23 @@ fun SkillsScreen(
             contentPadding = PaddingValues(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // 1. Search GitHub Skills Card
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Extension, null)
-                            Spacer(Modifier.size(10.dp))
+                            Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Universal Agent Skills", fontWeight = FontWeight.Bold)
+                                Text("Search GitHub Skills", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 Text(
-                                    "Import standard SKILL.md bundles once and make them available to the selected coding agent.",
-                                    fontSize = 12.sp,
+                                    "Find and explore reusable capabilities from GitHub",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -114,26 +120,55 @@ fun SkillsScreen(
                             onValueChange = { query = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            leadingIcon = { Icon(Icons.Default.Search, null) },
-                            placeholder = { Text("Search GitHub: security, android, react…") },
+                            leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp)) },
+                            placeholder = { Text("e.g. security, android, react…", fontSize = 12.sp) },
                         )
                         Button(
                             onClick = { onSearch(query) },
                             enabled = query.trim().length >= 2 && !busy,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(36.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         ) {
-                            if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.Search, null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("Discover GitHub skills")
+                            if (busy) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                            } else {
+                                Icon(Icons.Default.Search, null, Modifier.size(16.dp))
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text("Search skills", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
+                    }
+                }
+            }
+
+            // 2. Direct Import (URL / ZIP) Card
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Direct Import", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(
+                                    "Import from GitHub repo URL or local ZIP package",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                         OutlinedTextField(
                             value = githubUrl,
                             onValueChange = { githubUrl = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            leadingIcon = { Icon(Icons.Default.CloudDownload, null) },
-                            placeholder = { Text("https://github.com/owner/skill-repository") },
+                            leadingIcon = { Icon(Icons.Default.CloudDownload, null, Modifier.size(18.dp)) },
+                            placeholder = { Text("https://github.com/owner/skill-repository", fontSize = 12.sp) },
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(
@@ -142,27 +177,44 @@ fun SkillsScreen(
                                     githubUrl = ""
                                 },
                                 enabled = githubUrl.startsWith("https://github.com/") && !busy,
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Import GitHub") }
-                            Button(
+                                modifier = Modifier.weight(1f).height(36.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            ) {
+                                Text("Import URL", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
+                            OutlinedButton(
                                 onClick = { zipLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                                 enabled = !busy,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).height(36.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                             ) {
-                                Icon(Icons.Default.FileUpload, null)
-                                Spacer(Modifier.size(6.dp))
-                                Text("Import ZIP")
+                                Icon(Icons.Default.FileUpload, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Upload ZIP", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                             }
                         }
-                        message?.let { Text(it, fontSize = 12.sp) }
+                    }
+                }
+            }
+
+            // 3. Skill Updates Card
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("Auto-update skills", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                Text("Automatically keep GitHub skills up to date", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Auto-update skills", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
+                                Text("Automatically keep installed skills up to date", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Switch(
                                 checked = autoUpdateEnabled,
@@ -172,13 +224,19 @@ fun SkillsScreen(
                         OutlinedButton(
                             onClick = onCheckUpdates,
                             enabled = !busy,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(36.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         ) {
-                            if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
-                            Spacer(Modifier.size(8.dp))
-                            Text("Check for skill updates")
+                            if (busy) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text("Check updates", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         }
+                        message?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary) }
                     }
                 }
             }

@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -84,7 +85,9 @@ fun PriceHuntWidget(
     var showWizardDialog by remember { mutableStateOf(false) }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -94,7 +97,7 @@ fun PriceHuntWidget(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
         ) {
             // Header with Festive Badge
             Row(
@@ -149,12 +152,13 @@ fun PriceHuntWidget(
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Platform Selection Chips (Flipkart & Amazon)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 FilterChip(
                     selected = state.platform == ECommercePlatform.FLIPKART,
@@ -168,7 +172,7 @@ fun PriceHuntWidget(
                                     .background(Color(0xFF2874F0)),
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text("Flipkart BBD", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Flipkart", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         }
                     },
                     colors = FilterChipDefaults.filterChipColors(
@@ -189,7 +193,7 @@ fun PriceHuntWidget(
                                     .background(Color(0xFFFF9900)),
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text("Amazon GIF", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Amazon", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         }
                     },
                     colors = FilterChipDefaults.filterChipColors(
@@ -204,10 +208,10 @@ fun PriceHuntWidget(
                     onClick = { showWizardDialog = true },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722).copy(alpha = 0.15f)),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     modifier = Modifier.height(32.dp),
                 ) {
-                    Text("🎯 Deal Wizard", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722))
+                    Text("🎯 Deal Wizard", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5722), maxLines = 1)
                 }
             }
 
@@ -278,23 +282,31 @@ fun PriceHuntWidget(
                     modifier = Modifier.weight(1f),
                 )
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(start = 4.dp),
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.height(56.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Auto-Snipe", fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.width(4.dp))
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column {
+                            Text("Auto-Snipe", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text("25±10m jitter", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
                         Switch(
                             checked = state.isAutoTracking,
                             onCheckedChange = { PriceHuntController.toggleAutoTracking(it) },
+                            modifier = Modifier.scale(0.85f),
                         )
                     }
-                    Text("Jitter: 25±10m", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Snipe Action Button
             Button(

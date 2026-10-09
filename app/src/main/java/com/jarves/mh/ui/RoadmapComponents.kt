@@ -525,7 +525,7 @@ fun RoadmapCard(
                             modifier = Modifier.size(13.dp),
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Add Note", fontSize = 11.sp)
+                        Text("Add Note", fontSize = 11.sp, maxLines = 1)
                     }
 
                     if (!roadmap.isApproved) {
@@ -544,7 +544,7 @@ fun RoadmapCard(
                                 modifier = Modifier.size(14.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Approve & Build", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Approve & Build", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     } else {
                         Row(

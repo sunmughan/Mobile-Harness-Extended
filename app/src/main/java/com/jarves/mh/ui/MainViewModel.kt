@@ -404,12 +404,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val lastChatId = preferences.getLastActiveChatId(proj.id)
         (initialChats.firstOrNull { it.id == lastChatId } ?: initialChats.firstOrNull())?.id
     }
-    private val initialMessages = if (initialActiveProject != null && initialActiveChatId != null) {
+    private val initialMessages = (if (initialActiveProject != null && initialActiveChatId != null) {
         preferences.loadMessages(initialActiveProject.id, initialActiveChatId).ifEmpty {
             listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."))
         }
     } else {
         listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change."))
+    }).map { msg ->
+        if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank()) {
+            val parsed = RoadmapParser.parseFromText(msg.text, ExecutionMode.fromStored(preferences.executionMode))
+            if (parsed != null) msg.copy(roadmap = parsed) else msg
+        } else {
+            msg
+        }
     }
     private val initialActiveRoadmap = initialMessages.mapNotNull { it.roadmap }.lastOrNull()
     private val initialScratchpad = deriveScratchpadItems(initialActiveRoadmap, emptyList(), false)
@@ -4775,14 +4782,19 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                         if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                             msg.copy(roadmap = completedActiveRoadmap)
                         } else if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
-                            current.executionMode != ExecutionMode.BUILD && (current.activeRoadmap == null || !current.activeRoadmap.isApproved)) {
+                            current.executionMode != ExecutionMode.BUILD) {
                             val parsed = RoadmapParser.parseFromText(msg.text, stateWithResponse.executionMode)
                             if (parsed != null) msg.copy(roadmap = parsed) else msg
                         } else {
                             msg
                         }
                     }
-                    val latestRoadmap = completedActiveRoadmap ?: messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
+                    val newlyParsedRoadmap = messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull()
+                    val latestRoadmap = if (current.executionMode != ExecutionMode.BUILD && newlyParsedRoadmap != null && newlyParsedRoadmap.id != current.activeRoadmap?.id) {
+                        newlyParsedRoadmap
+                    } else {
+                        completedActiveRoadmap ?: newlyParsedRoadmap ?: current.activeRoadmap
+                    }
                     val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
                     sessionManager.recordSessionCompleted("Task completed successfully")
                     attachTaskDuration(stateWithResponse.copy(messages = messagesWithRoadmap), finishedAt).copy(
@@ -4825,14 +4837,19 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                             if (msg.roadmap?.id == current.activeRoadmap?.id && completedActiveRoadmap != null) {
                                 msg.copy(roadmap = completedActiveRoadmap)
                             } else if (!msg.fromUser && msg.roadmap == null && msg.text.isNotBlank() &&
-                                current.executionMode != ExecutionMode.BUILD && (current.activeRoadmap == null || !current.activeRoadmap.isApproved)) {
+                                current.executionMode != ExecutionMode.BUILD) {
                                 val parsed = RoadmapParser.parseFromText(msg.text, segmentFinishedState.executionMode)
                                 if (parsed != null) msg.copy(roadmap = parsed) else msg
                             } else {
                                 msg
                             }
                         }
-                        val latestRoadmap = completedActiveRoadmap ?: messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull() ?: current.activeRoadmap
+                        val failedNewlyParsedRoadmap = messagesWithRoadmap.mapNotNull { it.roadmap }.lastOrNull()
+                        val latestRoadmap = if (current.executionMode != ExecutionMode.BUILD && failedNewlyParsedRoadmap != null && failedNewlyParsedRoadmap.id != current.activeRoadmap?.id) {
+                            failedNewlyParsedRoadmap
+                        } else {
+                            completedActiveRoadmap ?: failedNewlyParsedRoadmap ?: current.activeRoadmap
+                        }
                         val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
                         attachTaskDuration(segmentFinishedState.copy(messages = messagesWithRoadmap), finishedAt).copy(
                             isRunning = false,

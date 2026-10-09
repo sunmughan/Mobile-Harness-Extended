@@ -441,7 +441,7 @@ fun SettingsScreen(
                         val installed = stack in state.installedDevStacks
                         val installing = state.devStackInstalling == stack
                         val removing = installing && state.devStackRemoving
-                        Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -456,7 +456,7 @@ fun SettingsScreen(
                                     if (installed) {
                                         val versionBadge = when (stack) {
                                             DevStack.WEB -> "v24"
-                                            DevStack.PYTHON -> installedEnvVersions["python"]?.let { "v$it" } ?: "v2026.09.2"
+                                            DevStack.PYTHON -> installedEnvVersions["python"]?.substringBefore(" (pip")?.let { "v$it" } ?: "v2026.09.2"
                                             DevStack.ANDROID -> installedEnvVersions["android"]?.let { "v$it" } ?: "v2026.09.1"
                                             DevStack.CPP -> installedEnvVersions["cpp"]?.let { "v$it" } ?: "v10.2"
                                             DevStack.PHP -> installedEnvVersions["php"]?.let { "v$it" } ?: "v8.4"
@@ -1295,7 +1295,7 @@ private fun AntigravityConnectionSettings(
                         ) {
                             Icon(Icons.Default.Add, null, Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Add Google Account", fontSize = 12.sp)
+                            Text("Add Account", fontSize = 12.sp, maxLines = 1)
                         }
                         OutlinedButton(
                             onClick = onLogout,
@@ -1671,131 +1671,70 @@ private fun RuntimeInfoRow(label: String, value: String) {
 
 @Composable
 private fun AppUpdateChannelSection(
-    initialUrl: String,
-    initialToken: String,
-    onSave: (String, String) -> Unit,
-    onClear: () -> Unit,
+    initialUrl: String = "",
+    initialToken: String = "",
+    onSave: (String, String) -> Unit = { _, _ -> },
+    onClear: () -> Unit = {},
     onCheckNow: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    var url by rememberSaveable(initialUrl) { mutableStateOf(initialUrl) }
-    var token by rememberSaveable(initialToken) { mutableStateOf(initialToken) }
-    val isOverridden = initialUrl.isNotBlank() || initialToken.isNotBlank()
     val isOnline = BuildConfig.APP_VARIANT.equals("online", ignoreCase = true)
 
     SettingsAccordion(
-        title = "App updates & release channel",
+        title = "App updates",
         subtitle = "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE}) · ${if (isOnline) "Online Edition" else "Offline Edition"}",
         icon = Icons.Default.CloudDownload,
         expanded = expanded,
         onClick = { expanded = !expanded },
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Edition & Channel Details Banner
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxWidth(),
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (isOnline) Color(0xFF2874F0) else Color(0xFF2E7D32),
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = if (isOnline) Color(0xFF2874F0) else Color(0xFF2E7D32),
-                            ) {
-                                Text(
-                                    text = if (isOnline) "ONLINE EDITION" else "OFFLINE EDITION",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
-                            }
                             Text(
-                                text = "v${BuildConfig.VERSION_NAME}",
-                                fontSize = 12.sp,
+                                text = if (isOnline) "ONLINE EDITION" else "OFFLINE EDITION",
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                         }
-                        Spacer(Modifier.height(4.dp))
                         Text(
-                            text = if (isOnline) {
-                                "Receives 'app-online-release.apk' updates (~85MB base, dynamic runtimes)."
-                            } else {
-                                "Receives 'app-offline-release.apk' updates (~880MB, fully bundled standalone runtimes)."
-                            },
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 14.sp,
+                            text = "v${BuildConfig.VERSION_NAME}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
-
-                    Button(
-                        onClick = onCheckNow,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp),
-                    ) {
-                        Text("Check now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Automatic background updates are enabled.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 14.sp,
+                    )
                 }
-            }
 
-            Text(
-                "For private repositories or custom mirrors, specify your manifest/proxy endpoint and personal access token (PAT) below. Leave blank for default release channel.",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 15.sp,
-            )
-
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it },
-                label = { Text("Update manifest / API URL (optional)") },
-                placeholder = { Text("https://api.github.com/repos/.../releases/latest") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text("Private repository token (optional)") },
-                placeholder = { Text("github_pat_... or ghp_...") },
-                singleLine = true,
-                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
                 Button(
-                    onClick = { onSave(url, token) },
-                    modifier = Modifier.weight(1f),
+                    onClick = onCheckNow,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(34.dp),
                 ) {
-                    Text(if (isOverridden) "Save & check" else "Apply")
-                }
-                OutlinedButton(
-                    onClick = {
-                        url = ""
-                        token = ""
-                        onClear()
-                    },
-                    enabled = isOverridden,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Reset default")
+                    Text("Check now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
             }
         }

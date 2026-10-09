@@ -416,7 +416,7 @@ class RuntimeInstaller(private val context: Context) {
             val pypi = JSONObject(fetchText("https://pypi.org/pypi/pip/json"))
             val pipVer = pypi.getJSONObject("info").getString("version")
             val pyBase = get("python") ?: PYTHON_BUNDLE.version
-            put("python", "$pyBase (pip $pipVer)")
+            put("python", pyBase)
         }
 
         // Live official Composer version from getcomposer.org
@@ -466,7 +466,7 @@ class RuntimeInstaller(private val context: Context) {
                 val pipVer = runCatching {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
                 }.getOrNull()
-                val finalVersion = if (pipVer != null) "$cleanExpected (pip $pipVer)" else expectedVersion
+                val finalVersion = cleanExpected
                 File(rootfs, ".pocket-python-tools-version").writeText(finalVersion)
                 writeDevStackState(readDevStackState().apply { put(DevStack.PYTHON.name, true) })
                 onProgress(RuntimeInstallProgress("Python tools are ready ($finalVersion)", 1f, event = RuntimeInstallEvent.COMPLETED))
@@ -1038,7 +1038,7 @@ class RuntimeInstaller(private val context: Context) {
                 val pipVer = runCatching {
                     runGuest(runtime.proot, "pip3 --version").split(" ").getOrNull(1)
                 }.getOrNull()
-                val finalVer = if (pipVer != null) "$targetVersion (pip $pipVer)" else targetVersion
+                val finalVer = targetVersion
                 File(rootfs, ".pocket-python-tools-version").writeText(finalVer)
                 onProgress(RuntimeInstallProgress("Python tools updated ($finalVer)", 1f, event = RuntimeInstallEvent.COMPLETED))
             }

@@ -1246,12 +1246,20 @@ private fun AgentAntigravityCard(
                                             ),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        Text(
-                                            "G",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (account.isActive) Color(0xFF34A853) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
+                                        if (account.isActive) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Active account",
+                                                tint = Color(0xFF34A853),
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f), CircleShape),
+                                            )
+                                        }
                                     }
                                     Column(Modifier.weight(1f)) {
                                         Text(
@@ -1261,37 +1269,19 @@ private fun AgentAntigravityCard(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            if (account.isActive) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = Color(0xFF34A853).copy(alpha = 0.15f),
-                                                ) {
-                                                    Text(
-                                                        "Active",
-                                                        fontSize = 10.sp,
-                                                        color = Color(0xFF2E9D72),
-                                                        fontWeight = FontWeight.Medium,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                                    )
-                                                }
-                                            }
-                                            if (account.isQuotaExhausted) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                                                ) {
-                                                    Text(
-                                                        "Quota Limit Hit",
-                                                        fontSize = 10.sp,
-                                                        color = MaterialTheme.colorScheme.error,
-                                                        fontWeight = FontWeight.Medium,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                                    )
-                                                }
+                                        if (account.isQuotaExhausted) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                                modifier = Modifier.padding(top = 2.dp),
+                                            ) {
+                                                Text(
+                                                    "Quota Limit Hit",
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.error,
+                                                    fontWeight = FontWeight.Medium,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                )
                                             }
                                         }
                                     }
@@ -1450,7 +1440,7 @@ private fun AgentAntigravityCard(
                         ) {
                             Icon(Icons.Default.Add, null, Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Add Google Account", fontSize = 12.sp)
+                            Text("Add Account", fontSize = 12.sp, maxLines = 1)
                         }
                         OutlinedButton(
                             onClick = onLogout,

@@ -599,7 +599,12 @@ class AppPreferences(private val context: Context) {
                                 }
                             } ?: emptyList(),
                         )
-                    },
+                    } ?: if (!obj.optBoolean("fromUser", false) && obj.optString("text").isNotBlank()) {
+                        com.jarves.mh.ui.RoadmapParser.parseFromText(
+                            obj.optString("text"),
+                            runCatching { ExecutionMode.valueOf(preferences.getString("execution_mode", ExecutionMode.UNIFIED.name) ?: ExecutionMode.UNIFIED.name) }.getOrDefault(ExecutionMode.UNIFIED),
+                        )
+                    } else null,
                 )
             }
         }.getOrDefault(emptyList())

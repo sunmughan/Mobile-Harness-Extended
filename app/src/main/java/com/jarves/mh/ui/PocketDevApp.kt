@@ -4726,51 +4726,66 @@ private fun WorkspaceScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (state.runtimeRecoveryStatus != null) {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(10.dp),
                 ) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(state.runtimeRecoveryStatus, fontWeight = FontWeight.SemiBold)
+                            Text(state.runtimeRecoveryStatus, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 if (state.runtimeRecoveryCanResume) "Your task state is preserved." else "Mobile Harness is reconnecting without discarding the task.",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         if (state.runtimeRecoveryCanResume) {
-                            Button(onClick = onResumeTask) { Text("Resume") }
+                            Button(
+                                onClick = onResumeTask,
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                shape = RoundedCornerShape(8.dp),
+                            ) { Text("Resume", fontSize = 12.sp, maxLines = 1) }
                         } else {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         }
                     }
                 }
             }
             if (state.interruptedSession != null) {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(10.dp),
                 ) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Interrupted Session Found", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("Interrupted Session Found", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1)
                             Text(
                                 "Task: \"${state.interruptedSession.initialPrompt.take(60)}\" in ${state.interruptedSession.projectTitle}",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
                         Spacer(Modifier.width(8.dp))
-                        Button(onClick = onResumeInterruptedSession) {
-                            Text("Resume")
+                        Button(
+                            onClick = onResumeInterruptedSession,
+                            modifier = Modifier.height(30.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Text("Resume", fontSize = 12.sp, maxLines = 1)
                         }
                         Spacer(Modifier.width(4.dp))
-                        IconButton(onClick = onDismissInterruptedSession) {
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        IconButton(
+                            onClick = onDismissInterruptedSession,
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -5588,7 +5603,13 @@ private fun ChatTab(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(messages, key = { it.id }) { message ->
+                items(messages, key = { it.id }) { rawMessage ->
+                    val message = if (rawMessage.roadmap == null && !rawMessage.fromUser && rawMessage.text.contains("### Implementation Roadmap", ignoreCase = true)) {
+                        val parsed = RoadmapParser.parseFromText(rawMessage.text, executionMode)
+                        if (parsed != null) rawMessage.copy(roadmap = parsed) else rawMessage
+                    } else {
+                        rawMessage
+                    }
                     if (message.workItems.isNotEmpty()) {
                         WorkBlockCard(message)
                     } else {
