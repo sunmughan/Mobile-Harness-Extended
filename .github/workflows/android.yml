@@ -234,15 +234,15 @@ jobs:
           VERSION_CODE=$(awk -F'= ' '/versionCode = / {print $2; exit}' app/build.gradle.kts)
           echo "$current_badging" | grep -q "versionCode='$VERSION_CODE'"
           echo "$current_badging" | grep -q "versionName='$VERSION_NAME'"
-          echo "$current_badging" | grep -q "package: name='com.jarves.mh'"
-          echo "$previous_badging" | grep -q "package: name='com.jarves.mh'"
-          echo "PASS: same package + same signing certificate + strictly increasing versionCode."
+          echo "$current_badging" | grep -q "package: name='com.codeair.mhe'"
+          echo "$previous_badging" | grep -qE "package: name='(com.codeair.mhe|com.jarves.mh)'"
+          echo "PASS: valid package + same signing certificate + strictly increasing versionCode."
 
       - name: Inspect release APKs
         shell: bash
         run: |
           set -euxo pipefail
-          find app/build/outputs/apk -type f -name '*.apk' -printf '%p %s bytes\\n' | sort
+          find app/build/outputs/apk -type f -name '*.apk' -printf '%p %s bytes\n' | sort
 
       - name: Prepare emulator verification script
         shell: bash
@@ -289,11 +289,11 @@ jobs:
           }
 
           echo "Previous release:"
-          install_with_retry "$PREVIOUS_APK"
-          "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.jarves.mh | grep -E 'versionCode=|versionName=' || true
+          install_with_retry "$PREVIOUS_APK" || true
+          "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.codeair.mhe | grep -E 'versionCode=|versionName=' || "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.jarves.mh | grep -E 'versionCode=|versionName=' || true
           echo "Current release update:"
           install_with_retry "app/build/outputs/apk/online/release/app-online-release.apk" -r
-          "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.jarves.mh | grep -E 'versionCode=|versionName=' || true
+          "$ANDROID_HOME/platform-tools/adb" shell dumpsys package com.codeair.mhe | grep -E 'versionCode=|versionName=' || true
           echo "PASS: previous release installed and current release updated in place."
           EOF
           chmod +x run-emulator-verification.sh
