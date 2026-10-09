@@ -1,15 +1,15 @@
 {
-  "versionCode": 27,
-  "versionName": "2.1.0",
-  "notes": "Mobile Harness Extended v2.1.0: Real Mobile IDE (Multi-Tab Editor, Touch Coding Toolbar, Universal Command Palette, Global Search & Replace, File Tree), 9-Language Semantic AST Intelligence, AI Context Engine 2.0 with Project Memory, Autonomous Agent Orchestrator with Self-Healing compiler recovery, and Granular Permission & Safety Engine with Emergency Kill Switch.",
+  "versionCode": 28,
+  "versionName": "2.2.0",
+  "notes": "Mobile Harness Extended v2.2.0: Email verification modal dialog with automatic polling, cleaned PriceHunt & Festival Sniper widget layout, hardened background execution via process-level AppScope, START_STICKY with WakeLock and WifiLock, and OEM Autostart & Power Management settings integration.",
   "artifacts": {
     "online": {
-      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.1.0/app-online-release.apk",
+      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.0/app-online-release.apk",
       "sha256": "4b68019e1fa3b07ae7e189873d6ebefae3e0ec05f013d2f928e469e38d77bfbb",
       "sizeBytes": 87421923
     },
     "offline": {
-      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.1.0/app-offline-release.apk",
+      "url": "https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.0/app-offline-release.apk",
       "sha256": "8064a7c06ebfa507d8cf1f486d3029272898c69ee33ea8536f6d50ff0630b42b",
       "sizeBytes": 887721644
     }

@@ -356,14 +356,15 @@ jobs:
             cp "release-notes-${TAG}.md" release-notes.md
           else
             cat > release-notes.md <<EOF
-          ## Mobile Harness $TAG
+          ## Mobile Harness Extended $TAG
 
-          ### Changes in this build
-          - Flexible project folder binding and custom working directory configuration.
-          - Chromium & Puppeteer automated browser DevStack with Dual-mode Preview tab.
-          - Fixed instant task completion indicators in header and scratchpad pill.
-          - Fixed connection loss recovery resume action.
-          - Upgraded unit test suite for runtime skills and browser DevStack.
+          ### Highlights in this build
+          - **Background Execution & Anti-Termination Hardening**:
+            - Tasks and agent loops execute on process-level \`AppScope\`, preventing pause or termination when switching to recent apps or under OS memory pressure.
+            - \`RuntimeExecutionService\` configured with \`START_STICKY\`, \`PARTIAL_WAKE_LOCK\`, high-performance \`WifiLock\`, and \`android:stopWithTask="false"\`.
+            - Direct OEM Autostart & Power Management settings shortcuts for Xiaomi (HyperOS/MIUI), Oppo/Realme (ColorOS), Vivo (FunTouch), and Samsung (OneUI).
+          - **Email Verification Modal Dialog**: Centered modal dialog with real-time automatic verification polling and lifecycle resume verification.
+          - **Price Hunt & Festival Sniper Widget**: Cleaned up header layout, eliminating squished container and orange vertical border visual artifacts.
 
           ### Release files
           - **Online Release:** app-online-release.apk

@@ -207,6 +207,7 @@ import com.jarves.mh.auth.model.AuthState
 import com.jarves.mh.auth.ui.AuthScreen
 import com.jarves.mh.auth.ui.AuthViewModel
 import com.jarves.mh.auth.ui.EmailVerificationBanner
+import com.jarves.mh.auth.ui.EmailVerificationDialog
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
@@ -239,6 +240,7 @@ import com.jarves.mh.runtime.NotificationCoordinator
 import com.jarves.mh.runtime.RuntimeSetupService
 import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.AntigravityAuthStatus
+import com.jarves.mh.runtime.BackgroundProtectionHelper
 import com.jarves.mh.ecommerce.PriceHuntController
 import com.jarves.mh.ecommerce.PriceHuntWebInterceptor
 import com.jarves.mh.ui.components.PriceHuntWidget
@@ -629,8 +631,16 @@ private fun BackgroundTaskSetupScreen(
     }
     val currentDescription = when (currentStep) {
         0 -> "See live progress and receive an alert when Claude finishes or needs your attention."
-        1 -> "Allow Mobile Harness to continue a task when you lock the phone or switch to another app."
-        else -> "Keep the CPU awake only while a visible coding task is running, then release it automatically."
+        1 -> if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller()) {
+            "Allow Mobile Harness to continue tasks without pausing when switching to recents. On ${BackgroundProtectionHelper.getOemName()} devices, also enable Autostart."
+        } else {
+            "Allow Mobile Harness to continue a task when you lock the phone or switch to another app."
+        }
+        else -> if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller()) {
+            "Keep the CPU & network active while tasks run. Make sure battery optimization is set to Unrestricted."
+        } else {
+            "Keep the CPU awake only while a visible coding task is running, then release it automatically."
+        }
     }
     val currentPrivacyNote = when (currentStep) {
         0 -> "Only task progress, completion, and error notifications are sent."
@@ -815,6 +825,23 @@ private fun BackgroundTaskSetupScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(18.dp))
+                    }
+                    if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller() && (currentStep == 1 || currentStep == 2)) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { BackgroundProtectionHelper.openOemBackgroundSettings(context) },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(13.dp),
+                        ) {
+                            Icon(Icons.Default.Settings, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Open ${BackgroundProtectionHelper.getOemName()} Autostart Settings",
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                     if (currentStep < 2 && !currentGranted) {
                         TextButton(
@@ -2431,16 +2458,16 @@ private fun RootScreenHost(
     ) { padding ->
         val authState = authViewModel?.authState?.collectAsStateWithLifecycle()?.value ?: AuthState.Unauthenticated
         val authUiState = authViewModel?.uiState?.collectAsStateWithLifecycle()?.value
+        if (authState is AuthState.EmailVerificationRequired) {
+            EmailVerificationDialog(
+                email = authState.user.email,
+                isLoading = authUiState?.isLoading ?: false,
+                onResend = { authViewModel?.resendEmailVerification() },
+                onRefresh = { authViewModel?.refreshVerificationStatus() },
+                onSignOut = { authViewModel?.signOut() },
+            )
+        }
         Column(Modifier.fillMaxSize().padding(padding)) {
-            if (authState is AuthState.EmailVerificationRequired) {
-                EmailVerificationBanner(
-                    email = authState.user.email,
-                    isLoading = authUiState?.isLoading ?: false,
-                    onResend = { authViewModel?.resendEmailVerification() },
-                    onRefresh = { authViewModel?.refreshVerificationStatus() },
-                    onSignOut = { authViewModel?.signOut() },
-                )
-            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
             when (screen) {
                 RootScreen.PROJECTS -> ProjectsScreen(

@@ -19,8 +19,9 @@ app/build/
 .gradle/
 .kotlin/
 
-# Android Studio / IntelliJ IDEA project files
+# Android Studio / IntelliJ IDEA / VS Code project files
 .idea/
+.vscode/
 *.iml
 *.iws
 *.ipr

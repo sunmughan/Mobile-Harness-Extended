@@ -33,8 +33,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import com.jarves.mh.runtime.BackgroundProtectionHelper
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
@@ -682,6 +683,35 @@ fun SettingsScreen(
                     }
                     AnimatedVisibility(showReliabilityHelp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Ensure tasks never pause when switching to recent apps or locking the phone.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    val intent = BackgroundProtectionHelper.getBatteryOptimizationIntent(context)
+                                    runCatching { context.startActivity(intent.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) }
+                                        .onFailure {
+                                             context.startActivity(BackgroundProtectionHelper.getAppDetailsSettingsIntent(context).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                                        }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.BatterySaver, null, Modifier.size(17.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text("Battery optimization (Unrestricted)")
+                            }
+                            if (BackgroundProtectionHelper.isOemDeviceWithAggressiveKiller()) {
+                                OutlinedButton(
+                                    onClick = { BackgroundProtectionHelper.openOemBackgroundSettings(context) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(Icons.Default.Settings, null, Modifier.size(17.dp))
+                                    Spacer(Modifier.width(7.dp))
+                                    Text("Configure ${BackgroundProtectionHelper.getOemName()} Autostart")
+                                }
+                            }
                             Text(
                                 "If large builds stop unexpectedly, Android Developer options may provide a child-process restriction toggle.",
                                 fontSize = 12.sp,

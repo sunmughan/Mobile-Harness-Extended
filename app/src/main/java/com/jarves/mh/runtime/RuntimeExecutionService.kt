@@ -15,6 +15,7 @@ internal object RuntimeTaskController {
 
 class RuntimeExecutionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var projectName: String = "your project"
     private var notificationTitle: String = "Mobile Harness is working"
     private var agentName: String = "Coding agent"
@@ -41,7 +42,7 @@ class RuntimeExecutionService : Service() {
             }
             ACTION_PROGRESS -> {
                 // Live step updates only matter while a task is actually running.
-                if (!taskRunning) return START_NOT_STICKY
+                if (!taskRunning) return START_STICKY
                 val detail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
                     ?: "$agentName is working in $projectName"
                 getSystemService(android.app.NotificationManager::class.java).notify(
@@ -61,7 +62,7 @@ class RuntimeExecutionService : Service() {
             )
             ACTION_CANCELLED -> {
                 taskRunning = false
-                releaseWakeLock()
+                releaseLocks()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -78,34 +79,46 @@ class RuntimeExecutionService : Service() {
                         canStop = canStop,
                     ),
                 )
-                acquireWakeLock()
+                acquireLocks()
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun finishTask(title: String, detail: String, failed: Boolean) {
         taskRunning = false
-        releaseWakeLock()
+        releaseLocks()
         NotificationCoordinator.postResult(this, title, detail, failed)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
-        wakeLock = getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "com.jarves.mh:active-coding-task")
-            .apply { acquire(MAX_WAKE_LOCK_MS) }
+    private fun acquireLocks() {
+        if (wakeLock?.isHeld != true) {
+            wakeLock = getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "com.jarves.mh:active-coding-task")
+                .apply { acquire(MAX_WAKE_LOCK_MS) }
+        }
+        if (wifiLock?.isHeld != true) {
+            runCatching {
+                val wifiManager = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                wifiLock = wifiManager?.createWifiLock(
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "com.jarves.mh:active-coding-wifi",
+                )?.apply { acquire() }
+            }
+        }
     }
 
-    private fun releaseWakeLock() {
+    private fun releaseLocks() {
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
+        wifiLock?.takeIf { it.isHeld }?.release()
+        wifiLock = null
     }
 
     override fun onDestroy() {
-        releaseWakeLock()
+        releaseLocks()
         super.onDestroy()
     }
 

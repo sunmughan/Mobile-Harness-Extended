@@ -10,7 +10,7 @@
 
   <br />
 
-  [![Release v2.1.0](https://img.shields.io/badge/Release-v2.1.0-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v2.1.0)
+  [![Release v2.2.0](https://img.shields.io/badge/Release-v2.2.0-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v2.2.0)
   [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#system-requirements)
   [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#system-requirements)
   [![MIT License](https://img.shields.io/badge/License-MIT-8B7CF6?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
@@ -18,8 +18,8 @@
 
   <br />
 
-  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.1.0/app-online-release.apk) &nbsp;•&nbsp;
-  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.1.0/app-offline-release.apk) &nbsp;•&nbsp;
+  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.0/app-online-release.apk) &nbsp;•&nbsp;
+  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.0/app-offline-release.apk) &nbsp;•&nbsp;
   [**Watch Walkthrough (3 min)**](https://youtu.be/QzAau52Z7yQ) &nbsp;•&nbsp;
   [**Quickstart Guide**](#quickstart) &nbsp;•&nbsp;
   [**Architecture**](#architecture) &nbsp;•&nbsp;
@@ -28,9 +28,13 @@
 </div>
 
 > [!NOTE]
-> **Current development status (October 2026):** Mobile Harness Extended **v2.1.0** (versionCode `27`) is the latest verified production release.
+> **Current development status (October 2026):** Mobile Harness Extended **v2.2.0** (versionCode `28`) is the latest verified production release.
 > 
 > Major advancements in this release:
+> - **Process-Level AppScope Background Resilience**: Background tasks and agent loops execute on process-level `AppScope`, ensuring tasks never pause or terminate when switching to recent apps or under OS memory pressure.
+> - **Service & OEM Task Killer Hardening**: `RuntimeExecutionService` hardened with `START_STICKY`, `PARTIAL_WAKE_LOCK`, high-performance `WifiLock`, and `android:stopWithTask="false"`. Integrated OEM Autostart & background power management shortcuts for Xiaomi (HyperOS/MIUI), Oppo/Realme, Vivo, and Samsung.
+> - **Email Verification Modal Dialog**: Centered modal popup with real-time automatic polling and lifecycle resume verification.
+> - **Price Hunt & Festival Sniper Widget**: Cleaned up header layout, removing squished containers and orange vertical border artifacts.
 > - **Real Mobile IDE**: Multi-tab code editor with tab persistence across backgrounding, touch-friendly mobile coding toolbar (auto-pairing brackets, tab/indent, comment toggling), universal Command Palette (`Ctrl+P`), project-wide regex search & replace (`GlobalSearchEngine`), and contextual file tree (create, rename, delete, duplicate, move).
 > - **Multi-Language Semantic Code Intelligence**: 9-language AST symbol extraction (Kotlin, Java, TypeScript, JavaScript, Python, Go, Rust, C/C++, Shell), call graph mapping, forward/inverse dependency tracking, and enriched symbol outlines.
 > - **AI Context Engine 2.0 & Persistent Project Memory**: Automatic user intent classification (`BUG_FIX`, `FEATURE_IMPLEMENTATION`, `REFACTORING`, etc.), relevance ranking with context compression within token budgets, and persistent multi-tier project memory preserving architectural decisions and error patterns across sessions.
@@ -74,7 +78,7 @@
       <h3>Online Edition</h3>
       <p><strong>~87.2 MiB · Core bundled</strong></p>
       <p>Lightweight APK. Downloads verified runtime packages (Python, Android SDK, Claude, Antigravity, DeepSeek) on demand.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.1.0/app-online-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.0/app-online-release.apk">
         <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
       </a>
     </td>
@@ -82,7 +86,7 @@
       <h3>Offline Edition</h3>
       <p><strong>~847.3 MiB · Everything included</strong></p>
       <p>Completely self-contained. Pre-bundles all ARM64 runtimes (Core, Python, Android, Claude, DeepSeek, Antigravity) for zero-network setup.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.1.0/app-offline-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.0/app-offline-release.apk">
         <img src="https://img.shields.io/badge/Download-Offline_APK-5B8DEF?style=for-the-badge&logo=android&logoColor=white" alt="Download Offline APK" />
       </a>
     </td>
@@ -90,7 +94,7 @@
 </table>
 
 <p align="center">
-  <strong>ARM64 Android 9+ · Release v2.1.0</strong><br />
+  <strong>ARM64 Android 9+ · Release v2.2.0</strong><br />
   <sub>Direct APK installation · No root required · No USB or wireless ADB pairing · Permanent Codeair signature</sub>
 </p>
 
@@ -212,7 +216,7 @@ Download the latest signed release APK from [GitHub Releases](https://github.com
 
 ```text
 Target Architecture : ARM64 (arm64-v8a)
-Package Version     : v2.1.0
+Package Version     : v2.2.0
 Minimum OS Level    : Android 9.0 (API 28)
 ```
 

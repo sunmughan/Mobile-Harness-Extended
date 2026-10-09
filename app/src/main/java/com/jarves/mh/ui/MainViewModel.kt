@@ -76,6 +76,7 @@ import com.jarves.mh.runtime.AndroidAppInstaller
 import com.jarves.mh.runtime.NotificationCoordinator
 import com.jarves.mh.runtime.RuntimeExecutionService
 import com.jarves.mh.runtime.formatDurationText
+import com.jarves.mh.MobileHarnessApplication
 import com.jarves.mh.update.AppUpdateInfo
 import com.jarves.mh.update.AppUpdater
 import java.io.File
@@ -4372,7 +4373,18 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
             provider = state.value.provider,
         )
         lastInterruptedRequest = activeRuntimeRequest
-        viewModelScope.launch {
+        runCatching {
+            androidx.core.content.ContextCompat.startForegroundService(
+                getApplication<Application>(),
+                Intent(getApplication<Application>(), RuntimeExecutionService::class.java).apply {
+                    action = RuntimeExecutionService.ACTION_START
+                    putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, project.name)
+                    putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, _state.value.agentKind.title)
+                    putExtra(RuntimeExecutionService.EXTRA_DETAIL, "${_state.value.agentKind.title} is starting work in ${project.name}")
+                },
+            )
+        }
+        MobileHarnessApplication.appScope.launch {
             val request = activeRuntimeRequest ?: return@launch
             val workspace = withContext(Dispatchers.IO) {
                 val root = projectWorkspaceRoot(request.project)
@@ -4423,7 +4435,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
     }
     fun answerApproval(approved: Boolean) {
         val request = state.value.pendingApproval ?: return
-        viewModelScope.launch { activeRuntime().respondToApproval(request, approved) }
+        MobileHarnessApplication.appScope.launch { activeRuntime().respondToApproval(request, approved) }
     }
 
     fun stopTask() {
@@ -4435,7 +4447,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         activeRuntimeRequest = null
         lastInterruptedRequest = null
         _state.update { it.copy(isRunning = false, runtimeRecoveryStatus = null, runtimeRecoveryAttempt = 0, runtimeRecoveryCanResume = false) }
-        viewModelScope.launch { activeRuntime().stopActiveSession() }
+        MobileHarnessApplication.appScope.launch { activeRuntime().stopActiveSession() }
     }
 
     fun undoLastChanges() {
@@ -5011,7 +5023,7 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
             getApplication<Application>().startService(progressIntent)
         }
 
-        runtimeRecoveryJob = viewModelScope.launch {
+        runtimeRecoveryJob = MobileHarnessApplication.appScope.launch {
             delay(retryDelay)
             if (!_state.value.isRunning || (activeRuntimeRequest !== request && lastInterruptedRequest !== request)) return@launch
             val updatedElapsed = System.currentTimeMillis() - recoveryStartedAt
@@ -5186,7 +5198,19 @@ Your objective: Analyze the request and workspace, formulate the plan, and provi
             }
         }
 
-        viewModelScope.launch {
+        runCatching {
+            androidx.core.content.ContextCompat.startForegroundService(
+                getApplication<Application>(),
+                Intent(getApplication<Application>(), RuntimeExecutionService::class.java).apply {
+                    action = RuntimeExecutionService.ACTION_START
+                    putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, project.name)
+                    putExtra(RuntimeExecutionService.EXTRA_AGENT_NAME, _state.value.agentKind.title)
+                    putExtra(RuntimeExecutionService.EXTRA_DETAIL, "${_state.value.agentKind.title} is resuming task in ${project.name}")
+                },
+            )
+        }
+
+        MobileHarnessApplication.appScope.launch {
             val workspace = withContext(Dispatchers.IO) {
                 val root = projectWorkspaceRoot(project)
                 skillManager.syncToWorkspace(root)
