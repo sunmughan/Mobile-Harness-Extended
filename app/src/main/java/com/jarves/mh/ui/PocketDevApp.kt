@@ -82,7 +82,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -95,7 +97,6 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
@@ -110,7 +111,6 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
@@ -3632,7 +3632,7 @@ private fun ProjectsScreen(
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Chat,
+                            imageVector = Icons.AutoMirrored.Filled.Chat,
                             contentDescription = null,
                             modifier = Modifier.size(17.dp),
                         )
@@ -6531,7 +6531,7 @@ private fun ChangesTab(
                                 )
                             )
                         }) {
-                            Icon(Icons.Default.OpenInNew, contentDescription = "Open file")
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open file")
                         }
                         Text("+${change.additions}", color = PocketGreen)
                         Spacer(Modifier.width(7.dp))

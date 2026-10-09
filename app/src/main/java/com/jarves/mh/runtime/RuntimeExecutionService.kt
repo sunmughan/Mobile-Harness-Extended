@@ -102,8 +102,14 @@ class RuntimeExecutionService : Service() {
         if (wifiLock?.isHeld != true) {
             runCatching {
                 val wifiManager = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                @Suppress("DEPRECATION")
+                val wifiLockMode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
                 wifiLock = wifiManager?.createWifiLock(
-                    android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    wifiLockMode,
                     "com.jarves.mh:active-coding-wifi",
                 )?.apply { acquire() }
             }

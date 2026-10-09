@@ -50,6 +50,7 @@ data class ExtractedPriceData(
     val currentPrice: Long,
     val mrp: Long,
     val claimedDiscountText: String? = null,
+    val dealBadge: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
 )
 

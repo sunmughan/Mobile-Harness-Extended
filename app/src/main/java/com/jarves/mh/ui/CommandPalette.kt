@@ -16,20 +16,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.WrapText
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -90,9 +90,9 @@ fun CommandPalette(
             add(PaletteAction("save_file", "Save File", "Save current changes to disk", Icons.Default.Save, PaletteActionCategory.EDITOR, listOf("write", "commit")))
             add(PaletteAction("find_in_file", "Find & Replace", "Search and replace within current file", Icons.Default.FindInPage, PaletteActionCategory.EDITOR, listOf("search", "regex")))
             add(PaletteAction("global_search", "Global Search & Replace", "Search across the entire workspace", Icons.Default.Search, PaletteActionCategory.EDITOR, listOf("grep", "all")))
-            add(PaletteAction("goto_line", "Go to Line", "Jump to a specific line number", Icons.Default.List, PaletteActionCategory.EDITOR, listOf("jump", "ln")))
+            add(PaletteAction("goto_line", "Go to Line", "Jump to a specific line number", Icons.AutoMirrored.Filled.List, PaletteActionCategory.EDITOR, listOf("jump", "ln")))
             add(PaletteAction("symbol_outline", "Symbol Outline", "Inspect classes, functions, and symbols", Icons.Default.Code, PaletteActionCategory.EDITOR, listOf("ast", "declarations")))
-            add(PaletteAction("toggle_word_wrap", "Toggle Word Wrap", "Wrap long lines in editor", Icons.Default.WrapText, PaletteActionCategory.EDITOR, listOf("wrap", "scroll")))
+            add(PaletteAction("toggle_word_wrap", "Toggle Word Wrap", "Wrap long lines in editor", Icons.AutoMirrored.Filled.WrapText, PaletteActionCategory.EDITOR, listOf("wrap", "scroll")))
             add(PaletteAction("close_tab", "Close Tab", "Close current editor tab", Icons.Default.Close, PaletteActionCategory.EDITOR, listOf("exit")))
             add(PaletteAction("close_other_tabs", "Close Other Tabs", "Keep only active file open", Icons.Default.Close, PaletteActionCategory.EDITOR, listOf("only")))
             add(PaletteAction("close_all_tabs", "Close All Tabs", "Close all open editor tabs", Icons.Default.Close, PaletteActionCategory.EDITOR, listOf("clear")))
@@ -108,7 +108,7 @@ fun CommandPalette(
         add(PaletteAction("nav_chat", "Open AI Chat", "Switch to AI conversation assistant", Icons.Default.Code, PaletteActionCategory.NAVIGATION, listOf("ask", "agent")))
         add(PaletteAction("nav_files", "Open File Explorer", "Browse project directory tree", Icons.Default.Folder, PaletteActionCategory.NAVIGATION, listOf("tree", "browse")))
         add(PaletteAction("nav_terminal", "Open Terminal", "Access interactive shell environment", Icons.Default.Terminal, PaletteActionCategory.NAVIGATION, listOf("shell", "bash", "cli")))
-        add(PaletteAction("nav_changes", "View Git Changes", "Review pending edits and diffs", Icons.Default.List, PaletteActionCategory.NAVIGATION, listOf("diff", "status")))
+        add(PaletteAction("nav_changes", "View Git Changes", "Review pending edits and diffs", Icons.AutoMirrored.Filled.List, PaletteActionCategory.NAVIGATION, listOf("diff", "status")))
         add(PaletteAction("nav_preview", "Open Web Preview", "Launch local web preview", Icons.Default.Visibility, PaletteActionCategory.NAVIGATION, listOf("browser", "html", "server")))
 
         // Build & Runtime

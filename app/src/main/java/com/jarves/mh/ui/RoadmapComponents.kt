@@ -27,11 +27,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Comment
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
@@ -670,7 +670,7 @@ private fun RoadmapStepRow(
                 modifier = Modifier.size(22.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Default.Comment,
+                    imageVector = Icons.AutoMirrored.Filled.Comment,
                     contentDescription = "Comment on step",
                     modifier = Modifier.size(12.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,

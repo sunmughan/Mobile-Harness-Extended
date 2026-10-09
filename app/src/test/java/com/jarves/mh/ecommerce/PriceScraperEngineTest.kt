@@ -39,6 +39,13 @@ class PriceScraperEngineTest {
         assertEquals(149900L, PriceScraperEngine.parsePriceNumber("₹ 1,49,900"))
         assertEquals(4999L, PriceScraperEngine.parsePriceNumber("Rs. 4,999.00"))
         assertEquals(999L, PriceScraperEngine.parsePriceNumber("  999/-  "))
+        assertEquals(12999L, PriceScraperEngine.parsePriceNumber("Starts at ₹12,999"))
+        assertEquals(1499L, PriceScraperEngine.parsePriceNumber("From ₹1,499"))
+        assertEquals(34990L, PriceScraperEngine.parsePriceNumber("MRP: ₹34,990"))
+        assertEquals(12499L, PriceScraperEngine.parsePriceNumber("₹12,499 - ₹14,999"))
+        assertEquals(24999L, PriceScraperEngine.parsePriceNumber("₹24,999 to ₹27,999"))
+        assertEquals(59900L, PriceScraperEngine.parsePriceNumber("₹\u00A059,900"))
+        assertEquals(1299L, PriceScraperEngine.parsePriceNumber("Rs 1,299"))
         assertEquals(0L, PriceScraperEngine.parsePriceNumber(null))
         assertEquals(0L, PriceScraperEngine.parsePriceNumber(""))
     }
@@ -48,6 +55,9 @@ class PriceScraperEngineTest {
         assertEquals(25, PriceScraperEngine.parseDiscountPercent("25% off"))
         assertEquals(30, PriceScraperEngine.parseDiscountPercent("-30%"))
         assertEquals(50, PriceScraperEngine.parseDiscountPercent("50%"))
+        assertEquals(40, PriceScraperEngine.parseDiscountPercent("Save 40%"))
+        assertEquals(15, PriceScraperEngine.parseDiscountPercent("Flat 15% off"))
+        assertEquals(60, PriceScraperEngine.parseDiscountPercent("Up to 60% off"))
         assertNull(PriceScraperEngine.parseDiscountPercent(null))
         assertNull(PriceScraperEngine.parseDiscountPercent("Special Offer"))
     }
@@ -58,16 +68,20 @@ class PriceScraperEngineTest {
         assertTrue(flipkartScript.contains("_30jeq3"))
         assertTrue(flipkartScript.contains("_3I9_wc"))
         assertTrue(flipkartScript.contains("_3Ay6Sb"))
+        assertTrue(flipkartScript.contains("isSponsored"))
+        assertTrue(flipkartScript.contains("dealBadge"))
 
         val amazonScript = PriceScraperEngine.getExtractionScript(ECommercePlatform.AMAZON)
         assertTrue(amazonScript.contains("productTitle"))
         assertTrue(amazonScript.contains("a-price-whole"))
         assertTrue(amazonScript.contains("savingsPercentage"))
+        assertTrue(amazonScript.contains("isSponsored"))
+        assertTrue(amazonScript.contains("dealBadge"))
     }
 
     @Test
     fun testParseScrapedPayload() {
-        val rawJson = """{"title":"iPhone 15 128GB","currentPrice":"₹51,999","mrp":"₹69,900","discount":"25% off"}"""
+        val rawJson = """{"title":"iPhone 15 128GB","currentPrice":"₹51,999","mrp":"₹69,900","discount":"25% off","dealBadge":"Deal of the Day"}"""
         val parsed = PriceScraperEngine.parseScrapedPayload(
             rawJson,
             "https://www.flipkart.com/test",
@@ -79,6 +93,37 @@ class PriceScraperEngineTest {
         assertEquals(51999L, parsed?.currentPrice)
         assertEquals(69900L, parsed?.mrp)
         assertEquals("25% off", parsed?.claimedDiscountText)
+        assertEquals("Deal of the Day", parsed?.dealBadge)
+    }
+
+    @Test
+    fun testSponsoredAdFiltering() {
+        // Explicit isSponsored flag
+        val sponsoredJson = """{"title":"Generic Cable","currentPrice":"₹499","mrp":"₹999","isSponsored":true}"""
+        val parsedSponsored = PriceScraperEngine.parseScrapedPayload(
+            sponsoredJson,
+            "https://www.amazon.in/test",
+            ECommercePlatform.AMAZON,
+        )
+        assertNull(parsedSponsored)
+
+        // Title prefix [Sponsored]
+        val prefixSponsoredJson = """{"title":"[Sponsored] Bluetooth Earbuds","currentPrice":"₹1,299","mrp":"₹2,999"}"""
+        val parsedPrefix = PriceScraperEngine.parseScrapedPayload(
+            prefixSponsoredJson,
+            "https://www.flipkart.com/test",
+            ECommercePlatform.FLIPKART,
+        )
+        assertNull(parsedPrefix)
+
+        // Title prefix Sponsored:
+        val prefixColonJson = """{"title":"Sponsored: Power Bank 20000mAh","currentPrice":"₹1,599","mrp":"₹3,499"}"""
+        val parsedPrefixColon = PriceScraperEngine.parseScrapedPayload(
+            prefixColonJson,
+            "https://www.amazon.in/test",
+            ECommercePlatform.AMAZON,
+        )
+        assertNull(parsedPrefixColon)
     }
 
     @Test

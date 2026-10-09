@@ -15,8 +15,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -74,7 +74,7 @@ fun FileEntryContextMenu(
         if (entry.isDirectory) {
             DropdownMenuItem(
                 text = { Text("New file inside") },
-                leadingIcon = { Icon(Icons.Default.NoteAdd, contentDescription = null, Modifier.size(18.dp)) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, Modifier.size(18.dp)) },
                 onClick = {
                     expanded = false
                     onNewFileInDir(entry.path)

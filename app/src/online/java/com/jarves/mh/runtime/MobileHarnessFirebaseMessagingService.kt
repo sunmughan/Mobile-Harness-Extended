@@ -34,6 +34,7 @@ class MobileHarnessFirebaseMessagingService : FirebaseMessagingService() {
         )
     }
 
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun onNewToken(token: String) {
         PushTokenStore.save(this, token)
     }
