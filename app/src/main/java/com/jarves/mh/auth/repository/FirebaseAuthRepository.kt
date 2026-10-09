@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
@@ -216,16 +217,27 @@ class FirebaseAuthRepository(
 
     private fun mapFirebaseError(throwable: Throwable): String {
         AppCrashLogger.log("FirebaseAuth error: ${throwable.javaClass.simpleName} - ${throwable.message}")
+        val errorCode = (throwable as? FirebaseAuthException)?.errorCode.orEmpty()
         val message = throwable.message.orEmpty()
         return when {
-            message.contains("operation is not allowed", ignoreCase = true) ||
+            errorCode == "ERROR_OPERATION_NOT_ALLOWED" ||
+                errorCode == "OPERATION_NOT_ALLOWED" ||
+                message.contains("operation is not allowed", ignoreCase = true) ||
                 message.contains("provider is disabled", ignoreCase = true) ||
                 message.contains("OPERATION_NOT_ALLOWED", ignoreCase = true) ->
-                "Email/Password sign-in is disabled in your Firebase console for project 'codeair-tech'. Please enable 'Email/Password' under Firebase Console → Authentication → Sign-in method, or sign in using Google."
-            throwable is FirebaseAuthInvalidCredentialsException -> "Invalid email or password. Please verify your credentials."
-            throwable is FirebaseAuthUserCollisionException -> "An account with this email address already exists."
+                "Sign-in provider is disabled in Firebase console for project 'codeair-tech'. Go to Firebase Console → Authentication → Sign-in method and enable 'Email/Password' and 'Google'."
+            throwable is FirebaseAuthInvalidCredentialsException -> {
+                if (message.contains("badly formatted", ignoreCase = true)) {
+                    "The email address is badly formatted."
+                } else if (message.contains("credential", ignoreCase = true) && (message.contains("Google", ignoreCase = true) || message.contains("token", ignoreCase = true))) {
+                    "Google sign-in credential was rejected by Firebase. Ensure Google provider is enabled and your SHA-1 is added in Firebase Console."
+                } else {
+                    "Invalid email or password. Please verify your credentials."
+                }
+            }
+            throwable is FirebaseAuthUserCollisionException -> "An account with this email address already exists. Try signing in instead."
             throwable is FirebaseAuthWeakPasswordException -> "Password is too weak. Please use at least 6 characters including numbers or symbols."
-            throwable is FirebaseAuthInvalidUserException -> "Account not found or has been disabled."
+            throwable is FirebaseAuthInvalidUserException -> "Account not found or has been disabled in Firebase."
             throwable is FirebaseAuthRecentLoginRequiredException -> "For security, please sign in again before performing this sensitive operation."
             throwable is FirebaseNetworkException -> "Network error. Please check your internet connection and try again."
             else -> throwable.message?.takeIf(String::isNotBlank) ?: "An unexpected authentication error occurred."

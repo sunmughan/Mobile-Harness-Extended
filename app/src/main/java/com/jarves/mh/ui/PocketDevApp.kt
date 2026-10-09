@@ -281,7 +281,7 @@ private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
     FILES("Files", Icons.Default.Folder),
     TERMINAL("Terminal", Icons.Default.Terminal),
     CHANGES("Changes", Icons.Default.Code),
-    PREVIEW("Preview", Icons.Default.Preview),
+    PREVIEW("Browser", Icons.Default.Language),
 }
 
 @Composable
@@ -5527,7 +5527,7 @@ private fun ChatTab(
         if (isGranted) {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to PocketDev…")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Mobile Harness…")
             }
             try {
                 speechRecognizerLauncher.launch(intent)
@@ -5547,7 +5547,7 @@ private fun ChatTab(
         } else {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to PocketDev…")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Mobile Harness…")
             }
             try {
                 speechRecognizerLauncher.launch(intent)
