@@ -21,7 +21,7 @@ class OnlineGoogleSignInHandler : GoogleSignInHandler {
             val serverClientId = if (resId != 0) {
                 context.getString(resId)
             } else {
-                "1002286704211-anm6n5ktumtdqijle6hpu06509bukc4v.apps.googleusercontent.com"
+                "1002286704211-lbuun3ktfpg16j7puv6ndc78pdlp3fcm.apps.googleusercontent.com"
             }
 
             val credentialManager = CredentialManager.create(context)
@@ -45,7 +45,7 @@ class OnlineGoogleSignInHandler : GoogleSignInHandler {
             AppCrashLogger.log("GoogleSignIn failed: ${throwable.message}")
             val message = throwable.message.orEmpty()
             if (message.contains("10") || message.contains("Developer error", ignoreCase = true) || message.contains("DEVELOPER_ERROR", ignoreCase = true)) {
-                throw Exception("Google Sign-In configuration error (Developer Error 10): App's SHA-1 fingerprint is missing in Firebase Console for project 'codeair-tech'. Add your SHA-1 fingerprint under Firebase Console → Project Settings → Android apps.")
+                throw Exception("Google Sign-In configuration error (Developer Error 10): App's SHA-1 fingerprint is missing in Firebase Console for package 'com.codeair.mhe' under project 'codeair-tech'. Add your SHA-1 fingerprint under Firebase Console → Project Settings → Android apps.")
             } else if (message.contains("16") || message.contains("Cannot find a matching credential", ignoreCase = true) || message.contains("No credential", ignoreCase = true)) {
                 throw Exception("No Google account selected or credentials unavailable on this device.")
             }
