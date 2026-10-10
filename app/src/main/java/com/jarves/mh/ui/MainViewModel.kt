@@ -294,6 +294,7 @@ data class AppUiState(
     val activeRoadmap: ActiveRoadmap? = null,
     val scratchpadItems: List<ScratchpadItem> = emptyList(),
     val scratchpadExpanded: Boolean = false,
+    val orchestratorSnapshot: com.jarves.mh.session.OrchestratorSnapshot? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -470,9 +471,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (storageHealth is com.jarves.mh.runtime.StorageHealthResult.Critical) {
             _state.update { it.copy(toastMessage = storageHealth.message) }
         }
+        val rootfsIntegrity = runtimeHealthController.verifyRootfsIntegrity()
+        if (rootfsIntegrity is com.jarves.mh.runtime.RootfsIntegrityResult.Corrupted) {
+            AppCrashLogger.log("Rootfs corruption detected: ${rootfsIntegrity.reason}")
+            _state.update { it.copy(toastMessage = "Runtime warning: ${rootfsIntegrity.reason}") }
+        }
         val interrupted = sessionManager.checkInterruptedSession()
         if (interrupted != null) {
             _state.update { it.copy(interruptedSession = interrupted) }
+        }
+        viewModelScope.launch {
+            agentOrchestrator.snapshot.collect { orchSnapshot ->
+                _state.update { it.copy(orchestratorSnapshot = orchSnapshot) }
+            }
         }
         viewModelScope.launch(Dispatchers.IO) {
             runtimeHealthController.cleanupOrphanArtifacts()
@@ -3595,6 +3606,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sendPrompt(prompt)
     }
 
+    fun rollbackToBaseline(): Boolean {
+        val proj = state.value.activeProject ?: return false
+        val workspaceDir = File(getApplication<Application>().filesDir, "projects/${proj.id}")
+        val success = agentOrchestrator.rollbackToBaseline(workspaceDir)
+        if (success) {
+            _state.update { it.copy(toastMessage = "Rolled back workspace to pre-task baseline") }
+            refreshFiles()
+        } else {
+            _state.update { it.copy(toastMessage = "Rollback failed: No baseline checkpoint available") }
+        }
+        return success
+    }
+
     private fun deriveScratchpadItems(
         roadmap: ActiveRoadmap?,
         liveProcess: List<ActivityItem>,
@@ -4292,7 +4316,17 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                 currentTaskRequest = requestText,
             )
         }
-        sessionManager.recordSessionStart(
+        val activeProj = state.value.activeProject
+        if (activeProj != null) {
+            val workspaceDir = File(getApplication<Application>().filesDir, "projects/${activeProj.id}")
+            agentOrchestrator.startTask(
+                projectId = activeProj.id,
+                workspaceDir = workspaceDir,
+                userGoal = requestText,
+                plan = emptyList(),
+            )
+        }
+        agentSessionController.startSession(
             sessionId = UUID.randomUUID().toString(),
             projectId = project.id,
             projectTitle = project.name,
@@ -4777,7 +4811,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                         completedActiveRoadmap ?: newlyParsedRoadmap ?: current.activeRoadmap
                     }
                     val scratchpad = deriveScratchpadItems(latestRoadmap, emptyList(), false)
-                    sessionManager.recordSessionCompleted("Task completed successfully")
+                    agentSessionController.completeSession("Task completed successfully")
+                    agentOrchestrator.transition(com.jarves.mh.session.EngineeringState.COMPLETED, "Task completed successfully")
                     attachTaskDuration(stateWithResponse.copy(messages = messagesWithRoadmap), finishedAt).copy(
                         isRunning = false,
                         activeSessionId = null,
@@ -4793,7 +4828,8 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
                     )
                 }
                 is RuntimeEvent.SessionFailed -> {
-                    sessionManager.recordSessionFailed(event.reason)
+                    agentSessionController.failSession(event.reason)
+                    agentOrchestrator.transition(com.jarves.mh.session.EngineeringState.FAILED, "Task failed", event.reason)
                     val lastUserIndex = current.messages.indexOfLast { it.fromUser }
                     val hasResponseForLastUser = current.messages.indices.any {
                         it > lastUserIndex && !current.messages[it].fromUser && current.messages[it].text.isNotBlank()
@@ -5093,7 +5129,17 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
             )
         }
 
-        sessionManager.recordSessionStart(
+        val activeProj = state.value.activeProject
+        if (activeProj != null) {
+            val workspaceDir = File(getApplication<Application>().filesDir, "projects/${activeProj.id}")
+            agentOrchestrator.startTask(
+                projectId = activeProj.id,
+                workspaceDir = workspaceDir,
+                userGoal = effectivePrompt,
+                plan = targetRoadmap?.steps?.map { it.title } ?: emptyList(),
+            )
+        }
+        agentSessionController.startSession(
             sessionId = UUID.randomUUID().toString(),
             projectId = project.id,
             projectTitle = project.name,

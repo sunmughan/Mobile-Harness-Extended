@@ -73,6 +73,8 @@ import com.jarves.mh.model.RoadmapStep
 import com.jarves.mh.model.ScratchpadItem
 import com.jarves.mh.model.StepStatus
 import com.jarves.mh.model.TaskStatus
+import com.jarves.mh.session.EngineeringState
+import com.jarves.mh.session.OrchestratorSnapshot
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
 
@@ -763,4 +765,93 @@ fun AddRoadmapCommentDialog(
             }
         },
     )
+}
+
+/**
+ * Live Engineering State Machine Banner (Phase 1 & Phase 5)
+ * Surfaces real-time autonomous loop state, self-healing iterations,
+ * and 1-tap pre-task checkpoint rollback.
+ */
+@Composable
+fun EngineeringStateBanner(
+    snapshot: OrchestratorSnapshot?,
+    onRollbackToBaseline: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    if (snapshot == null || snapshot.state == EngineeringState.IDLE) return
+
+    val state = snapshot.state
+    val (label, color, icon) = when (state) {
+        EngineeringState.IDLE -> Triple("Idle", MaterialTheme.colorScheme.onSurfaceVariant, "⏸️")
+        EngineeringState.ANALYZING -> Triple("Analyzing Requirements", MaterialTheme.colorScheme.primary, "🔍")
+        EngineeringState.PLANNING -> Triple("Formulating Plan", MaterialTheme.colorScheme.primary, "📝")
+        EngineeringState.IMPLEMENTING -> Triple("Implementing Changes", PocketOrange, "💻")
+        EngineeringState.BUILDING -> Triple("Building Project", PocketOrange, "⚙️")
+        EngineeringState.TESTING -> Triple("Running Tests", PocketOrange, "🧪")
+        EngineeringState.ANALYZING_FAILURE -> Triple("Analyzing Failure", MaterialTheme.colorScheme.error, "⚠️")
+        EngineeringState.FIXING -> Triple("Self-Healing (${snapshot.currentIteration}/${snapshot.maxIterations})", PocketOrange, "🔧")
+        EngineeringState.RETESTING -> Triple("Retesting Fix", PocketOrange, "🔄")
+        EngineeringState.REVIEWING -> Triple("Reviewing Changes", MaterialTheme.colorScheme.primary, "📋")
+        EngineeringState.WAITING_FOR_APPROVAL -> Triple("Waiting for Approval", MaterialTheme.colorScheme.primary, "✋")
+        EngineeringState.COMPLETED -> Triple("Verified & Completed", PocketGreen, "✅")
+        EngineeringState.FAILED -> Triple("Task Failed", MaterialTheme.colorScheme.error, "❌")
+        EngineeringState.ROLLED_BACK -> Triple("Rolled Back to Baseline", MaterialTheme.colorScheme.error, "⏪")
+    }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.5f)),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(icon, fontSize = 13.sp)
+                Text(
+                    text = label,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = color,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (snapshot.currentIteration > 1 && state != EngineeringState.COMPLETED) {
+                    Text(
+                        text = "Iter ${snapshot.currentIteration}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PocketOrange,
+                        modifier = Modifier
+                            .background(PocketOrange.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+
+            if (onRollbackToBaseline != null && (state == EngineeringState.FAILED || state == EngineeringState.FIXING)) {
+                Surface(
+                    onClick = onRollbackToBaseline,
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                    modifier = Modifier.height(24.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("⏪ Revert Baseline", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                    }
+                }
+            }
+        }
+    }
 }

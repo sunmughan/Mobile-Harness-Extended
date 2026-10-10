@@ -1,6 +1,7 @@
 package com.jarves.mh.session
 
 import com.jarves.mh.runtime.ProjectMemoryStore
+import com.jarves.mh.workspace.WorkspaceCheckpointManager
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -98,5 +99,56 @@ class AgentOrchestratorTest {
         assertFalse(result)
         assertEquals(EngineeringState.FAILED, orchestrator.snapshot.value.state)
         assertEquals(3, orchestrator.selfHealing.currentIteration)
+    }
+
+    @Test
+    fun `manual state transitions update snapshot history properly`() {
+        orchestrator.startTask("proj-1", workspaceDir, "Full feature implementation")
+        assertEquals(EngineeringState.ANALYZING, orchestrator.snapshot.value.state)
+
+        orchestrator.transition(EngineeringState.PLANNING, "Formulating step-by-step roadmap")
+        assertEquals(EngineeringState.PLANNING, orchestrator.snapshot.value.state)
+
+        orchestrator.transition(EngineeringState.IMPLEMENTING, "Writing code")
+        assertEquals(EngineeringState.IMPLEMENTING, orchestrator.snapshot.value.state)
+
+        orchestrator.transition(EngineeringState.BUILDING, "Building APK")
+        assertEquals(EngineeringState.BUILDING, orchestrator.snapshot.value.state)
+
+        orchestrator.transition(EngineeringState.TESTING, "Executing unit tests")
+        assertEquals(EngineeringState.TESTING, orchestrator.snapshot.value.state)
+
+        orchestrator.transition(EngineeringState.REVIEWING, "Preparing diff summary")
+        assertEquals(EngineeringState.REVIEWING, orchestrator.snapshot.value.state)
+
+        orchestrator.transition(EngineeringState.COMPLETED, "Completed successfully")
+        assertEquals(EngineeringState.COMPLETED, orchestrator.snapshot.value.state)
+        assertEquals(7, orchestrator.snapshot.value.history.size)
+    }
+
+    @Test
+    fun `rollbackToBaseline restores workspace to original baseline state`() {
+        val checkpointDir = tempFolder.newFolder("checkpoints")
+        val cpManager = WorkspaceCheckpointManager(checkpointDir)
+        val orchestratorWithCp = AgentOrchestrator(
+            checkpointManager = cpManager,
+            memoryStore = null,
+            maxSelfHealingIterations = 3,
+        )
+
+        val codeFile = File(workspaceDir, "App.kt")
+        codeFile.writeText("original code")
+
+        orchestratorWithCp.startTask("proj-test", workspaceDir, "Risky refactor")
+
+        // Modify file
+        codeFile.writeText("broken code from bad agent action")
+        assertEquals("broken code from bad agent action", codeFile.readText())
+
+        // Rollback
+        val rolledBack = orchestratorWithCp.rollbackToBaseline(workspaceDir)
+        assertTrue(rolledBack)
+        assertEquals(EngineeringState.ROLLED_BACK, orchestratorWithCp.snapshot.value.state)
+        assertEquals("original code", codeFile.readText())
     }
 }

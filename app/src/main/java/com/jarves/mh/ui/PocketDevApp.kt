@@ -4736,6 +4736,8 @@ private fun WorkspaceScreen(
                     onToggleScratchpad = onToggleScratchpad,
                     onAddRoadmapComment = onAddRoadmapComment,
                     onApproveAndBuildRoadmap = onApproveAndBuildRoadmap,
+                    orchestratorSnapshot = state.orchestratorSnapshot,
+                    onRollbackToBaseline = viewModel::rollbackToBaseline,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -5352,6 +5354,8 @@ private fun ChatTab(
     onToggleScratchpad: () -> Unit = {},
     onAddRoadmapComment: (roadmapId: String, text: String, stepId: String?) -> Unit = { _, _, _ -> },
     onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
+    orchestratorSnapshot: com.jarves.mh.session.OrchestratorSnapshot? = null,
+    onRollbackToBaseline: () -> Unit = {},
 ) {
     val view = LocalView.current
     // Keep the screen on while the selected agent is working in this chat. Released automatically
@@ -5496,6 +5500,18 @@ private fun ChatTab(
                         )
                     }
                 }
+            }
+        }
+        if (orchestratorSnapshot != null && orchestratorSnapshot.state != com.jarves.mh.session.EngineeringState.IDLE) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
+            ) {
+                EngineeringStateBanner(
+                    snapshot = orchestratorSnapshot,
+                    onRollbackToBaseline = onRollbackToBaseline,
+                )
             }
         }
         Box(Modifier.weight(1f)) {

@@ -112,7 +112,7 @@ class RuntimeHealthController(
     }
 
     /**
-     * Reaps stale temporary process sockets and files in runtime tmp.
+     * Reaps stale temporary process sockets, proot binders, and orphaned pty artifacts.
      */
     fun cleanupOrphanArtifacts(): Int {
         var count = 0
@@ -121,6 +121,16 @@ class RuntimeHealthController(
             runCatching {
                 tmpDir.listFiles()?.forEach { file ->
                     if (file.name.startsWith("tmp") || file.name.endsWith(".sock") || file.name.contains("pty")) {
+                        if (file.delete()) count++
+                    }
+                }
+            }
+        }
+        val prootTmp = File(baseFilesDir.parentFile, "cache/proot-tmp")
+        if (prootTmp.isDirectory) {
+            runCatching {
+                prootTmp.listFiles()?.forEach { file ->
+                    if (file.name.startsWith("proot") || file.name.endsWith(".sock")) {
                         if (file.delete()) count++
                     }
                 }
