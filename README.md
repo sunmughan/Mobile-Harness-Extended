@@ -10,7 +10,7 @@
 
   <br />
 
-  [![Release v2.2.2](https://img.shields.io/badge/Release-v2.2.2-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v2.2.2)
+  [![Release v2.2.3](https://img.shields.io/badge/Release-v2.2.3-F28C52?style=flat-square&logo=github&logoColor=white)](https://github.com/sunmughan/Mobile-Harness-Extended/releases/tag/v2.2.3)
   [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#system-requirements)
   [![ARM64](https://img.shields.io/badge/CPU-ARM64-5B8DEF?style=flat-square)](#system-requirements)
   [![MIT License](https://img.shields.io/badge/License-MIT-8B7CF6?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
@@ -18,8 +18,8 @@
 
   <br />
 
-  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-online-release.apk) &nbsp;•&nbsp;
-  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-offline-release.apk) &nbsp;•&nbsp;
+  [**Download Online APK (87.2 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.3/app-online-release.apk) &nbsp;•&nbsp;
+  [**Download Offline APK (847.3 MiB)**](https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.3/app-offline-release.apk) &nbsp;•&nbsp;
   [**Watch Walkthrough (3 min)**](https://youtu.be/QzAau52Z7yQ) &nbsp;•&nbsp;
   [**Quickstart Guide**](#quickstart) &nbsp;•&nbsp;
   [**Architecture**](#architecture) &nbsp;•&nbsp;
@@ -28,17 +28,19 @@
 </div>
 
 > [!NOTE]
-> **Current development status (October 2026):** Mobile Harness Extended **v2.2.2** (versionCode `30`) is the latest verified production release.
+> **Current development status (October 2026):** Mobile Harness Extended **v2.2.3** (versionCode `31`) is the latest verified production release.
 > 
 > Major advancements in this release:
+> - **Multimodal YouTube Video Understanding via Gemini**: Dedicated red YouTube button next to mic in prompt bar, strict URL validation engine, interactive presets, and multimodal video breakdown.
+> - **Expanded 17-Skill Agent Ecosystem**: Added `anyps5-director`, `youtube-video-intel`, `fridge-vision-chef`, `receipt-expense-sleuth`, `contract-legal-buster`, `smarthome-iot-commander`, `academic-paper-architect`, `document-transmuter`, `marp-presentation-deck`, `creative-image-director`, `viral-growth-creator`, and `fullstack-dev-accelerator` with full GitHub update tracking.
+> - **Standalone Systems In-App Browser Shortcuts**: Quick launch cards for Hermes 3D, OpenGym, TikTok 5.6B Videos, GitFrames, Auto-Social, and Munder Difflin.
+> - **Clean Architecture & Cleanup**: Completely removed deprecated experimental e-commerce code and removed committed release notes markdown files from the repository tree.
 > - **Antigravity Multi-Account 401 Session Failover**: Sanitized Google OAuth token expiration and 401 unauthenticated errors, automatic zero-downtime round-robin failover to valid accounts without interrupting running agent tasks, and intuitive "Session Expired" badge with one-tap "Reconnect" in Settings.
 > - **Developer Tools Settings Redesign (Equal Gaps)**: Eliminated compounding vertical spacers and manual paddings to enforce strictly equal 10dp element gaps across switches, dividers, and toolchain cards with a balanced two-line layout.
 > - **Modernized RTL-Safe Compose Icons & Clean Diagnostics**: Modernized all vector icons to `Icons.AutoMirrored.Filled.*` and upgraded `WifiLock` to `WIFI_MODE_FULL_LOW_LATENCY` on Android 10+ (API 29+).
-> - **Stealth Deal Sniper & Anti-Sponsored Card Filtering**: Injected DOM filtering in `PriceScraperEngine` to ignore sponsored carousel cards, parse deal countdown badges, and normalize price ranges.
 > - **Process-Level AppScope Background Resilience**: Background tasks and agent loops execute on process-level `AppScope`, ensuring tasks never pause or terminate when switching to recent apps or under OS memory pressure.
 > - **Service & OEM Task Killer Hardening**: `RuntimeExecutionService` hardened with `START_STICKY`, `PARTIAL_WAKE_LOCK`, high-performance `WifiLock`, and `android:stopWithTask="false"`. Integrated OEM Autostart & background power management shortcuts for Xiaomi (HyperOS/MIUI), Oppo/Realme, Vivo, and Samsung.
 > - **Email Verification Modal Dialog**: Centered modal popup with real-time automatic polling and lifecycle resume verification.
-> - **Price Hunt & Festival Sniper Widget**: Cleaned up header layout, removing squished containers and orange vertical border artifacts.
 > - **Real Mobile IDE**: Multi-tab code editor with tab persistence across backgrounding, touch-friendly mobile coding toolbar (auto-pairing brackets, tab/indent, comment toggling), universal Command Palette (`Ctrl+P`), project-wide regex search & replace (`GlobalSearchEngine`), and contextual file tree (create, rename, delete, duplicate, move).
 > - **Multi-Language Semantic Code Intelligence**: 9-language AST symbol extraction (Kotlin, Java, TypeScript, JavaScript, Python, Go, Rust, C/C++, Shell), call graph mapping, forward/inverse dependency tracking, and enriched symbol outlines.
 > - **AI Context Engine 2.0 & Persistent Project Memory**: Automatic user intent classification (`BUG_FIX`, `FEATURE_IMPLEMENTATION`, `REFACTORING`, etc.), relevance ranking with context compression within token budgets, and persistent multi-tier project memory preserving architectural decisions and error patterns across sessions.
@@ -82,7 +84,7 @@
       <h3>Online Edition</h3>
       <p><strong>~87.2 MiB · Core bundled</strong></p>
       <p>Lightweight APK. Downloads verified runtime packages (Python, Android SDK, Claude, Antigravity, DeepSeek) on demand.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-online-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.3/app-online-release.apk">
         <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
       </a>
     </td>
@@ -90,7 +92,7 @@
       <h3>Offline Edition</h3>
       <p><strong>~847.3 MiB · Everything included</strong></p>
       <p>Completely self-contained. Pre-bundles all ARM64 runtimes (Core, Python, Android, Claude, DeepSeek, Antigravity) for zero-network setup.</p>
-      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.2/app-offline-release.apk">
+      <a href="https://github.com/sunmughan/Mobile-Harness-Extended/releases/download/v2.2.3/app-offline-release.apk">
         <img src="https://img.shields.io/badge/Download-Offline_APK-5B8DEF?style=for-the-badge&logo=android&logoColor=white" alt="Download Offline APK" />
       </a>
     </td>
@@ -98,7 +100,7 @@
 </table>
 
 <p align="center">
-  <strong>ARM64 Android 9+ · Release v2.2.2</strong><br />
+  <strong>ARM64 Android 9+ · Release v2.2.3</strong><br />
   <sub>Direct APK installation · No root required · No USB or wireless ADB pairing · Permanent Codeair signature</sub>
 </p>
 
@@ -220,7 +222,7 @@ Download the latest signed release APK from [GitHub Releases](https://github.com
 
 ```text
 Target Architecture : ARM64 (arm64-v8a)
-Package Version     : v2.2.2
+Package Version     : v2.2.3
 Minimum OS Level    : Android 9.0 (API 28)
 ```
 
@@ -414,7 +416,6 @@ Mobile Harness allows downloading optional developer packs on demand to conserve
 * **PHP Development**: PHP 8.4 runtime via Ondřej PHP PPA for Ubuntu 20.04 ARM64, official latest-stable Composer, and database extensions.
 * **C / C++ Compiler Suite**: GCC/G++, Clang, Make, and CMake for native tool compilation.
 * **Browser Automation (Chromium & Puppeteer)**: Chromium browser, `puppeteer-core`, and `pocket-browser` CLI with Chrome DevTools Protocol (CDP) on port 9222. Includes real-time viewport inspection in the dual-mode Preview tab.
-* **Big Billion Days & Festival Deal Sniper**: In-app stealth e-commerce price drop sniper and deal verification engine for Flipkart and Amazon India. Integrates Akamai bot shield bypass via authenticated Chromium sessions, resource-blocking acceleration (<1.5s page loads), anti-ban jitter scheduling (25 ± 10 min), and AI Deal Reality scoring (1–10) with automatic push notifications when target price drops occur.
 
 > *Note: Kernel-level virtualization technologies such as Docker, KVM, systemd services, and nested hardware emulators are not supported under PRoot.*
 

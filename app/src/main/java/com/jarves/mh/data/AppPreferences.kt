@@ -33,18 +33,6 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("runtime_setup_complete", false)
         set(value) { preferences.edit().putBoolean("runtime_setup_complete", value).apply() }
 
-    enum class AppPersonaMode {
-        DEVELOPER,
-        DEAL_HUNTER,
-    }
-
-    var appPersonaMode: String
-        get() = preferences.getString("app_persona_mode", AppPersonaMode.DEVELOPER.name) ?: AppPersonaMode.DEVELOPER.name
-        set(value) { preferences.edit().putString("app_persona_mode", value).apply() }
-
-    val isDealHunterMode: Boolean
-        get() = appPersonaMode == AppPersonaMode.DEAL_HUNTER.name
-
     var backgroundSetupComplete: Boolean
         get() = preferences.getBoolean("background_setup_complete", false)
         set(value) { preferences.edit().putBoolean("background_setup_complete", value).apply() }

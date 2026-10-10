@@ -21,11 +21,9 @@ object NotificationCoordinator {
     const val RUNNING_CHANNEL_ID = "runtime"
     const val RESULT_CHANNEL_ID = "task-results"
     const val REMOTE_CHANNEL_ID = "remote-events"
-    const val PRICE_ALERT_CHANNEL_ID = "festive-price-alerts"
     const val RUNNING_NOTIFICATION_ID = 41
     const val RESULT_NOTIFICATION_ID = 42
     private const val REMOTE_NOTIFICATION_BASE_ID = 10_000
-    private const val PRICE_ALERT_BASE_ID = 20_000
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -54,17 +52,6 @@ object NotificationCoordinator {
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
                 description = "Remote updates for Mobile Harness projects and agent sessions"
-            },
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(
-                PRICE_ALERT_CHANNEL_ID,
-                "Festive Price Drop Alerts",
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "High-priority flash deal and price drop alerts with instant buy actions"
-                enableVibration(true)
-                enableLights(true)
             },
         )
     }
@@ -135,49 +122,6 @@ object NotificationCoordinator {
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .build(),
-        )
-    }
-
-    fun buildPriceAlert(
-        context: Context,
-        title: String,
-        detail: String,
-        productUrl: String,
-    ): Notification {
-        val officialAppIntent = com.jarves.mh.ecommerce.BuyActionHandler.createOfficialAppIntent(context, productUrl)
-        val officialAppPendingIntent = PendingIntent.getActivity(
-            context,
-            productUrl.hashCode(),
-            officialAppIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val inAppPendingIntent = openAppIntent(context, "browser:$productUrl")
-
-        return NotificationCompat.Builder(context, PRICE_ALERT_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
-            .setContentIntent(inAppPendingIntent)
-            .setAutoCancel(true)
-            .setCategory(NotificationCompat.CATEGORY_PROMO)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .addAction(0, "⚡ Buy Now (App)", officialAppPendingIntent)
-            .addAction(0, "🌐 Buy In-App", inAppPendingIntent)
-            .build()
-    }
-
-    fun postPriceAlert(
-        context: Context,
-        title: String,
-        detail: String,
-        productUrl: String,
-        notificationId: Int = PRICE_ALERT_BASE_ID + stableNotificationOffset(null, title, productUrl),
-    ) {
-        ensureChannels(context)
-        context.getSystemService(NotificationManager::class.java).notify(
-            notificationId,
-            buildPriceAlert(context, title, detail, productUrl),
         )
     }
 

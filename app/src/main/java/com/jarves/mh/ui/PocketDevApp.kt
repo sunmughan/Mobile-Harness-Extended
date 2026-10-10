@@ -125,7 +125,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.Speed
+import com.jarves.mh.ui.components.YouTubeBrandRed
+import com.jarves.mh.ui.components.YouTubeVideoDialog
+import com.jarves.mh.util.YouTubeUrlValidator
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
@@ -140,6 +144,12 @@ import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.MovieFilter
+import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -243,9 +253,6 @@ import com.jarves.mh.runtime.RuntimeSetupService
 import com.jarves.mh.runtime.supportsArm64Runtime
 import com.jarves.mh.runtime.AntigravityAuthStatus
 import com.jarves.mh.runtime.BackgroundProtectionHelper
-import com.jarves.mh.ecommerce.PriceHuntController
-import com.jarves.mh.ecommerce.PriceHuntWebInterceptor
-import com.jarves.mh.ui.components.PriceHuntWidget
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -340,7 +347,6 @@ fun PocketDevApp(
             onToggleStack = viewModel::toggleDevStack,
             onSelectAgent = viewModel::selectAgent,
             onDownload = viewModel::startRuntimeSetup,
-            onStartDealHunter = viewModel::startDealHunterMode,
         )
         state.startupStage == StartupStage.INSTALLING && state.showDetailedSetupProgress ->
             RuntimeInstallationScreen(
@@ -955,7 +961,6 @@ private fun RuntimeSetupPromptScreen(
     onToggleStack: (DevStack) -> Unit,
     onSelectAgent: (AgentKind) -> Unit = {},
     onDownload: () -> Unit,
-    onStartDealHunter: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activityManager = context.getSystemService(ActivityManager::class.java)
@@ -975,7 +980,7 @@ private fun RuntimeSetupPromptScreen(
     }
 
     if (currentStep > 0) {
-        BackHandler { currentStep-- }
+        BackHandler { currentStep = 0 }
     }
 
     Scaffold(
@@ -1016,7 +1021,7 @@ private fun RuntimeSetupPromptScreen(
                 },
                 navigationIcon = {
                     if (currentStep > 0) {
-                        IconButton(onClick = { currentStep-- }) {
+                        IconButton(onClick = { currentStep = 0 }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                         }
                     }
@@ -1043,159 +1048,7 @@ private fun RuntimeSetupPromptScreen(
             Spacer(Modifier.height(8.dp))
 
             if (currentStep == 0) {
-                // Step 0: Choose Your Experience (Persona Gateway)
-                Text(
-                    text = "CHOOSE YOUR MODE",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "How will you use Mobile Harness?",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Select your primary goal to start immediately. You can switch modes or install developer toolchains anytime from Settings.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.5.sp,
-                    lineHeight = 19.sp,
-                )
-
-                Spacer(Modifier.height(20.dp))
-
-                // Card 1: Festive Deal Hunter (Featured / Instant)
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFFFF5722).copy(alpha = 0.08f),
-                    border = BorderStroke(1.5.dp, Color(0xFFFF5722)),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(Modifier.padding(18.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(shape = CircleShape, color = Color(0xFFFF5722), modifier = Modifier.size(28.dp)) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Bolt, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "Festive Deal Hunter",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = Color(0xFFFF5722),
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFF2E7D32).copy(alpha = 0.15f),
-                            ) {
-                                Text(
-                                    "INSTANT · NO DOWNLOAD",
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2E7D32),
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "Stealth Flipkart & Amazon price drop sniper, Akamai bot shield bypass, AI Deal Reality scoring (1-10), and live Chromium browser.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 16.sp,
-                        )
-
-                        Spacer(Modifier.height(14.dp))
-                        Button(
-                            onClick = onStartDealHunter,
-                            modifier = Modifier.fillMaxWidth().height(44.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)),
-                        ) {
-                            Text("Start Hunting Deals Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Spacer(Modifier.width(6.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                // Card 2: Software Developer & Engineer
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(Modifier.padding(18.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp)) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Terminal, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "Software Developer",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                            ) {
-                                Text(
-                                    "FULL CODING IDE",
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "Complete Linux PRoot workspace, Node.js, Python, Git, touch code editor, universal Command Palette, and Autonomous AI Coding Agents.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 16.sp,
-                        )
-
-                        Spacer(Modifier.height(14.dp))
-                        OutlinedButton(
-                            onClick = { currentStep = 1 },
-                            modifier = Modifier.fillMaxWidth().height(44.dp),
-                            shape = RoundedCornerShape(10.dp),
-                        ) {
-                            Text("Set Up Coding Environment", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Spacer(Modifier.width(6.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            } else if (currentStep == 1) {
-                // Step 1: Device Compatibility & Verification
+                // Device Compatibility & Verification
                 Text(
                     text = "DEVICE CHECK",
                     color = MaterialTheme.colorScheme.primary,
@@ -1304,7 +1157,7 @@ private fun RuntimeSetupPromptScreen(
                 Spacer(Modifier.height(28.dp))
 
                 Button(
-                    onClick = { currentStep = 2 },
+                    onClick = { currentStep = 1 },
                     enabled = compatible,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -4939,10 +4792,6 @@ private fun WorkspaceScreen(
                 WorkspaceTab.PREVIEW -> PreviewTab(
                     ready = state.previewReady,
                     url = state.previewUrl,
-                    onHuntWithAgent = { agentPrompt ->
-                        selectedTab = WorkspaceTab.CHAT
-                        onSend(agentPrompt)
-                    },
                 )
                 }
             }
@@ -5513,9 +5362,26 @@ private fun ChatTab(
     }
     var prompt by rememberSaveable { mutableStateOf("") }
     var showWorkspaceControls by rememberSaveable { mutableStateOf(false) }
+    var showYouTubeDialog by rememberSaveable { mutableStateOf(false) }
     var mentionQuery by remember { mutableStateOf<String?>(null) }
     var activeCommentTarget by remember { mutableStateOf<Triple<String, String?, String>?>(null) }
     val chatScope = rememberCoroutineScope()
+
+    if (showYouTubeDialog) {
+        YouTubeVideoDialog(
+            initialUrl = if (YouTubeUrlValidator.isValid(prompt)) prompt.trim() else "",
+            onDismiss = { showYouTubeDialog = false },
+            onAnalyze = { videoInfo, userQuery, focusMode ->
+                val videoPrompt = YouTubeUrlValidator.buildGeminiVideoPrompt(
+                    info = videoInfo,
+                    userQuery = userQuery,
+                    focusMode = focusMode,
+                )
+                onSend(videoPrompt)
+                prompt = ""
+            },
+        )
+    }
 
     activeCommentTarget?.let { (roadmapId, stepId, stepTitle) ->
         AddRoadmapCommentDialog(
@@ -5937,6 +5803,18 @@ private fun ChatTab(
                                         contentDescription = "Voice input",
                                         modifier = Modifier.size(19.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { showYouTubeDialog = true },
+                                    modifier = Modifier.size(34.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SmartDisplay,
+                                        contentDescription = "Analyze YouTube video with Gemini",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = YouTubeBrandRed,
                                     )
                                 }
                             }
@@ -6673,6 +6551,59 @@ private data class BrowserBookmark(
     val url: String,
 )
 
+private data class StandaloneSystemShortcut(
+    val name: String,
+    val tag: String,
+    val description: String,
+    val url: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+)
+
+private val STANDALONE_SYSTEM_SHORTCUTS = listOf(
+    StandaloneSystemShortcut(
+        name = "Hermes 3D",
+        tag = "Virtual Office",
+        description = "3D AI Agent office simulator & spatial standups",
+        url = "https://github.com/iamlukethedev/Hermes3D",
+        icon = Icons.Default.ViewInAr,
+    ),
+    StandaloneSystemShortcut(
+        name = "OpenGym",
+        tag = "Fitness Tracker",
+        description = "Self-hosted private workout & bodyweight logger",
+        url = "https://github.com/DuarteSantos8/openGym",
+        icon = Icons.Default.FitnessCenter,
+    ),
+    StandaloneSystemShortcut(
+        name = "TikTok 5.6B",
+        tag = "Video Dataset",
+        description = "5.6B video metadata & ClickHouse analytics",
+        url = "https://huggingface.co/datasets/datasocial/tiktok-5.6B-videos",
+        icon = Icons.Default.Analytics,
+    ),
+    StandaloneSystemShortcut(
+        name = "GitFrames",
+        tag = "WebGPU VFX",
+        description = "Code-first video compositing natively on WebGPU",
+        url = "https://github.com/gatewai-dev/gitframes",
+        icon = Icons.Default.MovieFilter,
+    ),
+    StandaloneSystemShortcut(
+        name = "AutoSocial",
+        tag = "Automation",
+        description = "Local multi-account short-form video publisher",
+        url = "https://github.com/Katzca/AutoSocial",
+        icon = Icons.Default.RocketLaunch,
+    ),
+    StandaloneSystemShortcut(
+        name = "Munder Difflin",
+        tag = "Office Harness",
+        description = "Local-first desktop multi-agent harness",
+        url = "https://github.com/chaitanyagiri/munder-difflin",
+        icon = Icons.Default.Groups,
+    ),
+)
+
 private const val DESKTOP_USER_AGENT =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 private const val MOBILE_CHROME_USER_AGENT =
@@ -6683,7 +6614,6 @@ private const val MOBILE_CHROME_USER_AGENT =
 private fun PreviewTab(
     ready: Boolean,
     url: String?,
-    onHuntWithAgent: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
 
@@ -7321,13 +7251,6 @@ private fun PreviewTab(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // Big Billion Days & Festival Deal Sniper Widget (Full-Width)
-                PriceHuntWidget(
-                    webView = webView,
-                    onNavigate = { navigateTo(it) },
-                    onHuntWithAgent = onHuntWithAgent,
-                )
-
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
@@ -7355,8 +7278,132 @@ private fun PreviewTab(
                     textAlign = TextAlign.Center,
                     lineHeight = 16.sp,
                 )
+                // Standalone Systems & Web Tools Shortcuts
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Extension,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Standalone Systems & Tools",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            ) {
+                                Text(
+                                    text = "QUICK LAUNCH",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Explore self-hosted systems, multi-agent harnesses, and big data datasets:",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp,
+                        )
+
+                        STANDALONE_SYSTEM_SHORTCUTS.forEach { item ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { navigateTo(item.url) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(34.dp),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = item.icon,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            Text(
+                                                text = item.name,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                            ) {
+                                                Text(
+                                                    text = item.tag,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = item.description,
+                                            fontSize = 10.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                        contentDescription = "Open",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Text(
-                    text = "Quick shortcuts:",
+                    text = "Local Dev shortcuts:",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -7389,7 +7436,6 @@ private fun PreviewTab(
                 factory = { ctx ->
                     WebView(ctx).apply {
                         webView = this
-                        PriceHuntController.attachWebView(this)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.databaseEnabled = true
@@ -7423,16 +7469,6 @@ private fun PreviewTab(
                             }
                         }
                         webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                                val sniperActive = PriceHuntController.state.value.isScanning ||
-                                    PriceHuntController.state.value.isAutoTracking
-                                // Only block annoying trackers; never block page UI assets (SVGs, WebP, fonts) so e-commerce pages render cleanly
-                                if (PriceHuntWebInterceptor.shouldBlockRequest(request, sniperActive, blockMedia = false)) {
-                                    return PriceHuntWebInterceptor.createEmptyResponse()
-                                }
-                                return super.shouldInterceptRequest(view, request)
-                            }
-
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val target = request?.url ?: return false
                                 val scheme = target.scheme?.lowercase()
@@ -7474,9 +7510,6 @@ private fun PreviewTab(
                                     }
                                 }
                                 canGoBack.value = view?.canGoBack() == true
-                                if (view != null) {
-                                    PriceHuntController.onPageLoaded(context, view)
-                                }
                             }
                         }
                         lastLoadedUrl = targetUrl
@@ -7485,7 +7518,6 @@ private fun PreviewTab(
                 },
                 update = { current ->
                     webView = current
-                    PriceHuntController.attachWebView(current)
                     val desiredUserAgent = if (currentTab.isDesktopMode) DESKTOP_USER_AGENT else MOBILE_CHROME_USER_AGENT
                     if (current.settings.userAgentString != desiredUserAgent) {
                         current.settings.userAgentString = desiredUserAgent

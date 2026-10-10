@@ -352,27 +352,41 @@ jobs:
           ONLINE_SIZE=$(stat -c '%s' "$ONLINE")
           OFFLINE_SIZE=$(stat -c '%s' "$OFFLINE")
           export TAG VERSION_NAME VERSION_CODE ONLINE_SHA OFFLINE_SHA ONLINE_SIZE OFFLINE_SIZE
-          if [ -f "release-notes-${TAG}.md" ]; then
-            cp "release-notes-${TAG}.md" release-notes.md
-          else
-            cat > release-notes.md <<EOF
-          ## Mobile Harness Extended $TAG
+          cat > release-notes.md <<EOF
+## Mobile Harness Extended $TAG
 
-          ### Highlights in this build
-          - **Background Execution & Anti-Termination Hardening**:
-            - Tasks and agent loops execute on process-level \`AppScope\`, preventing pause or termination when switching to recent apps or under OS memory pressure.
-            - \`RuntimeExecutionService\` configured with \`START_STICKY\`, \`PARTIAL_WAKE_LOCK\`, high-performance \`WifiLock\`, and \`android:stopWithTask="false"\`.
-            - Direct OEM Autostart & Power Management settings shortcuts for Xiaomi (HyperOS/MIUI), Oppo/Realme (ColorOS), Vivo (FunTouch), and Samsung (OneUI).
-          - **Email Verification Modal Dialog**: Centered modal dialog with real-time automatic verification polling and lifecycle resume verification.
-          - **Price Hunt & Festival Sniper Widget**: Cleaned up header layout, eliminating squished container and orange vertical border visual artifacts.
+### Highlights in this build
+- **Multimodal YouTube Video Understanding via Gemini**:
+  - Dedicated YouTube action button positioned next to the Mic icon in the chat prompt bar (\`ChatTab\`).
+  - Strict URL validation engine (\`YouTubeUrlValidator\`) enforcing valid YouTube URLs (\`watch?v=\`, \`youtu.be/\`, \`shorts/\`, \`live/\`) with clean video ID extraction and strict non-YouTube domain rejection.
+  - Interactive \`YouTubeVideoDialog\` with one-tap clipboard paste, live validation badges, focus presets (*Full Deep Summary*, *Key Takeaways & Timestamps*, *Action Items & Tutorial*, *Code & Technical Walkthrough*), and custom query input.
+  - Multi-modal prompt orchestrator sending deep video comprehension requests directly to Google Gemini models.
+- **Expanded High-Impact & Daily-Life Skills Suite (17 Skills)**:
+  - Added \`anyps5-director\` (native PS5 ELF relinker & Vulkan SPIR-V shader recompiler without emulation).
+  - Added \`youtube-video-intel\` (deep multimodal video understanding and chaptering).
+  - Added \`fridge-vision-chef\` (computer vision meal planning and macro calculator from fridge/pantry photos).
+  - Added \`receipt-expense-sleuth\` (OCR invoice & receipt auditor with hidden subscription spike detection).
+  - Added \`contract-legal-buster\` (rental lease & contract auditor with plain-language risk scoring).
+  - Added \`smarthome-iot-commander\` (Home Assistant / ESPHome smart home orchestrator).
+  - Added \`academic-paper-architect\` (PhD research paper and journal writing assistant with LaTeX/BibTeX templates and peer-review rebuttals).
+  - Added \`document-transmuter\` (universal Markdown, PDF, DOCX, LaTeX conversion engine).
+  - Added \`marp-presentation-deck\` (Marp/RevealJS interactive presentation slide generator).
+  - Added \`creative-image-director\` (cinematographic prompt engineering and SVG vector synthesis).
+  - Added \`viral-growth-creator\` (social media and account growth engine for YouTube, X threads, and LinkedIn carousels).
+  - Added \`fullstack-dev-accelerator\` (fullstack architecture design, AST refactoring, unit tests, CI/CD pipelines).
+  - All skills configured with canonical GitHub upstream sources for one-tap in-app updates in the Skills screen.
+- **Standalone Systems In-App Browser Shortcuts**:
+  - Direct quick-launch cards in Chromium preview homescreen for Hermes 3D, OpenGym, TikTok 5.6B Videos, GitFrames, Auto-Social, and Munder Difflin.
+- **Clean Architecture & Repository Cleanup**:
+  - Completely purged deprecated experimental e-commerce code.
+  - Removed committed release notes \`.md\` files from git history and enforced \`.gitignore\` exclusion; release notes are now published directly to GitHub Releases.
 
-          ### Release files
-          - **Online Release:** app-online-release.apk
-          - **Offline Release:** app-offline-release.apk
+### Release files
+- **Online Release:** app-online-release.apk
+- **Offline Release:** app-offline-release.apk
 
-          The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
-          EOF
-          fi
+The release contains the two APKs plus the \`mobile-harness-update.json\` manifest. Debug APKs are CI-only artifacts and are not release downloads.
+EOF
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Mobile Harness $TAG" --notes-file release-notes.md
           gh release edit "$TAG" --title "Mobile Harness $TAG" --notes-file release-notes.md

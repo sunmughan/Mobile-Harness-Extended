@@ -179,7 +179,6 @@ data class AppUiState(
     val startupErrorIsOffline: Boolean = false,
     val showDetailedSetupProgress: Boolean = false,
     val onboardingComplete: Boolean = false,
-    val isDealHunterMode: Boolean = false,
     val backgroundSetupComplete: Boolean = false,
     val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val activeApiKeyName: String? = null,
@@ -427,7 +426,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             startupStage = if (isWarmReady) StartupStage.READY else StartupStage.CHECKING,
             startupProgress = if (isWarmReady) 1f else 0f,
             onboardingComplete = preferences.onboardingComplete,
-            isDealHunterMode = preferences.isDealHunterMode,
             backgroundSetupComplete = preferences.backgroundSetupComplete,
             agentKind = initialAgentKind,
             primaryAgentKind = initialPrimaryAgentKind,
@@ -1293,35 +1291,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update { it.copy(startupStage = StartupStage.MODEL_SETUP, startupProgress = 1f) }
             }
             else -> initializeRuntime(isWarmBoot = isWarmBoot)
-        }
-    }
-
-    fun startDealHunterMode() {
-        preferences.appPersonaMode = AppPreferences.AppPersonaMode.DEAL_HUNTER.name
-        preferences.runtimeSetupComplete = true
-        preferences.onboardingComplete = true
-        preferences.backgroundSetupComplete = true
-        _state.update {
-            it.copy(
-                isDealHunterMode = true,
-                startupStage = StartupStage.READY,
-                onboardingComplete = true,
-                backgroundSetupComplete = true,
-                startupProgress = 1f,
-                startupMessage = "Festive Deal Hunter Ready",
-            )
-        }
-    }
-
-    fun switchToDeveloperMode() {
-        preferences.appPersonaMode = AppPreferences.AppPersonaMode.DEVELOPER.name
-        val installed = installer.isInstalled()
-        _state.update {
-            it.copy(
-                isDealHunterMode = false,
-                startupStage = if (installed) StartupStage.READY else StartupStage.SETUP_REQUIRED,
-                startupProgress = if (installed) 1f else 0f,
-            )
         }
     }
 

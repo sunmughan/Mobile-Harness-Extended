@@ -74,3 +74,6 @@ release-dist/
 
 # Runtime synchronized agent skills
 .agents/
+
+# Release notes markdown files (release notes are published to GitHub Releases directly)
+release-notes*.md
