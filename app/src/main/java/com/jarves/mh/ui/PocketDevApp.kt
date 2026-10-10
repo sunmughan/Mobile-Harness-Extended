@@ -460,6 +460,16 @@ fun PocketDevApp(
             onDuplicateFile = viewModel::duplicateEntry,
             onOpenFileByPath = viewModel::openFileByPath,
             workspaceDir = state.activeProject?.let { viewModel.projectWorkspaceController.projectWorkspaceRoot(it) },
+            onRollbackToBaseline = viewModel::rollbackToBaseline,
+            onEngageEmergencyKillSwitch = viewModel::engageEmergencyKillSwitch,
+            onResetEmergencyKillSwitch = viewModel::resetEmergencyKillSwitch,
+            onApprovalWithLevel = viewModel::answerApprovalWithLevel,
+            onMoveEntry = viewModel::moveEntry,
+            onGitStatus = viewModel::gitStatus,
+            onGitCommit = viewModel::gitCommit,
+            onGitCheckout = viewModel::gitCheckout,
+            onGitDiff = viewModel::gitDiff,
+            onGitBranchList = viewModel::gitBranchList,
         )
         else -> RootScreenHost(
             state = state,
@@ -4299,6 +4309,16 @@ private fun WorkspaceScreen(
     onDuplicateFile: (String) -> Unit = {},
     onOpenFileByPath: (String) -> Unit = {},
     workspaceDir: java.io.File? = null,
+    onRollbackToBaseline: () -> Unit = {},
+    onEngageEmergencyKillSwitch: () -> Unit = {},
+    onResetEmergencyKillSwitch: () -> Unit = {},
+    onApprovalWithLevel: (com.jarves.mh.security.PermissionLevel, Boolean) -> Unit = { _, _ -> },
+    onMoveEntry: (String, String) -> Unit = { _, _ -> },
+    onGitStatus: ((String) -> Unit) -> Unit = {},
+    onGitCommit: (String, (Boolean, String) -> Unit) -> Unit = { _, _ -> },
+    onGitCheckout: (String, Boolean, (Boolean, String) -> Unit) -> Unit = { _, _, _ -> },
+    onGitDiff: ((String) -> Unit) -> Unit = {},
+    onGitBranchList: ((List<String>) -> Unit) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4737,7 +4757,11 @@ private fun WorkspaceScreen(
                     onAddRoadmapComment = onAddRoadmapComment,
                     onApproveAndBuildRoadmap = onApproveAndBuildRoadmap,
                     orchestratorSnapshot = state.orchestratorSnapshot,
-                    onRollbackToBaseline = viewModel::rollbackToBaseline,
+                    onRollbackToBaseline = onRollbackToBaseline,
+                    emergencyKillSwitchActive = state.emergencyKillSwitchActive,
+                    onEngageEmergencyKillSwitch = onEngageEmergencyKillSwitch,
+                    onResetEmergencyKillSwitch = onResetEmergencyKillSwitch,
+                    onApprovalWithLevel = onApprovalWithLevel,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -4754,8 +4778,14 @@ private fun WorkspaceScreen(
                     onCreateFile = onCreateFile,
                     onCreateFolder = onCreateFolder,
                     onRenameEntry = onRenameFile,
+                    onMoveEntry = onMoveEntry,
                     onDeleteEntry = onDeleteFile,
                     onDuplicateEntry = onDuplicateFile,
+                    onGitStatus = onGitStatus,
+                    onGitCommit = onGitCommit,
+                    onGitCheckout = onGitCheckout,
+                    onGitDiff = onGitDiff,
+                    onGitBranchList = onGitBranchList,
                 )
                 WorkspaceTab.TERMINAL -> TerminalScreen(
                     lines = state.projectTerminalLines,
@@ -5044,15 +5074,23 @@ private fun FilesTab(
     onCreateFile: (String) -> Unit = {},
     onCreateFolder: (String) -> Unit = {},
     onRenameEntry: (String, String) -> Unit = { _, _ -> },
+    onMoveEntry: (String, String) -> Unit = { _, _ -> },
     onDeleteEntry: (String) -> Unit = {},
     onDuplicateEntry: (String) -> Unit = {},
+    onGitStatus: ((String) -> Unit) -> Unit = {},
+    onGitCommit: (String, (Boolean, String) -> Unit) -> Unit = { _, _ -> },
+    onGitCheckout: (String, Boolean, (Boolean, String) -> Unit) -> Unit = { _, _, _ -> },
+    onGitDiff: ((String) -> Unit) -> Unit = {},
+    onGitBranchList: ((List<String>) -> Unit) -> Unit = {},
 ) {
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var fileQuery by rememberSaveable { mutableStateOf("") }
     var showCreateFileDialog by rememberSaveable { mutableStateOf(false) }
     var showCreateFolderDialog by rememberSaveable { mutableStateOf(false) }
+    var showGitDialog by rememberSaveable { mutableStateOf(false) }
     var targetParentDir by rememberSaveable { mutableStateOf<String?>(null) }
     var entryToRename by remember { mutableStateOf<WorkspaceEntry?>(null) }
+    var entryToMove by remember { mutableStateOf<WorkspaceEntry?>(null) }
     var entryToDelete by remember { mutableStateOf<WorkspaceEntry?>(null) }
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     LaunchedEffect(files.map { it.path }) {
@@ -5114,6 +5152,9 @@ private fun FilesTab(
                     IconButton(onClick = onBindFolder) { Icon(Icons.Default.Folder, "Bind folder from device") }
                     if (!loading && files.any { !it.isDirectory }) {
                         IconButton(onClick = onExport) { Icon(Icons.Default.Download, "Export project as ZIP") }
+                    }
+                    IconButton(onClick = { showGitDialog = true }) {
+                        Icon(Icons.Default.Code, "Git operations")
                     }
                     if (loading) {
                         CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
@@ -5266,6 +5307,7 @@ private fun FilesTab(
                         showCreateFolderDialog = true
                     },
                     onRename = { entryToRename = it },
+                    onMove = { entryToMove = it },
                     onDuplicate = { onDuplicateEntry(it.path) },
                     onDelete = { entryToDelete = it },
                     onCopyPath = { path ->
@@ -5312,6 +5354,17 @@ private fun FilesTab(
         )
     }
 
+    entryToMove?.let { entry ->
+        MoveEntryDialog(
+            entry = entry,
+            onDismiss = { entryToMove = null },
+            onConfirm = { targetPath ->
+                entryToMove = null
+                onMoveEntry(entry.path, targetPath)
+            },
+        )
+    }
+
     entryToDelete?.let { entry ->
         DeleteEntryDialog(
             entry = entry,
@@ -5320,6 +5373,17 @@ private fun FilesTab(
                 entryToDelete = null
                 onDeleteEntry(entry.path)
             },
+        )
+    }
+
+    if (showGitDialog) {
+        GitOperationsDialog(
+            onDismiss = { showGitDialog = false },
+            onStatus = onGitStatus,
+            onCommit = onGitCommit,
+            onCheckout = onGitCheckout,
+            onDiff = onGitDiff,
+            onBranchList = onGitBranchList,
         )
     }
 }
@@ -5356,6 +5420,10 @@ private fun ChatTab(
     onApproveAndBuildRoadmap: (roadmap: ActiveRoadmap, additionalInstructions: String?) -> Unit = { _, _ -> },
     orchestratorSnapshot: com.jarves.mh.session.OrchestratorSnapshot? = null,
     onRollbackToBaseline: () -> Unit = {},
+    emergencyKillSwitchActive: Boolean = false,
+    onEngageEmergencyKillSwitch: () -> Unit = {},
+    onResetEmergencyKillSwitch: () -> Unit = {},
+    onApprovalWithLevel: (com.jarves.mh.security.PermissionLevel, Boolean) -> Unit = { _, _ -> },
 ) {
     val view = LocalView.current
     // Keep the screen on while the selected agent is working in this chat. Released automatically
@@ -5514,6 +5582,44 @@ private fun ChatTab(
                 )
             }
         }
+        if (emergencyKillSwitchActive) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Emergency Kill Switch Active",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            "All agent tools and processes are blocked.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                        )
+                    }
+                    TextButton(onClick = onResetEmergencyKillSwitch) {
+                        Text("Reset", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
         Box(Modifier.weight(1f)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -5560,7 +5666,7 @@ private fun ChatTab(
                         )
                     }
                 }
-                approval?.let { request -> item { ApprovalCard(request, onApproval) } }
+                approval?.let { request -> item { ApprovalCard(request, onApproval, onApprovalWithLevel) } }
             }
             if (!readerAtBottom) {
                 Surface(
@@ -5836,22 +5942,36 @@ private fun ChatTab(
                             }
 
                             if (isRunning) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.error,
-                                            shape = CircleShape,
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = onEngageEmergencyKillSwitch,
+                                        modifier = Modifier.size(34.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = "Emergency Kill Switch",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp),
                                         )
-                                        .clickable(onClick = onStop),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Stop,
-                                        contentDescription = "Stop AI task",
-                                        tint = MaterialTheme.colorScheme.onError,
-                                        modifier = Modifier.size(18.dp),
-                                    )
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(
+                                                color = MaterialTheme.colorScheme.error,
+                                                shape = CircleShape,
+                                            )
+                                            .clickable(onClick = onStop),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Stop,
+                                            contentDescription = "Stop AI task",
+                                            tint = MaterialTheme.colorScheme.onError,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
                                 }
                             } else {
                                 Box(
@@ -6354,7 +6474,11 @@ private fun AttachmentChip(
 }
 
 @Composable
-private fun ApprovalCard(request: ToolRequest, onApproval: (Boolean) -> Unit) {
+private fun ApprovalCard(
+    request: ToolRequest,
+    onApproval: (Boolean) -> Unit,
+    onApprovalWithLevel: (com.jarves.mh.security.PermissionLevel, Boolean) -> Unit = { _, _ -> },
+) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -6363,9 +6487,33 @@ private fun ApprovalCard(request: ToolRequest, onApproval: (Boolean) -> Unit) {
             }
             Text(request.explanation)
             request.affectedPaths.forEach { Text("• $it", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onApproval(false) }, Modifier.weight(1f)) { Text("Reject") }
-                Button(onClick = { onApproval(true) }, Modifier.weight(1f)) { Text("Allow once") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = {
+                        onApproval(false)
+                        onApprovalWithLevel(com.jarves.mh.security.PermissionLevel.DENY, false)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Reject", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = {
+                        onApprovalWithLevel(com.jarves.mh.security.PermissionLevel.SESSION, true)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Session", fontSize = 12.sp)
+                }
+                Button(
+                    onClick = {
+                        onApproval(true)
+                        onApprovalWithLevel(com.jarves.mh.security.PermissionLevel.ONCE, true)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Once", fontSize = 12.sp)
+                }
             }
         }
     }

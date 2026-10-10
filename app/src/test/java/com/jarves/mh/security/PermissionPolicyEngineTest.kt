@@ -247,4 +247,69 @@ class PermissionPolicyEngineTest {
         assertEquals(1, p1Entries.size)
         assertEquals("npm test", p1Entries.first().target)
     }
+
+    @Test
+    fun `emergency kill switch halts all execution immediately`() {
+        val req = PermissionRequest(
+            category = PermissionCategory.SHELL_EXEC,
+            target = "ls -la",
+            command = "ls -la",
+            sessionId = "s-kill",
+            projectId = "p-kill"
+        )
+        // Before kill switch: safe command is allowed
+        assertTrue(engine.evaluatePermission(req).allowed)
+
+        // Engage kill switch
+        engine.engageEmergencyKillSwitch("User pressed emergency stop")
+        assertTrue(engine.isEmergencyKillSwitchEngaged())
+
+        val blocked = engine.evaluatePermission(req)
+        assertFalse(blocked.allowed)
+        assertFalse(blocked.requiresPrompt)
+        assertTrue(blocked.reason.contains("Emergency kill switch is ACTIVE"))
+
+        // Reset kill switch
+        engine.resetEmergencyKillSwitch()
+        assertFalse(engine.isEmergencyKillSwitchEngaged())
+        assertTrue(engine.evaluatePermission(req).allowed)
+    }
+
+    @Test
+    fun `granular session permission grant applies only to target session`() {
+        val session1 = "session-alpha"
+        val session2 = "session-beta"
+        val req1 = PermissionRequest(
+            category = PermissionCategory.FILE_DELETE,
+            target = "temp.txt",
+            sessionId = session1,
+            projectId = "test-proj"
+        )
+        val req2 = PermissionRequest(
+            category = PermissionCategory.FILE_DELETE,
+            target = "temp.txt",
+            sessionId = session2,
+            projectId = "test-proj"
+        )
+
+        // Baseline: deletion requires prompt
+        assertFalse(engine.evaluatePermission(req1).allowed)
+        assertFalse(engine.evaluatePermission(req2).allowed)
+
+        // Grant session1
+        engine.grantPermission(
+            category = PermissionCategory.FILE_DELETE,
+            level = PermissionLevel.SESSION,
+            targetPattern = "*",
+            sessionId = session1
+        )
+
+        // session1 is now allowed, session2 is still requiring prompt
+        assertTrue(engine.evaluatePermission(req1).allowed)
+        assertFalse(engine.evaluatePermission(req2).allowed)
+
+        // Clearing session permissions revokes it
+        engine.clearSessionPermissions(session1)
+        assertFalse(engine.evaluatePermission(req1).allowed)
+    }
 }

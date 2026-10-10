@@ -15,21 +15,30 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +58,7 @@ fun FileEntryContextMenu(
     onNewFileInDir: (String) -> Unit = {},
     onNewFolderInDir: (String) -> Unit = {},
     onRename: (WorkspaceEntry) -> Unit,
+    onMove: (WorkspaceEntry) -> Unit = {},
     onDuplicate: (WorkspaceEntry) -> Unit,
     onDelete: (WorkspaceEntry) -> Unit,
     onCopyPath: (String) -> Unit,
@@ -105,6 +115,15 @@ fun FileEntryContextMenu(
             onClick = {
                 expanded = false
                 onRename(entry)
+            },
+        )
+
+        DropdownMenuItem(
+            text = { Text("Move to...") },
+            leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, Modifier.size(18.dp)) },
+            onClick = {
+                expanded = false
+                onMove(entry)
             },
         )
 
@@ -330,3 +349,212 @@ fun DeleteEntryDialog(
         },
     )
 }
+
+/**
+ * Dialog to move a file or folder to a new path.
+ */
+@Composable
+fun MoveEntryDialog(
+    entry: WorkspaceEntry,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var targetPath by rememberSaveable { mutableStateOf(entry.path) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (entry.isDirectory) "Move Folder" else "Move File") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Current path: ${entry.path}",
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = targetPath,
+                    onValueChange = { targetPath = it.trim() },
+                    singleLine = true,
+                    label = { Text("Target relative path") },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(targetPath) },
+                enabled = targetPath.isNotBlank() && targetPath != entry.path,
+            ) {
+                Text("Move")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/**
+ * Dialog to inspect Git status, view diffs, switch branches, and commit changes.
+ */
+@Composable
+fun GitOperationsDialog(
+    onDismiss: () -> Unit,
+    onStatus: ((String) -> Unit) -> Unit,
+    onCommit: (String, (Boolean, String) -> Unit) -> Unit,
+    onCheckout: (String, Boolean, (Boolean, String) -> Unit) -> Unit,
+    onDiff: ((String) -> Unit) -> Unit,
+    onBranchList: ((List<String>) -> Unit) -> Unit,
+) {
+    var gitOutput by remember { mutableStateOf("Loading status...") }
+    var commitMessage by rememberSaveable { mutableStateOf("") }
+    var branchName by rememberSaveable { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        onStatus { gitOutput = if (it.isBlank()) "Working directory clean" else it }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Git Operations") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Repository Status:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) {
+                    Text(
+                        gitOutput,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            loading = true
+                            onStatus {
+                                loading = false
+                                gitOutput = if (it.isBlank()) "Working tree clean" else it
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Status", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            loading = true
+                            onDiff {
+                                loading = false
+                                gitOutput = if (it.isBlank()) "No diff" else it
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Diff", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            loading = true
+                            onBranchList { branches ->
+                                loading = false
+                                gitOutput = "Branches:\n" + branches.joinToString("\n")
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Branches", fontSize = 11.sp)
+                    }
+                }
+
+                HorizontalDivider()
+
+                Text("Commit Changes:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                OutlinedTextField(
+                    value = commitMessage,
+                    onValueChange = { commitMessage = it },
+                    label = { Text("Commit message") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = {
+                        if (commitMessage.isNotBlank()) {
+                            loading = true
+                            onCommit(commitMessage) { success, out ->
+                                loading = false
+                                gitOutput = if (success) "Committed successfully!\n$out" else "Error: $out"
+                                if (success) commitMessage = ""
+                            }
+                        }
+                    },
+                    enabled = commitMessage.isNotBlank() && !loading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Commit All Changes")
+                }
+
+                HorizontalDivider()
+
+                Text("Branch / Checkout:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                OutlinedTextField(
+                    value = branchName,
+                    onValueChange = { branchName = it.trim() },
+                    label = { Text("Branch name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            if (branchName.isNotBlank()) {
+                                loading = true
+                                onCheckout(branchName, false) { success, out ->
+                                    loading = false
+                                    gitOutput = if (success) "Switched to $branchName" else "Error: $out"
+                                }
+                            }
+                        },
+                        enabled = branchName.isNotBlank() && !loading,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Checkout", fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = {
+                            if (branchName.isNotBlank()) {
+                                loading = true
+                                onCheckout(branchName, true) { success, out ->
+                                    loading = false
+                                    gitOutput = if (success) "Created & switched to $branchName" else "Error: $out"
+                                }
+                            }
+                        },
+                        enabled = branchName.isNotBlank() && !loading,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("New Branch", fontSize = 11.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
+}
+

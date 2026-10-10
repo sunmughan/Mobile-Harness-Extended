@@ -295,6 +295,7 @@ data class AppUiState(
     val scratchpadItems: List<ScratchpadItem> = emptyList(),
     val scratchpadExpanded: Boolean = false,
     val orchestratorSnapshot: com.jarves.mh.session.OrchestratorSnapshot? = null,
+    val emergencyKillSwitchActive: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -1207,10 +1208,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun engageEmergencyKillSwitch(reason: String = "User requested emergency stop") {
         permissionPolicyEngine.engageEmergencyKillSwitch(reason)
+        _state.update { it.copy(emergencyKillSwitchActive = true) }
+        stopTask()
     }
 
     fun resetEmergencyKillSwitch() {
         permissionPolicyEngine.resetEmergencyKillSwitch()
+        _state.update { it.copy(emergencyKillSwitchActive = false) }
     }
 
     fun isEmergencyKillSwitchEngaged(): Boolean = permissionPolicyEngine.isEmergencyKillSwitchEngaged()
@@ -3612,7 +3616,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val success = agentOrchestrator.rollbackToBaseline(workspaceDir)
         if (success) {
             _state.update { it.copy(toastMessage = "Rolled back workspace to pre-task baseline") }
-            refreshFiles()
+            refreshProjectFiles()
         } else {
             _state.update { it.copy(toastMessage = "Rollback failed: No baseline checkpoint available") }
         }
@@ -3943,6 +3947,103 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         } else {
             AppCrashLogger.log("Failed to duplicate: ${result.exceptionOrNull()?.message}")
+        }
+    }
+
+    fun moveEntry(sourceRelativePath: String, targetRelativePath: String) {
+        val project = _state.value.activeProject ?: return
+        val root = projectWorkspaceRoot(project)
+        val result = fileOperationsController.moveEntry(root, sourceRelativePath, targetRelativePath)
+        if (result.isSuccess) {
+            val moved = result.getOrNull()
+            if (sourceRelativePath in _state.value.openEditorTabs && moved != null) {
+                val newRel = moved.relativeTo(root).invariantSeparatorsPath
+                val updatedTabs = _state.value.openEditorTabs.map { if (it == sourceRelativePath) newRel else it }
+                val newOpenedPath = if (_state.value.openedFilePath == sourceRelativePath) newRel else _state.value.openedFilePath
+                preferences.setOpenEditorTabs(project.id, updatedTabs)
+                _state.update { it.copy(openEditorTabs = updatedTabs, openedFilePath = newOpenedPath) }
+            }
+            refreshProjectFiles()
+        } else {
+            AppCrashLogger.log("Failed to move: ${result.exceptionOrNull()?.message}")
+            _state.update { it.copy(toastMessage = "Move failed: ${result.exceptionOrNull()?.message}") }
+        }
+    }
+
+    fun runWorkspaceGitCommand(args: List<String>, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        val project = _state.value.activeProject ?: return
+        val workspace = projectWorkspaceRoot(project)
+        viewModelScope.launch {
+            val (exit, output) = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (!installer.isInstalled()) return@runCatching 1 to "Linux runtime is not ready."
+                    val installed = installer.installedRuntime()
+                    val outputFile = File(getApplication<Application>().cacheDir, "git-op-${System.nanoTime()}.log")
+                    try {
+                        val process = installer.process(
+                            installed.proot,
+                            installed.rootfs,
+                            workspace,
+                            mapOf("GIT_TERMINAL_PROMPT" to "0"),
+                            listOf("git") + args,
+                            guestWorkspacePath = "/workspace/${project.slug}",
+                            outputFile = outputFile,
+                        )
+                        val exitCode = process.waitFor()
+                        val out = outputFile.readTailText(MAX_PROCESS_OUTPUT_BYTES).trim()
+                        exitCode to out
+                    } finally {
+                        outputFile.delete()
+                    }
+                }.getOrElse { 1 to (it.message ?: "Failed to run git command") }
+            }
+            val success = exit == 0
+            if (!success && output.isNotBlank()) {
+                _state.update { it.copy(toastMessage = "Git: $output") }
+            }
+            onResult(success, output)
+        }
+    }
+
+    fun gitStatus(onResult: (String) -> Unit) {
+        runWorkspaceGitCommand(listOf("status", "--short")) { _, out -> onResult(out) }
+    }
+
+    fun gitDiff(onResult: (String) -> Unit) {
+        runWorkspaceGitCommand(listOf("diff", "--stat")) { _, out -> onResult(out) }
+    }
+
+    fun gitBranchList(onResult: (List<String>) -> Unit) {
+        runWorkspaceGitCommand(listOf("branch", "--list")) { _, out ->
+            val branches = out.lineSequence().map { it.trim().removePrefix("*").trim() }.filter { it.isNotBlank() }.toList()
+            onResult(branches)
+        }
+    }
+
+    fun gitCheckout(branch: String, createNew: Boolean = false, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        val args = if (createNew) listOf("checkout", "-b", branch) else listOf("checkout", branch)
+        runWorkspaceGitCommand(args) { success, out ->
+            if (success) {
+                _state.update { it.copy(toastMessage = "Checked out $branch") }
+                refreshProjectFiles()
+            }
+            onResult(success, out)
+        }
+    }
+
+    fun gitCommit(message: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        runWorkspaceGitCommand(listOf("add", "-A")) { addSuccess, _ ->
+            if (!addSuccess) {
+                onResult(false, "Failed to stage changes")
+                return@runWorkspaceGitCommand
+            }
+            runWorkspaceGitCommand(listOf("commit", "-m", message)) { commitSuccess, out ->
+                if (commitSuccess) {
+                    _state.update { it.copy(toastMessage = "Committed: $message") }
+                    refreshProjectFiles()
+                }
+                onResult(commitSuccess, out)
+            }
         }
     }
 
@@ -4437,7 +4538,29 @@ CRITICAL INSTRUCTIONS FOR UNIFIED MODE PHASE 1:
         }.take(16)
     }
     fun answerApproval(approved: Boolean) {
+        answerApprovalWithLevel(com.jarves.mh.security.PermissionLevel.ONCE, approved)
+    }
+
+    fun answerApprovalWithLevel(level: com.jarves.mh.security.PermissionLevel, approved: Boolean) {
         val request = state.value.pendingApproval ?: return
+        val project = _state.value.activeProject
+        val target = request.affectedPaths.firstOrNull() ?: request.toolName
+        val category = when {
+            request.toolName.contains("bash", true) || request.toolName.contains("exec", true) -> com.jarves.mh.security.PermissionCategory.SHELL_EXEC
+            request.toolName.contains("write", true) || request.toolName.contains("edit", true) -> com.jarves.mh.security.PermissionCategory.FILE_WRITE
+            request.toolName.contains("delete", true) || request.toolName.contains("remove", true) -> com.jarves.mh.security.PermissionCategory.FILE_DELETE
+            else -> com.jarves.mh.security.PermissionCategory.FILE_READ
+        }
+        if (approved) {
+            permissionPolicyEngine.grantPermission(
+                category = category,
+                level = level,
+                targetPattern = target,
+                projectId = project?.slug ?: project?.id,
+                sessionId = _state.value.activeSessionId
+            )
+        }
+        _state.update { it.copy(pendingApproval = null) }
         MobileHarnessApplication.appScope.launch { activeRuntime().respondToApproval(request, approved) }
     }
 

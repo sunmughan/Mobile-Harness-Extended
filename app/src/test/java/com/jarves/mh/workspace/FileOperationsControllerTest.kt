@@ -116,4 +116,33 @@ class FileOperationsControllerTest {
         assertTrue(moved.exists())
         assertEquals("notes", moved.readText())
     }
+
+    @Test
+    fun `moveEntry relocates directory into another folder`() {
+        controller.createDirectory(workspaceDir, "subpkg")
+        controller.createFile(workspaceDir, "subpkg/File.kt", "code")
+        controller.createDirectory(workspaceDir, "target_parent")
+        val moveResult = controller.moveEntry(workspaceDir, "subpkg", "target_parent")
+        assertTrue(moveResult.isSuccess)
+        assertFalse(File(workspaceDir, "subpkg").exists())
+        val moved = File(workspaceDir, "target_parent/subpkg/File.kt")
+        assertTrue(moved.exists())
+        assertEquals("code", moved.readText())
+    }
+
+    @Test
+    fun `moveEntry fails when source does not exist`() {
+        controller.createDirectory(workspaceDir, "dest")
+        val moveResult = controller.moveEntry(workspaceDir, "ghost.txt", "dest")
+        assertTrue(moveResult.isFailure)
+        assertTrue(moveResult.exceptionOrNull() is FileOperationsController.FileOpError.SourceNotFound)
+    }
+
+    @Test
+    fun `moveEntry rejects destination outside workspace`() {
+        controller.createFile(workspaceDir, "valid.txt", "valid")
+        val moveResult = controller.moveEntry(workspaceDir, "valid.txt", "../outside")
+        assertTrue(moveResult.isFailure)
+        assertTrue(moveResult.exceptionOrNull() is FileOperationsController.FileOpError.SecurityViolation)
+    }
 }
