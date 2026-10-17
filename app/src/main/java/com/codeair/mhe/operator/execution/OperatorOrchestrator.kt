@@ -229,8 +229,9 @@ class OperatorOrchestrator(
         if (!tapObs.fresh) {
             return fail(STATUS_FAILED_NO_OBSERVATION, "observation went stale before tap")
         }
-        val tapNode = findFirstClickable(tapObs.root)
-            ?: return fail(STATUS_FAILED_NO_APP, "no tappable node in ${target.appLabel}")
+        val targetResolution = resolveTapTarget(goalText, tapObs.root)
+        val tapNode = targetResolution.node
+            ?: return fail(STATUS_FAILED_NO_APP, "no target matches goal in ${target.appLabel}: ${targetResolution.reason}")
         val tapLabel = tapNode.text?.take(40) ?: tapNode.contentDescription?.take(40) ?: tapNode.nodeId
         val tapOp = SafetyOperation.UiTap(tapNode.nodeId, tapLabel)
         pushEvent("Tap target", tapLabel, true)
@@ -377,6 +378,12 @@ class OperatorOrchestrator(
         )
 
         val beforeObs = observation.capture()
+        if (!beforeObs.fresh) {
+            return terminal(STATUS_FAILED_STALE_TARGET, "observation went stale before dispatch")
+        }
+        if (beforeObs.packageName != target.packageName) {
+            return terminal(STATUS_FAILED_STALE_TARGET, "foreground app changed: expected ${target.packageName}, found ${beforeObs.packageName}")
+        }
         var dispatchOp = operation
         val tapOp = operation as? SafetyOperation.UiTap
         if (tapOp != null) {
@@ -396,6 +403,14 @@ class OperatorOrchestrator(
                     )
                 )
                 return terminal(STATUS_FAILED_STALE_TARGET, "target node is stale")
+            }
+            val originalLabel = tapOp.targetLabel
+            val freshLabel = freshNode.text?.take(40) ?: freshNode.contentDescription?.take(40) ?: ""
+            if (originalLabel.isNotBlank() && freshLabel != originalLabel) {
+                return terminal(STATUS_FAILED_STALE_TARGET, "target label changed: was '$originalLabel', now '$freshLabel'")
+            }
+            if (freshNode.bounds == null || freshNode.bounds.isEmpty) {
+                return terminal(STATUS_FAILED_STALE_TARGET, "target bounds invalid")
             }
             val freshId = "g${beforeObs.generation}:p$path"
             if (StaleTargetPolicy.isStale(freshId, beforeObs.generation)) {
