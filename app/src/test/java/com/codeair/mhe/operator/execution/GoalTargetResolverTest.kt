@@ -13,10 +13,14 @@ class GoalTargetResolverTest {
         children: List<UiNode> = emptyList()
     ) = UiNode(
         nodeId = "g1:p0",
+        className = "android.widget.Button",
         text = text,
         contentDescription = desc,
-        clickable = clickable,
+        resourceId = null,
         bounds = android.graphics.Rect(0, 0, 100, 100),
+        clickable = clickable,
+        scrollable = false,
+        editable = false,
         children = children
     )
 
